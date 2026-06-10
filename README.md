@@ -66,14 +66,14 @@ You: /skill:03-work docs/plans/plan.md
 
 | Skill | What it does | Core tool |
 |-------|-------------|-----------|
-| **01-brainstorm** | Structured multi-round discovery, domain vocabulary persistence | `brainstorm_dialog` |
-| **02-plan** | TDD-gated implementation units, optional CEO Review | `plan_diff` |
-| **03-work** | Execution with checkpoint resume, strict TDD, subagent delegation | `session_checkpoint`, `task_splitter` |
-| **04-review** | Auto-assigned reviewers, five-axis findings, autofix loop | `review_router`, `multi_reviewer` |
-| **04.5-debug** | Routing based on user testing (return to work or continue to learn) | — |
-| **05-learn** | Pattern extraction → searchable solution artifacts | `pattern_extractor` |
-| **06-docsync** | Synchronize project documentation after completion | — |
-| **00-next** | Next-step recommendation + workflow status | `workflow_state` |
+| **01-brainstorm** | Structured multi-round discovery, domain vocabulary persistence | `brainstorm_dialog`, `artifact_helper` |
+| **02-plan** | TDD-gated implementation units, optional CEO Review | `plan_diff`, `context_handoff`, `artifact_helper` |
+| **03-work** | Execution with checkpoint resume, strict TDD, subagent delegation | `session_checkpoint`, `task_splitter`, `context_handoff` |
+| **04-review** | Auto-assigned reviewers, five-axis findings, autofix loop | `review_router`, `multi_reviewer`, `context_handoff` |
+| **04.5-debug** | Routing based on user testing (return to work or continue to learn) | `context_handoff` |
+| **05-learn** | Pattern extraction → searchable solution artifacts | `pattern_extractor`, `context_handoff`, `artifact_helper` |
+| **06-docsync** | Synchronize project documentation after completion | `context_handoff` |
+| **00-next** | Next-step recommendation + workflow status | `workflow_state`, `session_history` |
 
 ### Model & Thinking Routing
 
