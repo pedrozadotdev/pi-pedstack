@@ -21,7 +21,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **TDD enforcement** — every unit follows RED → GREEN → REFACTOR with hard gates
 - **Evidence-first review** — auto-assigned reviewers across five axes, autofix loop
 - **Knowledge compounding** — solved problems become searchable solution artifacts
-- **Token-efficient** — ~4,200 tokens new-conversation overhead; progressive loading
+- **Token-efficient** — ~3,160 tokens new-conversation overhead; progressive loading
 
 ---
 
