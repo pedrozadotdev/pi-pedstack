@@ -4,7 +4,7 @@ import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import * as os from "node:os"
-import { readPedStackConfig } from "../utils/config-types"
+import { readPiPedstackConfig } from "../utils/config-types"
 
 function computeHash(base64Data: string): string {
   return crypto.createHash("sha256").update(base64Data).digest("hex")
@@ -46,8 +46,8 @@ export function registerImageDescriptorHook(pi: ExtensionAPI) {
       return undefined
     }
 
-    // Read ped-stack config for image descriptor
-    const config = await readPedStackConfig(ctx.cwd)
+    // Read pi-pedstack config for image descriptor
+    const config = await readPiPedstackConfig(ctx.cwd)
     const descriptorConfig = config?.imageDescriptor
 
     // If not configured, default to google/gemini-2.5-flash or fall back to current model if it supports images
@@ -72,18 +72,18 @@ export function registerImageDescriptorHook(pi: ExtensionAPI) {
 
     const model = ctx.modelRegistry.find(provider, modelId)
     if (!model) {
-      console.warn(`[ped-stack] Vision model ${provider}/${modelId} not found. Skipping image description.`)
+      console.warn(`[pi-pedstack] Vision model ${provider}/${modelId} not found. Skipping image description.`)
       return undefined
     }
 
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model)
     if (!auth || !auth.ok || !auth.apiKey) {
-      console.warn(`[ped-stack] API key not found for vision model ${provider}/${modelId}. Skipping image description.`)
+      console.warn(`[pi-pedstack] API key not found for vision model ${provider}/${modelId}. Skipping image description.`)
       return undefined
     }
 
     // Load cache
-    const cachePath = path.join(os.homedir(), ".pi", "ped-stack", "image-cache.json")
+    const cachePath = path.join(os.homedir(), ".pi", "pi-pedstack", "image-cache.json")
     let cache: Record<string, string> = {}
     try {
       const cacheContent = fs.readFileSync(cachePath, "utf8")
@@ -144,7 +144,7 @@ export function registerImageDescriptorHook(pi: ExtensionAPI) {
           descriptions.push(`[Image #${i + 1} Description could not be generated: empty response]`)
         }
       } catch (err: any) {
-        console.error(`[ped-stack] Failed to describe image #${i + 1}:`, err)
+        console.error(`[pi-pedstack] Failed to describe image #${i + 1}:`, err)
         descriptions.push(`[Image #${i + 1} Description could not be generated: ${err.message || err}]`)
       }
     }

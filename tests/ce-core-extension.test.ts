@@ -1180,14 +1180,14 @@ describe("ce-core extension runtime registration", () => {
     expect(patternResult.terminate).not.toBe(true)
   })
 
-  test("input hook switches model for stage skill commands using .pi/ped-stack/config.json", async () => {
+  test("input hook switches model for stage skill commands using .pi/pi-pedstack/config.json", async () => {
     const eventHandlers = new Map<string, any[]>()
     const setModelCalls: string[] = []
     const notifications: Array<{ message: string, level?: string }> = []
     const repoRoot = `/tmp/pi-ce-model-routing-${Date.now()}`
-    await mkdir(path.join(repoRoot, ".pi", "ped-stack"), { recursive: true })
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
     await writeFile(
-      path.join(repoRoot, ".pi", "ped-stack", "config.json"),
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
       JSON.stringify({
         plan: {
           model: "anthropic/claude-opus-4-1",
@@ -1266,9 +1266,9 @@ describe("ce-core extension runtime registration", () => {
     const eventHandlers = new Map<string, any[]>()
     const setModelCalls: string[] = []
     const repoRoot = `/tmp/pi-ce-model-routing-bare-${Date.now()}`
-    await mkdir(path.join(repoRoot, ".pi", "ped-stack"), { recursive: true })
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
     await writeFile(
-      path.join(repoRoot, ".pi", "ped-stack", "config.json"),
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
       JSON.stringify({
         work: {
           model: "claude-opus-4-1",
@@ -1331,9 +1331,9 @@ describe("ce-core extension runtime registration", () => {
     const thinkingCalls: string[] = []
     const notifications: Array<{ message: string, level?: string }> = []
     const repoRoot = `/tmp/pi-ce-thinking-routing-${Date.now()}`
-    await mkdir(path.join(repoRoot, ".pi", "ped-stack"), { recursive: true })
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
     await writeFile(
-      path.join(repoRoot, ".pi", "ped-stack", "config.json"),
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
       JSON.stringify({
         plan: {
           model: "anthropic/claude-opus-4-1",
@@ -1407,9 +1407,9 @@ describe("ce-core extension runtime registration", () => {
     const eventHandlers = new Map<string, any[]>()
     const setModelCalls: string[] = []
     const repoRoot = `/tmp/pi-ce-steer-guard-${Date.now()}`
-    await mkdir(path.join(repoRoot, ".pi", "ped-stack"), { recursive: true })
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
     await writeFile(
-      path.join(repoRoot, ".pi", "ped-stack", "config.json"),
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
       JSON.stringify({ plan: { model: "anthropic/claude-opus-4-1", thinkingLevel: "high" } }),
       "utf8",
     )
@@ -1443,9 +1443,9 @@ describe("ce-core extension runtime registration", () => {
     const eventHandlers = new Map<string, any[]>()
     const setModelCalls: string[] = []
     const repoRoot = `/tmp/pi-ce-followup-guard-${Date.now()}`
-    await mkdir(path.join(repoRoot, ".pi", "ped-stack"), { recursive: true })
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
     await writeFile(
-      path.join(repoRoot, ".pi", "ped-stack", "config.json"),
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
       JSON.stringify({ plan: { model: "anthropic/claude-opus-4-1", thinkingLevel: "high" } }),
       "utf8",
     )
@@ -1479,9 +1479,9 @@ describe("ce-core extension runtime registration", () => {
     const eventHandlers = new Map<string, any[]>()
     const notifications: string[] = []
     const repoRoot = `/tmp/pi-ce-mode-guard-${Date.now()}`
-    await mkdir(path.join(repoRoot, ".pi", "ped-stack"), { recursive: true })
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
     await writeFile(
-      path.join(repoRoot, ".pi", "ped-stack", "config.json"),
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
       JSON.stringify({ plan: { model: "anthropic/claude-opus-4-1", thinkingLevel: "high" } }),
       "utf8",
     )

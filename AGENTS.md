@@ -1,24 +1,20 @@
-# AGENTS.md — ped-stack
+# AGENTS.md — pi-pedstack
 
 ## Project Overview
 
-ped-stack is a Pi-native engineering workflow layer: brainstorm → plan → work → review → learn.
-Built with TypeScript, tested with Bun test runner, published to npm as `ped-stack`.
+pi-pedstack is a Pi-native engineering workflow layer: brainstorm → plan → work → review → learn.
+Built with TypeScript, tested with Bun test runner, published to npm as `pi-pedstack`.
 
 ## Tech Stack
 
 - Runtime: Bun
 - Language: TypeScript (strict)
 - Test: `bun test`
-- Build: `bun run build`
-- Publish: `npm publish` via GitHub Actions on tag push
 
 ## Key Commands
 
 ```bash
 bun test              # Run all tests
-bun run build         # Build the project
-bun run lint          # Lint (if configured)
 ```
 
 ## Architecture

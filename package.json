@@ -1,20 +1,20 @@
 {
-  "name": "ped-stack",
+  "name": "pi-pedstack",
   "version": "0.0.1",
   "private": false,
   "type": "module",
-  "description": "Pi-native Compound Engineering package for ped-stack development workflows",
+  "description": "Pi-native Compound Engineering package for pi-pedstack development workflows",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pedrozadotdev/ped-stack.git"
+    "url": "git+https://github.com/pedrozadotdev/pi-pedstack.git"
   },
-  "homepage": "https://github.com/pedrozadotdev/ped-stack",
+  "homepage": "https://github.com/pedrozadotdev/pi-pedstack",
   "bugs": {
-    "url": "https://github.com/pedrozadotdev/ped-stack/issues"
+    "url": "https://github.com/pedrozadotdev/pi-pedstack/issues"
   },
   "keywords": [
-    "ped-stack",
+    "pi-pedstack",
     "pi-package",
     "pi",
     "coding-agent",

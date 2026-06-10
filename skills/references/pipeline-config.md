@@ -7,14 +7,14 @@ Use these rules in all pipeline skills: `01-brainstorm` → `02-plan` → `03-wo
 Model routing is handled automatically by the ce-core extension's `input` hook.
 When a user types `/skill:01-brainstorm` through `/skill:06-docsync`, the extension:
 
-1. Reads `.pi/ped-stack/config.json` from the project root.
+1. Reads `.pi/pi-pedstack/config.json` from the project root.
 2. Parses `[stepKey]` config object.
 3. If the target model differs from the current model, calls `pi.setModel()`.
 4. If switching fails, notifies the user and continues with the current model.
 
 No manual `/model` command is needed. The skill itself does not need to handle model switching.
 
-Supported step configs in `.pi/ped-stack/config.json`:
+Supported step configs in `.pi/pi-pedstack/config.json`:
 ```json
 {
   "plan": {
@@ -161,7 +161,7 @@ Reason: Current `<current stage>` is completed, and we are entering `<next stage
 Recommendation: Open a new window and copy-paste the prompt below to continue.
 
 ```text
-Continue this Super Pi workflow, do not restart.
+Continue this pi-pedstack workflow, do not restart.
 
 Repo: <repo path>
 

@@ -16,8 +16,8 @@ const SKILL_TO_SIMPLE_NAME: Record<string, string> = {
 }
 
 /**
- * Load per-step context from `.pi/ped-stack/appends/{STEP_NAME}.md`.
- * E.g., `.pi/ped-stack/appends/BRAINSTORM.md`.
+ * Load per-step context from `.pi/pi-pedstack/appends/{STEP_NAME}.md`.
+ * E.g., `.pi/pi-pedstack/appends/BRAINSTORM.md`.
  *
  * @param cwd - Project root directory
  * @param skillName - Skill trigger name (e.g. "01-brainstorm")
@@ -31,7 +31,7 @@ export async function loadAppendContext(
   if (!simpleName) return null
 
   const filename = `${simpleName.toUpperCase()}.md`
-  const appendPath = path.join(cwd, ".pi", "ped-stack", "appends", filename)
+  const appendPath = path.join(cwd, ".pi", "pi-pedstack", "appends", filename)
 
   try {
     const content = await readFile(appendPath, "utf8")

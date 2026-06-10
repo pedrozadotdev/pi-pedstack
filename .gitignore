@@ -7,12 +7,11 @@ coverage/
 graphify-out/
 bun.lock
 
-# docs/ is local/runtime-heavy process artifacts, not for public
-docs/
-# exception: token cost evaluation remains tracked
-!docs/token-cost-evaluation.md
-!docs/assets/super-pi.png
-!docs/assets/super-pi.webp
+# ignore local/runtime-heavy process artifacts, not for public
+docs/brainstorms/
+docs/plans/
+docs/adr/
+
 
 # temp reports
 *.html

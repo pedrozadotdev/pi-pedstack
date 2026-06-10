@@ -22,7 +22,7 @@ Detect the project's primary language by checking for these files in the repo ro
 Rules are loaded from two locations with priority:
 
 1. **Project-level** `{repo-root}/rules/` — takes priority, survives `pi update`.
-2. **Package-level** `rules/` in the ped-stack package — built-in defaults.
+2. **Package-level** `rules/` in the pi-pedstack package — built-in defaults.
 
 Check project-level first. If a file exists there for the topic, use it. Otherwise fall back to package-level.
 

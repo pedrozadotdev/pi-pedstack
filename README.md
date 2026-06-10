@@ -1,19 +1,15 @@
-# ped-stack
-
-![ped-stack Workflow](docs/assets/super-pi.webp)
-
-[English](README.md) 
+# pi-pedstack
 
 **Turn your AI coding agent into a reliable engineer.**
 
-ped-stack is a Pi-native engineering workflow layer: it adds stage discipline, durable artifacts, TDD gates, checkpoints, review, and learning loops on top of your coding agent.
+pi-pedstack is a Pi-native engineering workflow layer: it adds stage discipline, durable artifacts, TDD gates, checkpoints, review, and learning loops on top of your coding agent.
 
-Install, describe what you want to build, then keep saying "continue." ped-stack drives the full loop:
+Install, describe what you want to build, then keep saying "continue." pi-pedstack drives the full loop:
 
  **think → plan → build → review → compound learnings.**
 
 ```bash
-pi install npm:ped-stack
+pi install git:github.com/pedrozadotdev/pi-pedstack
 ```
 
 ---
@@ -32,7 +28,7 @@ pi install npm:ped-stack
 ## Quickstart
 
 ```bash
-pi install npm:ped-stack
+pi install git:github.com/pedrozadotdev/pi-pedstack
 ```
 
 Then in Pi:
@@ -81,26 +77,84 @@ You: /skill:03-work docs/plans/plan.md
 
 ### Model & Thinking Routing
 
-Configure in `.pi/ped-stack/config.json`:
+You can customize the model and thinking level used for each workflow stage by editing the configuration file.
+
+The configuration is loaded with the following priority:
+1. **Project-level**: `.pi/pi-pedstack/config.json`
+2. **Global-level**: `~/.pi/pi-pedstack/config.json`
+
+Each stage switches the active model and thinking level automatically when you invoke it via `/skill:0X-stageName`. All pipeline skills declare `disable-model-invocation: true` in their frontmatter to ensure they can only be invoked by the user, thereby strictly guaranteeing that model routing rules are enforced.
+
+Here is a complete configuration schema example:
 
 ```json
 {
+  "imageDescriptor": {
+    "model": "google/gemini-2.5-flash",
+    "thinkingLevel": "off"
+  },
   "brainstorm": {
     "model": "anthropic/claude-sonnet-4-20250514",
-    "thinkingLevel": "high"
+    "thinkingLevel": "high",
+    "reviewers": [
+      { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" }
+    ]
   },
   "plan": {
     "model": "anthropic/claude-opus-4-20250115",
-    "thinkingLevel": "high"
+    "thinkingLevel": "high",
+    "reviewers": [
+      { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" }
+    ]
   },
   "work": {
+    "model": "anthropic/claude-sonnet-4-20250514",
+    "thinkingLevel": "medium"
+  },
+  "review": {
+    "model": "anthropic/claude-opus-4-20250115",
+    "thinkingLevel": "high",
+    "reviewers": [
+      { "model": "anthropic/claude-sonnet-4-20250514", "thinkingLevel": "high" }
+    ]
+  },
+  "debug": {
+    "model": "anthropic/claude-sonnet-4-20250514",
+    "thinkingLevel": "medium"
+  },
+  "learn": {
+    "model": "anthropic/claude-sonnet-4-20250514",
+    "thinkingLevel": "medium",
+    "reviewers": [
+      { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" }
+    ]
+  },
+  "docsync": {
     "model": "anthropic/claude-sonnet-4-20250514",
     "thinkingLevel": "medium"
   }
 }
 ```
 
-Model and thinking level switch automatically — no manual `/model` needed.
+#### Supported Keys and Options
+
+* **`imageDescriptor`**: Customizes the vision model used to describe user-attached images (defaulting to `google/gemini-2.5-flash`).
+* **`reviewers`**: Stages that support parallel reviews (`brainstorm`, `plan`, `review`, `learn`) can define an array of sub-reviewers. These reviews will run concurrently using subagents on the specified models.
+
+### Dynamic Append Instructions
+
+For each stage, you can inject custom project-specific instructions by creating markdown files in the `.pi/pi-pedstack/appends/` directory.
+
+The system will search for uppercase file names matching the active step name:
+- `.pi/pi-pedstack/appends/BRAINSTORM.md`
+- `.pi/pi-pedstack/appends/PLAN.md`
+- `.pi/pi-pedstack/appends/WORK.md`
+- `.pi/pi-pedstack/appends/REVIEW.md`
+- `.pi/pi-pedstack/appends/DEBUG.md`
+- `.pi/pi-pedstack/appends/LEARN.md`
+- `.pi/pi-pedstack/appends/DOCSYNC.md`
+
+If present, these files are loaded and appended directly to the active prompt context, helping customize guidelines for specific steps.
 
 ## Design Philosophy & Acknowledgements
 
@@ -108,9 +162,9 @@ Model and thinking level switch automatically — no manual `/model` needed.
 
 The goal is not to make AI write code faster. The goal is to make AI think before writing, review after writing, and compound what it learns.
 
-Super Pi is not a fork or wrapper. It extracts useful methods from the projects below and rebuilds them with Pi-native skills, tools, artifacts, checkpoints, and handoffs.
+pi-pedstack is not a fork or wrapper. It extracts useful methods from the projects below and rebuilds them with Pi-native skills, tools, artifacts, checkpoints, and handoffs.
 
-| Project | What Super Pi adopted |
+| Project | What pi-pedstack adopted |
 |---------|------------------------|
 | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) | "Use when" skill trigger conditions, source-driven verification, stop-the-line hard gate, anti-rationalization, and the five-axis review baseline. Adopted as embedded micro-patterns only — no new skills, tools, commands, or agents. |
 | [everything-claude-code](https://github.com/affaan-m/everything-claude-code) | Checkpoint resume, continuous learning loops, and token-conscious agent workflow design. |
@@ -149,17 +203,15 @@ All reviewers evaluate changes across: **correctness, readability, architecture,
 
 ## Token Cost
 
-New conversation overhead: **~4,130 tokens** (2.1% of 200K context).
+New conversation overhead: **~3,160 tokens** (1.6% of 200K context).
 
 | Component | Tokens |
 |-----------|--------|
-| 17 skill registrations | ~1,710 |
-| 22 tool schemas | ~2,420 |
-| Skill inlining (per invocation) | ~300–1,200 |
+| 8 pipeline skill registrations | ~850 |
+| 21 tool schemas (11 CE + 10 built-in) | ~2,310 |
+| Skill context (per user invocation) | ~300–1,200 |
 
 Progressive loading: only needed skills loaded on-demand.
-
-See [docs/token-cost-evaluation.md](docs/token-cost-evaluation.md) for detailed per-skill breakdown and measurement methodology.
 
 ---
 
@@ -188,10 +240,10 @@ Commit everything to git — these files are the project's traceable memory.
 | Component | Count |
 |-----------|------:|
 | Skills | 8 |
-| Tools | 12 CE + 10 Pi built-in |
+| Tools | 11 CE + 10 Pi built-in |
 | Rules | 78 |
 | TypeScript lines | ~4,100 |
-| Tests | 180 (727 assertions) |
+| Tests | 170 (688 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -202,18 +254,12 @@ Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, R
 | Command | Description |
 |---------|-------------|
 | `bun test` | Run all tests |
-| `npm publish --dry-run` | Preview package contents |
 
 ---
 
-## Changelog
-
-See [CHANGELOG.md](./CHANGELOG.md) for full version history.
-
 ## Links
 
-- **npm**: https://www.npmjs.com/package/ped-stack
-- **GitHub**: https://github.com/leing2021/ped-stack
+- **GitHub**: https://github.com/pedrozadotdev/pi-pedstack
 - **License**: MIT
 
 ---

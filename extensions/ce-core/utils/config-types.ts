@@ -20,7 +20,7 @@ export interface ReviewableStepConfig extends StepConfig {
   reviewers?: ReviewerConfig[]
 }
 
-export interface PedStackConfig {
+export interface PiPedstackConfig {
   imageDescriptor?: StepConfig
   brainstorm?: ReviewableStepConfig
   plan?: ReviewableStepConfig
@@ -35,7 +35,7 @@ export interface PedStackConfig {
 // Step name mapping
 // ---------------------------------------------------------------------------
 
-const SKILL_TO_CONFIG_KEY: Record<string, keyof PedStackConfig> = {
+const SKILL_TO_CONFIG_KEY: Record<string, keyof PiPedstackConfig> = {
   "01-brainstorm": "brainstorm",
   "02-plan": "plan",
   "03-work": "work",
@@ -47,7 +47,7 @@ const SKILL_TO_CONFIG_KEY: Record<string, keyof PedStackConfig> = {
 
 const VALID_STEP_NAMES = new Set<string>(Object.values(SKILL_TO_CONFIG_KEY))
 
-export function getConfigKeyForSkill(skillName: string): keyof PedStackConfig | null {
+export function getConfigKeyForSkill(skillName: string): keyof PiPedstackConfig | null {
   return SKILL_TO_CONFIG_KEY[skillName] ?? null
 }
 
@@ -73,20 +73,20 @@ function isReviewableStepConfig(value: unknown): value is ReviewableStepConfig {
   return obj.reviewers.every(isReviewerConfig)
 }
 
-export function validatePedStackConfig(raw: unknown): PedStackConfig {
+export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
   if (!raw || typeof raw !== "object") {
-    throw new Error("ped-stack config must be an object")
+    throw new Error("pi-pedstack config must be an object")
   }
 
   const obj = raw as Record<string, unknown>
-  const config: PedStackConfig = {}
+  const config: PiPedstackConfig = {}
 
   // Simple step configs (no reviewers)
   for (const key of ["imageDescriptor", "work", "debug", "docsync"] as const) {
     if (obj[key] !== undefined) {
       if (!isStepConfig(obj[key])) {
         throw new Error(
-          `ped-stack config: "${key}" must have "model" (string) and "thinkingLevel" (string)`,
+          `pi-pedstack config: "${key}" must have "model" (string) and "thinkingLevel" (string)`,
         )
       }
       config[key] = obj[key] as StepConfig
@@ -98,7 +98,7 @@ export function validatePedStackConfig(raw: unknown): PedStackConfig {
     if (obj[key] !== undefined) {
       if (!isReviewableStepConfig(obj[key])) {
         throw new Error(
-          `ped-stack config: "${key}" must have "model" (string), "thinkingLevel" (string), and optional "reviewers" array of {model, thinkingLevel}`,
+          `pi-pedstack config: "${key}" must have "model" (string), "thinkingLevel" (string), and optional "reviewers" array of {model, thinkingLevel}`,
         )
       }
       config[key] = obj[key] as ReviewableStepConfig
@@ -108,7 +108,7 @@ export function validatePedStackConfig(raw: unknown): PedStackConfig {
   // Warn about unknown keys
   for (const key of Object.keys(obj)) {
     if (!VALID_STEP_NAMES.has(key) && key !== "imageDescriptor") {
-      console.warn(`[ped-stack] Unknown config key: "${key}". Valid keys: ${[...VALID_STEP_NAMES, "imageDescriptor"].join(", ")}`)
+      console.warn(`[pi-pedstack] Unknown config key: "${key}". Valid keys: ${[...VALID_STEP_NAMES, "imageDescriptor"].join(", ")}`)
     }
   }
 
@@ -120,27 +120,27 @@ export function validatePedStackConfig(raw: unknown): PedStackConfig {
 // ---------------------------------------------------------------------------
 
 /**
- * Read ped-stack config from:
- * 1. Project-level: {cwd}/.pi/ped-stack/config.json (highest priority)
- * 2. Global-level: ~/.pi/ped-stack/config.json (fallback)
+ * Read pi-pedstack config from:
+ * 1. Project-level: {cwd}/.pi/pi-pedstack/config.json (highest priority)
+ * 2. Global-level: ~/.pi/pi-pedstack/config.json (fallback)
  */
-export async function readPedStackConfig(cwd: string): Promise<PedStackConfig | null> {
+export async function readPiPedstackConfig(cwd: string): Promise<PiPedstackConfig | null> {
   // Try project-level config
-  const projectPath = path.join(cwd, ".pi", "ped-stack", "config.json")
+  const projectPath = path.join(cwd, ".pi", "pi-pedstack", "config.json")
   try {
     const content = await readFile(projectPath, "utf8")
     const parsed = JSON.parse(content)
-    return validatePedStackConfig(parsed)
+    return validatePiPedstackConfig(parsed)
   } catch {
     // Project config not found, continue to global
   }
 
   // Fallback to global-level
-  const globalPath = path.join(os.homedir(), ".pi", "ped-stack", "config.json")
+  const globalPath = path.join(os.homedir(), ".pi", "pi-pedstack", "config.json")
   try {
     const content = await readFile(globalPath, "utf8")
     const parsed = JSON.parse(content)
-    return validatePedStackConfig(parsed)
+    return validatePiPedstackConfig(parsed)
   } catch {
     return null
   }

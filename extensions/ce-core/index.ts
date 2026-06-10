@@ -15,7 +15,7 @@ import { createContextHandoffTool } from "./tools/context-handoff"
 import { filterBashOutput } from "./tools/bash-output-filter"
 import { filterReadOutput } from "./tools/read-output-filter"
 import { COMPACTION_FOCUS_INSTRUCTIONS } from "./tools/compaction-optimizer"
-import { readPedStackConfig, getConfigKeyForSkill } from "./utils/config-types"
+import { readPiPedstackConfig, getConfigKeyForSkill } from "./utils/config-types"
 import { loadAppendContext } from "./utils/append-loader"
 import { createMultiReviewerTool } from "./tools/multi-reviewer"
 import { registerImageDescriptorHook } from "./tools/image-descriptor"
@@ -247,7 +247,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
       return { action: "continue" as const }
     }
 
-    const config = await readPedStackConfig(ctx.cwd)
+    const config = await readPiPedstackConfig(ctx.cwd)
     const configKey = getConfigKeyForSkill(stageKey)
     const stepConfig = configKey ? config?.[configKey] : null
     // Notification guard: only notify in interactive (TUI) or RPC modes.

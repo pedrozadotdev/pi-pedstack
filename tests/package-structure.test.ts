@@ -69,7 +69,7 @@ describe("package bootstrap structure", () => {
     expect(packageJson).toContain('"access": "public"')
     expect(packageJson).toContain('"files"')
     expect(packageJson).toContain('"private": false')
-    expect(packageJson).toContain('"https://github.com/pedrozadotdev/ped-stack"')
+    expect(packageJson).toContain('"https://github.com/pedrozadotdev/pi-pedstack"')
   })
 
   test("repo includes a gitignore for node and Pi package development", () => {
@@ -86,15 +86,6 @@ describe("package bootstrap structure", () => {
     expect(workflow).toContain("push")
     expect(workflow).toContain("pull_request")
     expect(workflow).toContain("main")
-    expect(workflow).toContain("bun test")
-  })
-
-  test("includes publish workflow triggered on version tags", () => {
-    const workflow = readFileSync(path.join(repoRoot, ".github", "workflows", "publish.yml"), "utf8")
-
-    expect(workflow).toContain("v*")
-    expect(workflow).toContain("npm publish")
-    expect(workflow).toContain("NPM_TOKEN")
     expect(workflow).toContain("bun test")
   })
 })
