@@ -71,6 +71,6 @@ After QA: include findings in handoff, note fix commits/test files.
 
 ## Handoff
 
-Handoff to `04.5-debug` (using the template in `references/handoff.md`) for user verification and routing.
+Handoff to `04-5-debug` (using the template in `references/handoff.md`) for user verification and routing.
 
 Before finishing this skill, apply the completion checklist in [shared pipeline instructions](../references/pipeline-config.md).

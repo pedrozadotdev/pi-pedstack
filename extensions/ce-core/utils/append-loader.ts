@@ -10,7 +10,7 @@ const SKILL_TO_SIMPLE_NAME: Record<string, string> = {
   "02-plan": "plan",
   "03-work": "work",
   "04-review": "review",
-  "04.5-debug": "debug",
+  "04-5-debug": "debug",
   "05-learn": "learn",
   "06-docsync": "docsync",
 }

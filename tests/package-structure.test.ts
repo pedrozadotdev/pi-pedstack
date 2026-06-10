@@ -44,7 +44,7 @@ describe("package bootstrap structure", () => {
     expect(readme).toContain("03-work")
     expect(readme).toContain("04-review")
     expect(readme).toContain("05-learn")
-    expect(readme).toContain("04.5-debug")
+    expect(readme).toContain("04-5-debug")
     expect(readme).toContain("06-docsync")
     expect(readme).toContain("00-next")
   })

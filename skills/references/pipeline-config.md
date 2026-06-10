@@ -1,6 +1,6 @@
 # Shared pipeline instructions
 
-Use these rules in all pipeline skills: `01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04.5-debug` → `05-learn` → `06-docsync`.
+Use these rules in all pipeline skills: `01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`.
 
 ## Start of skill: model routing
 
@@ -68,8 +68,8 @@ Next step mapping:
 - `01-brainstorm` → `/skill:02-plan`
 - `02-plan` → `/skill:03-work`
 - `03-work` → `/skill:04-review`
-- `04-review` → `/skill:04.5-debug`
-- `04.5-debug` → `/skill:05-learn`
+- `04-review` → `/skill:04-5-debug`
+- `04-5-debug` → `/skill:05-learn`
 - `05-learn` → `/skill:06-docsync`
 - `06-docsync` → `Completed`
 

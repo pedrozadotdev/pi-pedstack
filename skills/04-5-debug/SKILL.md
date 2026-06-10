@@ -1,5 +1,5 @@
 ---
-name: 04.5-debug
+name: 04-5-debug
 description: "Route based on user testing: if bugs found, return to 03-work; if clean, continue to 05-learn."
 disable-model-invocation: true
 ---

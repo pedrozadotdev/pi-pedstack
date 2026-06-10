@@ -10,7 +10,7 @@ const skillNames = [
   "02-plan",
   "03-work",
   "04-review",
-  "04.5-debug",
+  "04-5-debug",
   "05-learn",
   "06-docsync",
 ]
@@ -234,7 +234,7 @@ describe("skill package contracts", () => {
     expect(reviewerSelection).toContain("review_router")
     expect(reviewerSelection).toContain("correctness-reviewer")
     expect(reviewerSelection).toContain("security-reviewer")
-    expect(handoff).toContain("04.5-debug")
+    expect(handoff).toContain("04-5-debug")
     expect(handoff).toContain("autofix")
   })
 
@@ -251,7 +251,7 @@ describe("skill package contracts", () => {
     expect(content).toContain("02-plan")
     expect(content).toContain("03-work")
     expect(content).toContain("04-review")
-    expect(content).toContain("04.5-debug")
+    expect(content).toContain("04-5-debug")
     expect(content).toContain("05-learn")
     expect(content).toContain("06-docsync")
     expect(recommendationLogic).toContain("brainstorm")

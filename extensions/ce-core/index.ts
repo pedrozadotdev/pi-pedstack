@@ -184,7 +184,7 @@ const PIPELINE_STAGE_KEYS = new Set([
   "02-plan",
   "03-work",
   "04-review",
-  "04.5-debug",
+  "04-5-debug",
   "05-learn",
   "06-docsync",
 ])

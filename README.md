@@ -40,7 +40,7 @@ You: I want to build a CLI tool that helps indie devs find early users
 → 02-plan: TDD-gated implementation units → plan artifact
 → 03-work: inline execution, checkpoint resume
 → 04-review: five-axis findings, autofix loop
-→ 04.5-debug: routing based on user testing
+→ 04-5-debug: routing based on user testing
 → 05-learn: knowledge compounding
 → 06-docsync: synchronize documentation
 
@@ -60,7 +60,7 @@ You: /skill:03-work docs/plans/plan.md
 ## The REST-like Pipeline Loop
 
 ```
-01-brainstorm → 02-plan → 03-work → 04-review → 04.5-debug → 05-learn → 06-docsync
+01-brainstorm → 02-plan → 03-work → 04-review → 04-5-debug → 05-learn → 06-docsync
     think         plan      build      review       debug       learn      docsync
 ```
 
@@ -70,7 +70,7 @@ You: /skill:03-work docs/plans/plan.md
 | **02-plan** | TDD-gated implementation units, optional CEO Review | `plan_diff`, `context_handoff`, `artifact_helper` |
 | **03-work** | Execution with checkpoint resume, strict TDD, subagent delegation | `session_checkpoint`, `task_splitter`, `context_handoff` |
 | **04-review** | Auto-assigned reviewers, five-axis findings, autofix loop | `review_router`, `multi_reviewer`, `context_handoff` |
-| **04.5-debug** | Routing based on user testing (return to work or continue to learn) | `context_handoff` |
+| **04-5-debug** | Routing based on user testing (return to work or continue to learn) | `context_handoff` |
 | **05-learn** | Pattern extraction → searchable solution artifacts | `pattern_extractor`, `context_handoff`, `artifact_helper` |
 | **06-docsync** | Synchronize project documentation after completion | `context_handoff` |
 | **00-next** | Next-step recommendation + workflow status | `workflow_state`, `session_history` |

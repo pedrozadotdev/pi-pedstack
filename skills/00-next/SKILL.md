@@ -48,7 +48,7 @@ See `references/recommendation-logic.md` for full recommendation rules and skill
 | Solution | `docs/solutions/` |
 | Runtime | `.context/compound-engineering/` |
 
-**Available skills:** `01-brainstorm`, `02-plan`, `03-work`, `04-review`, `04.5-debug`, `05-learn`, `06-docsync`
+**Available skills:** `01-brainstorm`, `02-plan`, `03-work`, `04-review`, `04-5-debug`, `05-learn`, `06-docsync`
 
 **Fallback:** If `workflow_state` is unavailable, use `bash ls/find` to check directories, then `read` recent artifacts.
 

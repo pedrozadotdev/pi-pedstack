@@ -20,7 +20,7 @@ bun test              # Run all tests
 ## Architecture
 
 ```
-skills/          # 8 pipeline skills (00-next, 01-brainstorm, 02-plan, 03-work, 04-review, 04.5-debug, 05-learn, 06-docsync)
+skills/          # 8 pipeline skills (00-next, 01-brainstorm, 02-plan, 03-work, 04-review, 04-5-debug, 05-learn, 06-docsync)
   references/    # Shared templates and schemas
   rules/         # Coding standards (common + language-specific)
 extensions/      # Optional Pi extensions

@@ -102,7 +102,7 @@ If no rule matches cleanly:
 | `02-plan` | Turn requirements into implementation units | Requirements clear |
 | `03-work` | Execute the plan | Plan ready |
 | `04-review` | Review changes with structured findings | After implementation |
-| `04.5-debug` | Route based on user testing results | After review, before learn |
+| `04-5-debug` | Route based on user testing results | After review, before learn |
 | `05-learn` | Capture learnings as solution artifacts | After solving a problem |
 | `06-docsync` | Synchronize project documentation | End of workflow |
 
@@ -133,7 +133,7 @@ When multiple conditions are met, prioritize:
 2. `02-plan` — if brainstorm exists but no plan
 3. `03-work` — if plan exists but no execution
 4. `04-review` — if execution exists but no review
-5. `04.5-debug` — if review exists, route user testing
+5. `04-5-debug` — if review exists, route user testing
 6. `05-learn` — if review exists but no learning captured
 7. `06-docsync` — if learning captured, sync documentation
 8. Loop back to `01-brainstorm` or `00-next` for full cycle completion
