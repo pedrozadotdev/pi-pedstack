@@ -1,0 +1,18 @@
+node_modules
+.DS_Store
+dist
+.pi/
+coverage/
+.context/
+graphify-out/
+bun.lock
+
+# docs/ is local/runtime-heavy process artifacts, not for public
+docs/
+# exception: token cost evaluation remains tracked
+!docs/token-cost-evaluation.md
+!docs/assets/super-pi.png
+!docs/assets/super-pi.webp
+
+# temp reports
+*.html
