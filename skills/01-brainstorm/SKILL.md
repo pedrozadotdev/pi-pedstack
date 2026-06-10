@@ -18,7 +18,7 @@ See [shared pipeline instructions](../references/pipeline-config.md) for model r
 - Keep focused on **what** to build, not implementation details.
 - **Explicit user approval required** before handoff to `02-plan`.
 - Write result to `docs/brainstorms/` as durable requirements document.
-- For design validation, note that the **`multi_reviewer`** tool is available to get feedback from multiple reviewer models in parallel.
+- For design validation, the **`multi_reviewer`** tool is required (execute this every time) to review the drafted brainstorm/requirements artifact.
 
 ## Mode selection
 
@@ -90,8 +90,9 @@ Stop and ask instead of guessing when: requirements conflict, success criteria u
 8. Offer to create/update `CONTEXT.md` if domain terms emerged
 9. Use `brainstorm_dialog` `summarize` to finalize
 10. Capture requirements in `docs/brainstorms/`
-11. Get explicit user approval
-12. Handoff to `02-plan` using `references/handoff.md`
+11. Invoke the **`multi_reviewer`** tool (required, execute this every time) to review the generated brainstorm/requirements artifact.
+12. Get explicit user approval
+13. Handoff to `02-plan` using `references/handoff.md`
 
 ## Artifact contract
 

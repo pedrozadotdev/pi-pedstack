@@ -49,10 +49,11 @@ Every unit follows **RED → GREEN → REFACTOR**:
 6. If no plan: write new plan under `docs/plans/` using `references/plan-template.md`
 7. Structure work using `references/implementation-unit-template.md`
 8. Verify every unit follows TDD gates
+9. Invoke the **`multi_reviewer`** tool (required, execute this every time) to review the plan artifact.
 
 ## Optional: CEO Review
 
-After plan is written, offer strategic review:
+After invoking the **`multi_reviewer`** tool (required, execute this every time) to review the plan artifact, offer strategic review:
 
 > Plan ready. How to review?
 > - **A) Just go** — trust the plan

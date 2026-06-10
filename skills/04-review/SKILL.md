@@ -52,8 +52,8 @@ Code review is **technical evaluation**, not social performance:
 3. Collect stats (files, insertions, deletions) → call `review_router`
 4. Read matching plan artifact
 5. Run solution search
-6. Invoke **`multi_reviewer`** tool to run reviewer subagents in parallel using the selected reviewer configurations from `review_router`
-7. Merge into structured findings
+6. Invoke the **`multi_reviewer`** tool (required, execute this every time) to review the compiled review findings/report/artifact.
+7. Merge all reviewer findings into structured findings
 8. Verify each finding against codebase
 9. Apply autofixes, re-run tests, re-review if needed
 

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { readPiPedstackConfig, getConfigKeyForSkill } from "../utils/config-types"
 
 export interface ReviewerConfig {
   model: string
@@ -10,7 +11,6 @@ export interface ReviewerConfig {
 export interface MultiReviewerInput {
   stepName: string
   primaryOutput: string
-  reviewers: ReviewerConfig[]
   repoRoot: string
 }
 
@@ -97,15 +97,45 @@ async function runReviewerProcess(
   index: number,
   primaryOutput: string,
   repoRoot: string,
+  stepName: string,
 ): Promise<ReviewFinding[]> {
   const reviewerName = `Reviewer #${index + 1} (${reviewer.model})`
-  const systemPrompt = `You are a professional code reviewer. Your task is to perform an analysis of the provided output/code changes.
+
+  let normalizedKey = stepName.trim().toLowerCase()
+  if (normalizedKey.startsWith("0")) {
+    const mapped = getConfigKeyForSkill(normalizedKey)
+    if (mapped) normalizedKey = mapped
+  }
+
+  let role = "You are a professional peer reviewer."
+  let task = "Your task is to perform a critical review of the provided artifact/work output."
+  let evidenceDesc = "specific quote or section of the artifact"
+
+  if (normalizedKey === "brainstorm") {
+    role = "You are a product owner and systems architect design validator."
+    task = "Your task is to analyze the requirements discovery / brainstorm artifact. Check for ambiguity, boundary cases, unstated assumptions, and architecture feasibility."
+    evidenceDesc = "quote or section in the requirements document"
+  } else if (normalizedKey === "plan") {
+    role = "You are a principal engineer and planning validator."
+    task = "Your task is to analyze the proposed implementation plan. Check for completeness, correct ordering of units, library/API documentation validation notes, and TDD enforcement."
+    evidenceDesc = "quote or section in the plan document"
+  } else if (normalizedKey === "review") {
+    role = "You are a senior code review and verification validator."
+    task = "Your task is to analyze the review findings report. Check if findings are sound, evidence is cited correctly, and verification steps are clear and complete."
+    evidenceDesc = "finding description or evidence cited"
+  } else if (normalizedKey === "learn") {
+    role = "You are a knowledge manager and solution card validator."
+    task = "Your task is to analyze the proposed learning / solution card. Check if context, categories, tags, overlap rules, and search strategy are correctly defined."
+    evidenceDesc = "quote or section in the solution card"
+  }
+
+  const systemPrompt = `${role} ${task}
 Compile a list of findings following this JSON schema:
 [
   {
     "severity": "high" | "moderate" | "low",
     "summary": "one-line description",
-    "evidence": "code reference or diff excerpt",
+    "evidence": "${evidenceDesc}",
     "recommendedAction": "what should be done to address the finding",
     "reviewer": "${reviewerName}",
     "autofixable": false
@@ -120,7 +150,7 @@ Format your response as a JSON array of findings wrapped in a markdown code bloc
     "--model", reviewer.model,
     "--thinking", reviewer.thinkingLevel,
     "--system-prompt", systemPrompt,
-    `Review the following output/code changes:\n\n${primaryOutput}`,
+    `Review the following artifact/work output:\n\n${primaryOutput}`,
   ]
 
   return new Promise<ReviewFinding[]>((resolve) => {
@@ -189,7 +219,23 @@ export function createMultiReviewerTool() {
   return {
     name: "multi_reviewer",
     async execute(input: MultiReviewerInput): Promise<MultiReviewerResult> {
-      if (!input.reviewers || input.reviewers.length === 0) {
+      let reviewers: ReviewerConfig[] | undefined
+
+      // Read configuration automatically
+      const config = await readPiPedstackConfig(input.repoRoot)
+      let configKey = input.stepName
+      if (configKey.startsWith("0")) {
+        const mappedKey = getConfigKeyForSkill(configKey)
+        if (mappedKey) {
+          configKey = mappedKey
+        }
+      }
+      const stageConfig = config ? (config as any)[configKey] : null
+      if (stageConfig && Array.isArray(stageConfig.reviewers) && stageConfig.reviewers.length > 0) {
+        reviewers = stageConfig.reviewers
+      }
+
+      if (!reviewers || reviewers.length === 0) {
         return {
           findings: [],
           compiledSummary: "No reviewers configured.",
@@ -197,8 +243,8 @@ export function createMultiReviewerTool() {
       }
 
       // Run all reviewer processes concurrently
-      const promises = input.reviewers.map((reviewer, idx) =>
-        runReviewerProcess(reviewer, idx, input.primaryOutput, input.repoRoot),
+      const promises = reviewers.map((reviewer, idx) =>
+        runReviewerProcess(reviewer, idx, input.primaryOutput, input.repoRoot, input.stepName),
       )
 
       const allFindingsArrays = await Promise.all(promises)
@@ -206,7 +252,7 @@ export function createMultiReviewerTool() {
 
       // Compile markdown summary of findings
       let summary = `# Multi-Model Review Summary\n\n`
-      summary += `We ran the review across ${input.reviewers.length} reviewer model(s). `
+      summary += `We ran the review across ${reviewers.length} reviewer model(s). `
       summary += `A total of ${findings.length} finding(s) were flagged.\n\n`
 
       const high = findings.filter((f) => f.severity === "high")

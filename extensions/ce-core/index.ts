@@ -165,7 +165,6 @@ const reviewerConfigSchema = Type.Object({
 const multiReviewerParams = Type.Object({
   stepName: Type.String({ description: "Pipeline step name" }),
   primaryOutput: Type.String({ description: "Code changes or output to review" }),
-  reviewers: Type.Array(reviewerConfigSchema, { description: "Reviewer configurations" }),
   repoRoot: Type.String({ description: "Repository root path" }),
 })
 
@@ -549,7 +548,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
       const result = await multiReviewer.execute({
         stepName: params.stepName,
         primaryOutput: params.primaryOutput,
-        reviewers: params.reviewers,
         repoRoot: params.repoRoot,
       })
 

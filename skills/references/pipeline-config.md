@@ -4,25 +4,9 @@ Use these rules in all pipeline skills: `01-brainstorm` → `02-plan` → `03-wo
 
 ## Start of skill: model routing
 
-Model routing is handled automatically by the ce-core extension's `input` hook.
-When a user types `/skill:01-brainstorm` through `/skill:06-docsync`, the extension:
+Model routing and thinking level switching are handled automatically by the ce-core extension. When a pipeline stage skill is invoked, the extension automatically sets the appropriate model and thinking level.
 
-1. Reads `.pi/pi-pedstack/config.json` from the project root.
-2. Parses `[stepKey]` config object.
-3. If the target model differs from the current model, calls `pi.setModel()`.
-4. If switching fails, notifies the user and continues with the current model.
-
-No manual `/model` command is needed. The skill itself does not need to handle model switching.
-
-Supported step configs in `.pi/pi-pedstack/config.json`:
-```json
-{
-  "plan": {
-    "model": "anthropic/claude-opus-4-1",
-    "thinkingLevel": "high"
-  }
-}
-```
+No manual `/model` or `/thinking` command is needed. The skill itself does not need to handle model switching.
 
 ## Start of skill: context loading
 

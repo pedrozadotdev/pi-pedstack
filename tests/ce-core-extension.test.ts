@@ -1,6 +1,57 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test, mock } from "bun:test"
 import path from "node:path"
 import { mkdir, writeFile } from "node:fs/promises"
+
+mock.module("node:child_process", () => {
+  return {
+    spawn: (command: string, args: string[], options: any) => {
+      const listeners: Record<string, Function[]> = {}
+      const stdoutListeners: Record<string, Function[]> = {}
+
+      const proc = {
+        stdout: {
+          on: (event: string, cb: Function) => {
+            stdoutListeners[event] = stdoutListeners[event] || []
+            stdoutListeners[event].push(cb)
+          }
+        },
+        on: (event: string, cb: Function) => {
+          listeners[event] = listeners[event] || []
+          listeners[event].push(cb)
+        }
+      }
+
+      setTimeout(() => {
+        const messageEvent = {
+          type: "message_end",
+          message: {
+            content: [
+              {
+                type: "text",
+                text: "```json\n[]\n```"
+              }
+            ]
+          }
+        }
+        const dataStr = JSON.stringify(messageEvent) + "\n"
+        if (stdoutListeners["data"]) {
+          for (const cb of stdoutListeners["data"]) {
+            cb(Buffer.from(dataStr))
+          }
+        }
+
+        if (listeners["close"]) {
+          for (const cb of listeners["close"]) {
+            cb(0)
+          }
+        }
+      }, 5)
+
+      return proc
+    }
+  }
+})
+
 import ceCoreExtension from "../extensions/ce-core/index"
 import {
   getBrainstormArtifactPath,
@@ -1598,13 +1649,26 @@ describe("ce-core extension runtime registration", () => {
 })
 
 describe("multi_reviewer tool", () => {
-  test("returns empty findings when no reviewers are configured", async () => {
+  test("returns empty findings when no reviewers are configured in config.json", async () => {
+    const repoRoot = `/tmp/pi-ce-reviewer-none-${Date.now()}`
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
+    await writeFile(
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+      JSON.stringify({
+        review: {
+          model: "anthropic/claude-3-opus",
+          thinkingLevel: "high",
+          reviewers: []
+        }
+      }),
+      "utf8",
+    )
+
     const tool = createMultiReviewerTool()
     const result = await tool.execute({
       stepName: "review",
       primaryOutput: "const x = 1",
-      reviewers: [],
-      repoRoot: "/tmp",
+      repoRoot,
     })
 
     expect(result.findings).toEqual([])
@@ -1612,33 +1676,77 @@ describe("multi_reviewer tool", () => {
   })
 
   test("compiles list of findings correctly", async () => {
-    const tool = createMultiReviewerTool()
-    const findings = [
-      {
-        severity: "high" as const,
-        summary: "Bug A",
-        evidence: "line 1",
-        recommendedAction: "Fix it",
-        reviewer: "Reviewer #1",
-      },
-      {
-        severity: "low" as const,
-        summary: "Notice B",
-        evidence: "line 2",
-        recommendedAction: "Clean it",
-        reviewer: "Reviewer #2",
-      },
-    ]
+    const repoRoot = `/tmp/pi-ce-reviewer-compile-${Date.now()}`
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
+    await writeFile(
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+      JSON.stringify({
+        review: {
+          model: "anthropic/claude-3-opus",
+          thinkingLevel: "high",
+          reviewers: []
+        }
+      }),
+      "utf8",
+    )
 
-    // We can directly verify the formatting logic by passing mock findings to a helper or checking output formats.
-    // Let's check that execute returns expected fields.
+    const tool = createMultiReviewerTool()
     const result = await tool.execute({
       stepName: "review",
       primaryOutput: "const x = 1",
-      reviewers: [], // won't run child processes since reviewers array is empty
-      repoRoot: "/tmp",
+      repoRoot,
     })
     expect(result.findings).toBeDefined()
+  })
+
+  test("automatically loads reviewers from config.json", async () => {
+    const repoRoot = `/tmp/pi-ce-reviewer-autoload-${Date.now()}`
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
+    await writeFile(
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+      JSON.stringify({
+        review: {
+          model: "anthropic/claude-3-opus",
+          thinkingLevel: "high",
+          reviewers: [
+            { model: "anthropic/claude-3-opus", thinkingLevel: "high" },
+            { model: "anthropic/claude-3-sonnet", thinkingLevel: "medium" },
+          ],
+        },
+      }),
+      "utf8",
+    )
+
+    const tool = createMultiReviewerTool()
+    const result = await tool.execute({
+      stepName: "review",
+      primaryOutput: "const x = 1",
+      repoRoot,
+    })
+
+    expect(result.compiledSummary).toContain("We ran the review across 2 reviewer model(s).")
+  })
+
+  test("does not fallback and returns no reviewers configured when reviewer config is missing", async () => {
+    const repoRoot = `/tmp/pi-ce-reviewer-fallback-${Date.now()}`
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
+    await writeFile(
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+      JSON.stringify({
+        // Empty config, no "review" block
+      }),
+      "utf8",
+    )
+
+    const tool = createMultiReviewerTool()
+    const result = await tool.execute({
+      stepName: "review",
+      primaryOutput: "const x = 1",
+      repoRoot,
+    })
+
+    expect(result.findings).toEqual([])
+    expect(result.compiledSummary).toBe("No reviewers configured.")
   })
 })
 
