@@ -76,7 +76,7 @@ If the same tool, command, or implementation unit fails 3 consecutive times, sto
 5. Use `task_splitter` for dependency analysis
 6. Execute: **hybrid mode** — run dependent task groups sequentially inline. For parallel-safe independent groups, you may delegate execution to concurrent `pi` child processes.
 7. Follow TDD per unit: RED → minimal code → GREEN → refactor → unit-level **verification** (applies to both inline and subagent execution)
-8. **Source-driven gate:** Before implementing framework/library-specific code, verify the API or pattern against official documentation. Flag unverified patterns as UNVERIFIED in output.
+8. **Source-driven gate:** Before implementing framework/library-specific code, verify the API or pattern against official documentation using the `contextqmd` CLI as the primary tool (see [shared contextqmd docs instruction](../references/contextqmd-docs.md)). Run `contextqmd libraries list --json` to check for installed docs, install missing libraries via `contextqmd libraries install <library>`, search local docs via `contextqmd docs search`, and retrieve pages using `contextqmd docs get` to confirm usage. Cite key documentation sources in the output, and flag unverified patterns as UNVERIFIED in output.
 9. Record progress via `references/progress-update-format.md`
 9. Save `session_checkpoint` after each unit
 10. On failure: `session_checkpoint` `fail` → `retry` → follow strategy

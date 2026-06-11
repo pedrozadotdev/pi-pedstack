@@ -113,6 +113,7 @@ describe("skill package contracts", () => {
     expect(content).toContain("TDD violation")
     expect(content).toContain("docs/brainstorms/")
     expect(content).toContain("docs/plans/")
+    expect(content).toContain("contextqmd")
     // Must include grep-first solution search strategy
     expect(content).toContain("grep -rl")
     expect(content).toContain("~/.pi/agent/docs/solutions")
@@ -195,6 +196,7 @@ describe("skill package contracts", () => {
     expect(content).toContain("completion report")
     expect(content).toContain("verification")
     expect(content).not.toContain("worktree")
+    expect(content).toContain("contextqmd")
     expect(progress).toContain("Completed")
     expect(progress).toContain("Verification")
     expect(handoff).toContain("04-review")
@@ -276,4 +278,15 @@ describe("skill package contracts", () => {
     // Must define two-level search: project-level + global-level
     expect(strategy).toContain("~/.pi/agent/docs/solutions")
   })
+
+  test("contextqmd reference file exists and defines CLI search workflow", () => {
+    const refFile = path.join(repoRoot, "skills", "references", "contextqmd-docs.md")
+    expect(existsSync(refFile)).toBe(true)
+    const content = readFileSync(refFile, "utf8")
+    expect(content).toContain("contextqmd")
+    expect(content).toContain("libraries list")
+    expect(content).toContain("docs search")
+    expect(content).toContain("docs get")
+  })
 })
+
