@@ -4,9 +4,10 @@ import { mkdir, writeFile } from "node:fs/promises"
 
 mock.module("@earendil-works/pi-ai", () => {
   return {
-    complete: async (model: any, prompt: any, options: any) => {
+    completeSimple: async (model: any, prompt: any, options: any) => {
       return {
-        content: [{ type: "text", text: "A simulated description of the image." }]
+        content: [{ type: "text", text: "A simulated description of the image." }],
+        stopReason: "stop",
       }
     }
   }
@@ -23,6 +24,11 @@ mock.module("node:child_process", () => {
           on: (event: string, cb: Function) => {
             stdoutListeners[event] = stdoutListeners[event] || []
             stdoutListeners[event].push(cb)
+          }
+        },
+        stderr: {
+          on: (event: string, cb: Function) => {
+            // no-op for tests
           }
         },
         on: (event: string, cb: Function) => {
@@ -1136,7 +1142,6 @@ describe("ce-core extension runtime registration", () => {
       "pattern_extractor",
       "context_handoff",
       "multi_reviewer",
-      "image_descriptor",
     ])
   })
 
@@ -1764,111 +1769,6 @@ describe("multi_reviewer tool", () => {
   })
 })
 
-describe("image descriptor hook & tool", () => {
-  test("before_agent_start hook appends suggestion when model lacks vision", async () => {
-    const eventHandlers = new Map<string, any[]>()
-    const pi = {
-      registerTool() {},
-      on(event: string, handler: any) {
-        const handlers = eventHandlers.get(event) ?? []
-        handlers.push(handler)
-        eventHandlers.set(event, handlers)
-      },
-      registerCommand() {},
-    }
-
-    ceCoreExtension(pi as never)
-
-    const handlers = eventHandlers.get("before_agent_start") ?? []
-    expect(handlers.length).toBeGreaterThan(0)
-
-    const event = {
-      type: "before_agent_start",
-      prompt: "describe this image",
-      systemPrompt: "You are an assistant.",
-    }
-
-    const ctx = {
-      cwd: "/tmp",
-      model: { provider: "anthropic", id: "claude-3-sonnet", input: ["text"] },
-      modelRegistry: {
-        find() { return {} },
-      },
-    }
-
-    const result = await handlers[0](event, ctx)
-    expect(result).toBeDefined()
-    expect(result.systemPrompt).toContain("You do not have native vision capabilities")
-    expect(result.systemPrompt).toContain("image_descriptor")
-  })
-
-  test("before_agent_start hook does not append suggestion when model has vision", async () => {
-    const eventHandlers = new Map<string, any[]>()
-    const pi = {
-      registerTool() {},
-      on(event: string, handler: any) {
-        const handlers = eventHandlers.get(event) ?? []
-        handlers.push(handler)
-        eventHandlers.set(event, handlers)
-      },
-      registerCommand() {},
-    }
-
-    ceCoreExtension(pi as never)
-
-    const handlers = eventHandlers.get("before_agent_start") ?? []
-    expect(handlers.length).toBeGreaterThan(0)
-
-    const event = {
-      type: "before_agent_start",
-      prompt: "describe this image",
-      systemPrompt: "You are an assistant.",
-    }
-
-    const ctx = {
-      cwd: "/tmp",
-      model: { provider: "google", id: "gemini-2.5-flash", input: ["text", "image"] },
-      modelRegistry: {
-        find() { return {} },
-      },
-    }
-
-    const result = await handlers[0](event, ctx)
-    expect(result).toBeUndefined()
-  })
-
-  test("image_descriptor tool execution describes the image", async () => {
-    const repoRoot = `/tmp/pi-ce-image-tool-${Date.now()}`
-    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
-    
-    const dummyPngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d])
-    const imagePath = path.join(repoRoot, "test.png")
-    await writeFile(imagePath, dummyPngBytes)
-
-    const { createImageDescriptorTool } = require("../extensions/ce-core/tools/image-descriptor")
-    const tool = createImageDescriptorTool()
-
-    const ctx = {
-      cwd: repoRoot,
-      model: { provider: "anthropic", id: "claude-3-sonnet", input: ["text"] },
-      modelRegistry: {
-        find(provider: string, id: string) {
-          return { provider, id, input: ["image"] }
-        },
-        async getApiKeyAndHeaders() {
-          return { ok: true, apiKey: "fake-key" }
-        },
-      },
-    }
-
-    const result = await tool.execute({
-      imagePath: "test.png",
-      prompt: "Custom describe prompt",
-    }, ctx)
-
-    expect(result).toBe("A simulated description of the image.")
-  })
-})
 
 describe("public exports", () => {
   test("only exports the extension default and public utility functions", async () => {
@@ -1887,7 +1787,6 @@ describe("public exports", () => {
       "createPatternExtractorTool",
       "createContextHandoffTool",
       "createMultiReviewerTool",
-      "createImageDescriptorTool",
       "getBrainstormArtifactPath",
       "getPlanArtifactPath",
       "getSolutionArtifactPath",

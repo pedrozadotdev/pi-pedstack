@@ -89,10 +89,6 @@ Here is a complete configuration schema example:
 
 ```json
 {
-  "imageDescriptor": {
-    "model": "google/gemini-2.5-flash",
-    "thinkingLevel": "off"
-  },
   "brainstorm": {
     "model": "anthropic/claude-sonnet-4-20250514",
     "thinkingLevel": "high",
@@ -138,7 +134,6 @@ Here is a complete configuration schema example:
 
 #### Supported Keys and Options
 
-* **`imageDescriptor`**: Customizes the vision model used to describe user-attached images (defaulting to `google/gemini-2.5-flash`).
 * **`reviewers`**: Stages that support parallel reviews (`brainstorm`, `plan`, `review`, `learn`) can define an array of sub-reviewers. These reviews will run concurrently using subagents on the specified models.
 
 ### Dynamic Append Instructions

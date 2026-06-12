@@ -8,12 +8,12 @@ import * as os from "node:os"
 
 export interface StepConfig {
   model: string
-  thinkingLevel: string
+  thinkingLevel?: string
 }
 
 export interface ReviewerConfig {
   model: string
-  thinkingLevel: string
+  thinkingLevel?: string
 }
 
 export interface ReviewableStepConfig extends StepConfig {
@@ -21,7 +21,6 @@ export interface ReviewableStepConfig extends StepConfig {
 }
 
 export interface PiPedstackConfig {
-  imageDescriptor?: StepConfig
   brainstorm?: ReviewableStepConfig
   plan?: ReviewableStepConfig
   work?: StepConfig
@@ -58,7 +57,9 @@ export function getConfigKeyForSkill(skillName: string): keyof PiPedstackConfig 
 function isStepConfig(value: unknown): value is StepConfig {
   if (!value || typeof value !== "object") return false
   const obj = value as Record<string, unknown>
-  return typeof obj.model === "string" && typeof obj.thinkingLevel === "string"
+  if (typeof obj.model !== "string") return false
+  if (obj.thinkingLevel !== undefined && typeof obj.thinkingLevel !== "string") return false
+  return true
 }
 
 function isReviewerConfig(value: unknown): value is ReviewerConfig {
@@ -82,11 +83,11 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
   const config: PiPedstackConfig = {}
 
   // Simple step configs (no reviewers)
-  for (const key of ["imageDescriptor", "work", "debug", "docsync"] as const) {
+  for (const key of ["work", "debug", "docsync"] as const) {
     if (obj[key] !== undefined) {
       if (!isStepConfig(obj[key])) {
         throw new Error(
-          `pi-pedstack config: "${key}" must have "model" (string) and "thinkingLevel" (string)`,
+          `pi-pedstack config: "${key}" must have "model" (string) and optional "thinkingLevel" (string)`,
         )
       }
       config[key] = obj[key] as StepConfig
@@ -98,7 +99,7 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
     if (obj[key] !== undefined) {
       if (!isReviewableStepConfig(obj[key])) {
         throw new Error(
-          `pi-pedstack config: "${key}" must have "model" (string), "thinkingLevel" (string), and optional "reviewers" array of {model, thinkingLevel}`,
+          `pi-pedstack config: "${key}" must have "model" (string), optional "thinkingLevel" (string), and optional "reviewers" array of {model, thinkingLevel}`,
         )
       }
       config[key] = obj[key] as ReviewableStepConfig
@@ -107,8 +108,8 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
 
   // Warn about unknown keys
   for (const key of Object.keys(obj)) {
-    if (!VALID_STEP_NAMES.has(key) && key !== "imageDescriptor") {
-      console.warn(`[pi-pedstack] Unknown config key: "${key}". Valid keys: ${[...VALID_STEP_NAMES, "imageDescriptor"].join(", ")}`)
+    if (!VALID_STEP_NAMES.has(key)) {
+      console.warn(`[pi-pedstack] Unknown config key: "${key}". Valid keys: ${[...VALID_STEP_NAMES].join(", ")}`)
     }
   }
 

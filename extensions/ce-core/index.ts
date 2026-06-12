@@ -18,7 +18,6 @@ import { COMPACTION_FOCUS_INSTRUCTIONS } from "./tools/compaction-optimizer"
 import { readPiPedstackConfig, getConfigKeyForSkill } from "./utils/config-types"
 import { loadAppendContext } from "./utils/append-loader"
 import { createMultiReviewerTool } from "./tools/multi-reviewer"
-import { registerImageDescriptorHook, createImageDescriptorTool } from "./tools/image-descriptor"
 
 const artifactHelperParams = Type.Object({
   repoRoot: Type.String({ description: "Repository root where workflow artifacts should be created" }),
@@ -168,10 +167,6 @@ const multiReviewerParams = Type.Object({
   repoRoot: Type.String({ description: "Repository root path" }),
 })
 
-const imageDescriptorParams = Type.Object({
-  imagePath: Type.String({ description: "Path to the image (relative or absolute)" }),
-  prompt: Type.Optional(Type.String({ description: "Optional instruction prompt to guide description" })),
-})
 
 const patternExtractorParams = Type.Object({
   operation: Type.Union([
@@ -233,7 +228,6 @@ function parseModelRef(
 }
 
 export default function ceCoreExtension(pi: ExtensionAPI) {
-  registerImageDescriptorHook(pi)
 
   pi.on("input", async (event, ctx) => {
     if (event.source === "extension") {
@@ -328,7 +322,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
   const patternExtractor = createPatternExtractorTool()
   const contextHandoff = createContextHandoffTool()
   const multiReviewer = createMultiReviewerTool()
-  const imageDescriptor = createImageDescriptorTool()
 
   pi.registerTool({
     name: artifactHelper.name,
@@ -565,24 +558,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
     },
   })
 
-  pi.registerTool({
-    name: imageDescriptor.name,
-    label: "Image Descriptor",
-    description: "Describe an image's contents using the configured vision model.",
-    parameters: imageDescriptorParams,
-    async execute(_toolCallId, params, ctx) {
-      const result = await imageDescriptor.execute({
-        imagePath: params.imagePath,
-        prompt: params.prompt,
-      }, ctx)
-
-      return {
-        content: [{ type: "text", text: result }],
-        details: { description: result },
-      }
-    },
-  })
-
   // Bash output smart filter — reduces context waste from verbose command output
   pi.on("tool_result", async (event, _ctx) => {
     if (event.toolName !== "bash") return undefined
@@ -679,7 +654,6 @@ export { createSessionHistoryTool } from "./tools/session-history"
 export { createPatternExtractorTool } from "./tools/pattern-extractor"
 export { createContextHandoffTool } from "./tools/context-handoff"
 export { createMultiReviewerTool } from "./tools/multi-reviewer"
-export { createImageDescriptorTool } from "./tools/image-descriptor"
 export {
   getBrainstormArtifactPath,
   getPlanArtifactPath,
