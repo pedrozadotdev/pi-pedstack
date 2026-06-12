@@ -242,7 +242,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
     // Skip model/thinking switching during streaming steers — these are
     // mid-stream interrupts, not new pipeline invocations.
-    if (event.streamingBehavior === "steer") {
+    const isSteer = (event as any).streamingBehavior === "steer" || (ctx.isIdle && !ctx.isIdle())
+    if (isSteer) {
       return { action: "continue" as const }
     }
 
@@ -250,7 +251,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
     const configKey = getConfigKeyForSkill(stageKey)
     const stepConfig = configKey ? config?.[configKey] : null
     // Notification guard: only notify in interactive (TUI) or RPC modes.
-    const shouldNotify = ctx.mode === "tui" || ctx.mode === "rpc"
+    const shouldNotify = (ctx as any).mode === "tui" || (ctx as any).mode === "rpc" || ctx.hasUI
 
     // Model switching
     if (stepConfig?.model) {

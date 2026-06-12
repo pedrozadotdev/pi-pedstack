@@ -2,6 +2,16 @@ import { describe, expect, test, mock } from "bun:test"
 import path from "node:path"
 import { mkdir, writeFile } from "node:fs/promises"
 
+mock.module("@earendil-works/pi-ai", () => {
+  return {
+    complete: async (model: any, prompt: any, options: any) => {
+      return {
+        content: [{ type: "text", text: "A simulated description of the image." }]
+      }
+    }
+  }
+})
+
 mock.module("node:child_process", () => {
   return {
     spawn: (command: string, args: string[], options: any) => {
@@ -1747,6 +1757,191 @@ describe("multi_reviewer tool", () => {
 
     expect(result.findings).toEqual([])
     expect(result.compiledSummary).toBe("No reviewers configured.")
+  })
+})
+
+describe("image descriptor hook", () => {
+  test("before_agent_start hook runs and appends to systemPrompt when images exist", async () => {
+    const eventHandlers = new Map<string, any[]>()
+    const repoRoot = `/tmp/pi-ce-image-desc-${Date.now()}`
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
+    await writeFile(
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+      JSON.stringify({
+        imageDescriptor: {
+          model: "google/gemini-2.0-flash",
+          thinkingLevel: "off",
+        },
+      }),
+      "utf8",
+    )
+
+    const pi = {
+      registerTool() {},
+      on(event: string, handler: any) {
+        const handlers = eventHandlers.get(event) ?? []
+        handlers.push(handler)
+        eventHandlers.set(event, handlers)
+      },
+      registerCommand() {},
+    }
+
+    ceCoreExtension(pi as never)
+
+    const handlers = eventHandlers.get("before_agent_start") ?? []
+    expect(handlers.length).toBeGreaterThan(0)
+
+    const event = {
+      type: "before_agent_start",
+      prompt: "describe this image",
+      images: [
+        {
+          type: "image",
+          data: "base64-image-data",
+          mimeType: "image/png",
+        },
+      ],
+      systemPrompt: "You are an assistant.",
+    }
+
+    const ctx = {
+      cwd: repoRoot,
+      modelRegistry: {
+        find(provider: string, id: string) {
+          return { provider, id, input: ["image"] }
+        },
+        async getApiKeyAndHeaders() {
+          return { ok: true, apiKey: "fake-key" }
+        },
+      },
+    }
+
+    const result = await handlers[0](event, ctx)
+    expect(result).toBeDefined()
+    expect(result.systemPrompt).toContain("A simulated description of the image.")
+    expect(result.systemPrompt).toContain("Attached Image #1 Description")
+  })
+
+  test("before_agent_start falls back to available vision model when configured vision model is missing", async () => {
+    const eventHandlers = new Map<string, any[]>()
+    const repoRoot = `/tmp/pi-ce-image-fallback-${Date.now()}`
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
+    await writeFile(
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+      JSON.stringify({
+        imageDescriptor: {
+          model: "google/gemini-nonexistent",
+          thinkingLevel: "off",
+        },
+      }),
+      "utf8",
+    )
+
+    const pi = {
+      registerTool() {},
+      on(event: string, handler: any) {
+        const handlers = eventHandlers.get(event) ?? []
+        handlers.push(handler)
+        eventHandlers.set(event, handlers)
+      },
+      registerCommand() {},
+    }
+
+    ceCoreExtension(pi as never)
+
+    const handlers = eventHandlers.get("before_agent_start") ?? []
+    const event = {
+      type: "before_agent_start",
+      prompt: "what is this?",
+      images: [
+        {
+          type: "image",
+          data: "base64-apple-data",
+          mimeType: "image/png",
+        },
+      ],
+      systemPrompt: "You are an assistant.",
+    }
+
+    const ctx = {
+      cwd: repoRoot,
+      modelRegistry: {
+        find(provider: string, id: string) {
+          if (id === "gemini-nonexistent") return undefined
+          return { provider, id, input: ["image"] }
+        },
+        getAvailable() {
+          return [
+            { provider: "google", id: "gemini-2.0-flash", input: ["image"] },
+          ]
+        },
+        async getApiKeyAndHeaders() {
+          return { ok: true, apiKey: "fallback-key" }
+        },
+      },
+    }
+
+    const result = await handlers[0](event, ctx)
+    expect(result).toBeDefined()
+    expect(result.systemPrompt).toContain("A simulated description of the image.")
+  })
+
+  test("before_agent_start hook parses image path from prompt and generates description", async () => {
+    const eventHandlers = new Map<string, any[]>()
+    const repoRoot = `/tmp/pi-ce-image-prompt-${Date.now()}`
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
+    await writeFile(
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+      JSON.stringify({
+        imageDescriptor: {
+          model: "google/gemini-2.0-flash",
+          thinkingLevel: "off",
+        },
+      }),
+      "utf8",
+    )
+
+    // Write a dummy file with PNG signature so local detection detects it as PNG
+    const dummyPngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d])
+    const imagePath = path.join(repoRoot, "xs05.png")
+    await writeFile(imagePath, dummyPngBytes)
+
+    const pi = {
+      registerTool() {},
+      on(event: string, handler: any) {
+        const handlers = eventHandlers.get(event) ?? []
+        handlers.push(handler)
+        eventHandlers.set(event, handlers)
+      },
+      registerCommand() {},
+    }
+
+    ceCoreExtension(pi as never)
+
+    const handlers = eventHandlers.get("before_agent_start") ?? []
+    const event = {
+      type: "before_agent_start",
+      prompt: `describe the image at @xs05.png.`,
+      images: [],
+      systemPrompt: "You are an assistant.",
+    }
+
+    const ctx = {
+      cwd: repoRoot,
+      modelRegistry: {
+        find(provider: string, id: string) {
+          return { provider, id, input: ["image"] }
+        },
+        async getApiKeyAndHeaders() {
+          return { ok: true, apiKey: "fake-key" }
+        },
+      },
+    }
+
+    const result = await handlers[0](event, ctx)
+    expect(result).toBeDefined()
+    expect(result.systemPrompt).toContain("A simulated description of the image.")
+    expect(result.systemPrompt).toContain("Attached Image #1 Description")
   })
 })
 

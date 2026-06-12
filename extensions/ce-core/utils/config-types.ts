@@ -67,7 +67,7 @@ function isReviewerConfig(value: unknown): value is ReviewerConfig {
 
 function isReviewableStepConfig(value: unknown): value is ReviewableStepConfig {
   if (!isStepConfig(value)) return false
-  const obj = value as Record<string, unknown>
+  const obj = value as unknown as Record<string, unknown>
   if (obj.reviewers === undefined) return true
   if (!Array.isArray(obj.reviewers)) return false
   return obj.reviewers.every(isReviewerConfig)
