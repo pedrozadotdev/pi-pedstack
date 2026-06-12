@@ -58,6 +58,7 @@ describe("skill package contracts", () => {
     expect(content).toContain("session_history")
     expect(content).toContain("docs/brainstorms")
     expect(content).toContain("docs/plans")
+    expect(content).toContain("docs/reviews")
     expect(content).toContain("docs/solutions")
     expect(content).toContain(".context/compound-engineering")
     expect(content).toContain("next")
@@ -219,6 +220,7 @@ describe("skill package contracts", () => {
 
     expect(content).toContain("diff scope")
     expect(content).toContain("plan")
+    expect(content).toContain("docs/reviews")
     expect(content).toContain("structured findings")
     expect(content).toContain("review_router")
     expect(content).toContain("autofix")

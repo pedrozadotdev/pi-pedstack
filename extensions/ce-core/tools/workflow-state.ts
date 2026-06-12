@@ -32,6 +32,7 @@ export interface WorkflowStateInput {
 export interface WorkflowStateResult {
   brainstorms: WorkflowCategoryState
   plans: WorkflowCategoryState
+  reviews: WorkflowCategoryState
   solutions: WorkflowCategoryState
   runs: WorkflowCategoryState
   context: WorkflowContextState
@@ -138,6 +139,7 @@ export function createWorkflowStateTool() {
       return {
         brainstorms: scanDir(path.join(repoRoot, "docs", "brainstorms")),
         plans: scanDir(path.join(repoRoot, "docs", "plans")),
+        reviews: scanDir(path.join(repoRoot, "docs", "reviews")),
         solutions: scanDir(path.join(repoRoot, "docs", "solutions")),
         runs: scanDir(path.join(repoRoot, ".context", "compound-engineering")),
         context: readContextState(repoRoot),

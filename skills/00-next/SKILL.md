@@ -45,6 +45,7 @@ See `references/recommendation-logic.md` for full recommendation rules and skill
 |---|---|
 | Brainstorm | `docs/brainstorms/` |
 | Plan | `docs/plans/` |
+| Review | `docs/reviews/` |
 | Solution | `docs/solutions/` |
 | Runtime | `.context/compound-engineering/` |
 

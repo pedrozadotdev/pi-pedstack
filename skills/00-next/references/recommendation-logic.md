@@ -61,21 +61,21 @@ If `brainstorms.count > 0` and `plans.count === 0`:
 
 ## Rule 3: Plan exists, no recent review
 
-If `plans.count > 0` and the latest plan has no corresponding review artifact:
+If `plans.count > 0` and the latest plan has no corresponding review findings report under `docs/reviews/`:
 - Recommend `03-work`
 - Reason: A plan is ready for execution. Run `03-work` to implement it.
 
 ## Rule 4: After work, review
 
-If code changes have been made (detected by git diff) and no recent review exists:
+If code changes have been made (detected by git diff) and no recent review findings report exists under `docs/reviews/`:
 - Recommend `04-review`
-- Reason: Implementation is done. Review the changes with structured findings.
+- Reason: Implementation is done. Review the changes and compile a findings report.
 
 ## Rule 5: After review, learn
 
-If a review has been completed and `solutions.count` has not increased since the last workflow cycle:
+If a review findings report has been compiled under `docs/reviews/` and `solutions.count` has not increased since the last workflow cycle:
 - Recommend `05-learn`
-- Reason: A review was completed. Capture key learnings as a durable solution artifact.
+- Reason: A review findings report was completed. Capture key learnings as a durable solution artifact.
 
 ## Rule 6: All artifacts exist
 
@@ -112,6 +112,7 @@ If no rule matches cleanly:
 |---|---|---|
 | Brainstorm | `docs/brainstorms/` | — |
 | Plan | `docs/plans/` | — |
+| Review | `docs/reviews/` | — |
 | Solution | `docs/solutions/` | `~/.pi/agent/docs/solutions/` |
 | Handoff | `.context/compound-engineering/handoffs/` | — |
 | Runtime | `.context/compound-engineering/` | — |
@@ -123,6 +124,7 @@ When `workflow_state` returns artifacts, map them back to skills:
 - Files in `docs/brainstorms/` → produced by `01-brainstorm`
 - Files in `docs/plans/` → produced by `02-plan`
 - Files in `docs/solutions/` → produced by `05-learn`
+- Files in `docs/reviews/` → produced by `04-review`
 - `.context/compound-engineering/` runtime artifacts → produced by `03-work` or `04-review`
 
 ## Recommendation priority

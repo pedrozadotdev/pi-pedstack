@@ -104,6 +104,7 @@ When a stage produces or updates handoff-lite, use this evidence-first structure
 ## Artifacts
 - requirements: <path or N/A>
 - plan: <path or N/A>
+- review: <path or N/A>
 - checkpoint: <path or N/A>
 - proof: <path or N/A>
 

@@ -222,6 +222,7 @@ your-project/
 ├── docs/
 │   ├── brainstorms/      # Requirements
 │   ├── plans/             # Execution plans
+│   ├── reviews/           # Review findings reports
 │   ├── adr/               # Architecture decisions (lazy)
 │   └── solutions/         # Knowledge cards
 └── .context/

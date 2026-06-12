@@ -202,10 +202,12 @@ describe("workflow_state", () => {
 
     expect(result.brainstorms.count).toBe(0)
     expect(result.plans.count).toBe(0)
+    expect(result.reviews.count).toBe(0)
     expect(result.solutions.count).toBe(0)
     expect(result.runs.count).toBe(0)
     expect(result.brainstorms.latest).toBeNull()
     expect(result.plans.latest).toBeNull()
+    expect(result.reviews.latest).toBeNull()
     expect(result.solutions.latest).toBeNull()
     expect(result.runs.latest).toBeNull()
   })
@@ -222,6 +224,7 @@ describe("workflow_state", () => {
     expect(result.brainstorms.count).toBe(1)
     expect(result.brainstorms.latest).toBe("2026-04-17-test-requirements.md")
     expect(result.plans.count).toBe(0)
+    expect(result.reviews.count).toBe(0)
   })
 
   test("reports solutions recursively across subcategories", async () => {
@@ -1102,7 +1105,7 @@ describe("pattern_extractor", () => {
 
 
 describe("ce-core extension runtime registration", () => {
-  test("registers 11 workflow control tools (no subagent tools)", () => {
+  test("registers 12 workflow control tools (no subagent tools)", () => {
     const registeredNames: string[] = []
     const eventHandlers = new Map<string, any[]>()
     const pi = {
@@ -1133,6 +1136,7 @@ describe("ce-core extension runtime registration", () => {
       "pattern_extractor",
       "context_handoff",
       "multi_reviewer",
+      "image_descriptor",
     ])
   })
 
@@ -1760,22 +1764,9 @@ describe("multi_reviewer tool", () => {
   })
 })
 
-describe("image descriptor hook", () => {
-  test("before_agent_start hook runs and appends to systemPrompt when images exist", async () => {
+describe("image descriptor hook & tool", () => {
+  test("before_agent_start hook appends suggestion when model lacks vision", async () => {
     const eventHandlers = new Map<string, any[]>()
-    const repoRoot = `/tmp/pi-ce-image-desc-${Date.now()}`
-    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
-    await writeFile(
-      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
-      JSON.stringify({
-        imageDescriptor: {
-          model: "google/gemini-2.0-flash",
-          thinkingLevel: "off",
-        },
-      }),
-      "utf8",
-    )
-
     const pi = {
       registerTool() {},
       on(event: string, handler: any) {
@@ -1794,49 +1785,25 @@ describe("image descriptor hook", () => {
     const event = {
       type: "before_agent_start",
       prompt: "describe this image",
-      images: [
-        {
-          type: "image",
-          data: "base64-image-data",
-          mimeType: "image/png",
-        },
-      ],
       systemPrompt: "You are an assistant.",
     }
 
     const ctx = {
-      cwd: repoRoot,
+      cwd: "/tmp",
+      model: { provider: "anthropic", id: "claude-3-sonnet", input: ["text"] },
       modelRegistry: {
-        find(provider: string, id: string) {
-          return { provider, id, input: ["image"] }
-        },
-        async getApiKeyAndHeaders() {
-          return { ok: true, apiKey: "fake-key" }
-        },
+        find() { return {} },
       },
     }
 
     const result = await handlers[0](event, ctx)
     expect(result).toBeDefined()
-    expect(result.systemPrompt).toContain("A simulated description of the image.")
-    expect(result.systemPrompt).toContain("Attached Image #1 Description")
+    expect(result.systemPrompt).toContain("You do not have native vision capabilities")
+    expect(result.systemPrompt).toContain("image_descriptor")
   })
 
-  test("before_agent_start falls back to available vision model when configured vision model is missing", async () => {
+  test("before_agent_start hook does not append suggestion when model has vision", async () => {
     const eventHandlers = new Map<string, any[]>()
-    const repoRoot = `/tmp/pi-ce-image-fallback-${Date.now()}`
-    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
-    await writeFile(
-      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
-      JSON.stringify({
-        imageDescriptor: {
-          model: "google/gemini-nonexistent",
-          thinkingLevel: "off",
-        },
-      }),
-      "utf8",
-    )
-
     const pi = {
       registerTool() {},
       on(event: string, handler: any) {
@@ -1850,84 +1817,40 @@ describe("image descriptor hook", () => {
     ceCoreExtension(pi as never)
 
     const handlers = eventHandlers.get("before_agent_start") ?? []
+    expect(handlers.length).toBeGreaterThan(0)
+
     const event = {
       type: "before_agent_start",
-      prompt: "what is this?",
-      images: [
-        {
-          type: "image",
-          data: "base64-apple-data",
-          mimeType: "image/png",
-        },
-      ],
+      prompt: "describe this image",
       systemPrompt: "You are an assistant.",
     }
 
     const ctx = {
-      cwd: repoRoot,
+      cwd: "/tmp",
+      model: { provider: "google", id: "gemini-2.5-flash", input: ["text", "image"] },
       modelRegistry: {
-        find(provider: string, id: string) {
-          if (id === "gemini-nonexistent") return undefined
-          return { provider, id, input: ["image"] }
-        },
-        getAvailable() {
-          return [
-            { provider: "google", id: "gemini-2.0-flash", input: ["image"] },
-          ]
-        },
-        async getApiKeyAndHeaders() {
-          return { ok: true, apiKey: "fallback-key" }
-        },
+        find() { return {} },
       },
     }
 
     const result = await handlers[0](event, ctx)
-    expect(result).toBeDefined()
-    expect(result.systemPrompt).toContain("A simulated description of the image.")
+    expect(result).toBeUndefined()
   })
 
-  test("before_agent_start hook parses image path from prompt and generates description", async () => {
-    const eventHandlers = new Map<string, any[]>()
-    const repoRoot = `/tmp/pi-ce-image-prompt-${Date.now()}`
+  test("image_descriptor tool execution describes the image", async () => {
+    const repoRoot = `/tmp/pi-ce-image-tool-${Date.now()}`
     await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
-    await writeFile(
-      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
-      JSON.stringify({
-        imageDescriptor: {
-          model: "google/gemini-2.0-flash",
-          thinkingLevel: "off",
-        },
-      }),
-      "utf8",
-    )
-
-    // Write a dummy file with PNG signature so local detection detects it as PNG
+    
     const dummyPngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d])
-    const imagePath = path.join(repoRoot, "xs05.png")
+    const imagePath = path.join(repoRoot, "test.png")
     await writeFile(imagePath, dummyPngBytes)
 
-    const pi = {
-      registerTool() {},
-      on(event: string, handler: any) {
-        const handlers = eventHandlers.get(event) ?? []
-        handlers.push(handler)
-        eventHandlers.set(event, handlers)
-      },
-      registerCommand() {},
-    }
-
-    ceCoreExtension(pi as never)
-
-    const handlers = eventHandlers.get("before_agent_start") ?? []
-    const event = {
-      type: "before_agent_start",
-      prompt: `describe the image at @xs05.png.`,
-      images: [],
-      systemPrompt: "You are an assistant.",
-    }
+    const { createImageDescriptorTool } = require("../extensions/ce-core/tools/image-descriptor")
+    const tool = createImageDescriptorTool()
 
     const ctx = {
       cwd: repoRoot,
+      model: { provider: "anthropic", id: "claude-3-sonnet", input: ["text"] },
       modelRegistry: {
         find(provider: string, id: string) {
           return { provider, id, input: ["image"] }
@@ -1938,10 +1861,12 @@ describe("image descriptor hook", () => {
       },
     }
 
-    const result = await handlers[0](event, ctx)
-    expect(result).toBeDefined()
-    expect(result.systemPrompt).toContain("A simulated description of the image.")
-    expect(result.systemPrompt).toContain("Attached Image #1 Description")
+    const result = await tool.execute({
+      imagePath: "test.png",
+      prompt: "Custom describe prompt",
+    }, ctx)
+
+    expect(result).toBe("A simulated description of the image.")
   })
 })
 
@@ -1962,6 +1887,7 @@ describe("public exports", () => {
       "createPatternExtractorTool",
       "createContextHandoffTool",
       "createMultiReviewerTool",
+      "createImageDescriptorTool",
       "getBrainstormArtifactPath",
       "getPlanArtifactPath",
       "getSolutionArtifactPath",
