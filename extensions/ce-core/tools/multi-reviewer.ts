@@ -223,7 +223,7 @@ export function createMultiReviewerTool() {
 
       // Read configuration automatically
       const config = await readPiPedstackConfig(input.repoRoot)
-      let configKey = input.stepName
+      let configKey = input.stepName.trim().toLowerCase()
       if (configKey.startsWith("0")) {
         const mappedKey = getConfigKeyForSkill(configKey)
         if (mappedKey) {

@@ -1767,6 +1767,33 @@ describe("multi_reviewer tool", () => {
     expect(result.findings).toEqual([])
     expect(result.compiledSummary).toBe("No reviewers configured.")
   })
+
+  test("normalizes stepName (whitespace and casing) when loading configuration", async () => {
+    const repoRoot = `/tmp/pi-ce-reviewer-normalize-${Date.now()}`
+    await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true })
+    await writeFile(
+      path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+      JSON.stringify({
+        learn: {
+          model: "opencode-go/deepseek-v4-flash",
+          thinkingLevel: "medium",
+          reviewers: [
+            { model: "opencode-go/mimo-v2.5", thinkingLevel: "medium" }
+          ],
+        },
+      }),
+      "utf8",
+    )
+
+    const tool = createMultiReviewerTool()
+    const result = await tool.execute({
+      stepName: "  05-Learn  ",
+      primaryOutput: "const x = 1",
+      repoRoot,
+    })
+
+    expect(result.compiledSummary).toContain("We ran the review across 1 reviewer model(s).")
+  })
 })
 
 
