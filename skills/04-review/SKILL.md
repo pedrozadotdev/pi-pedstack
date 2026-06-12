@@ -19,7 +19,7 @@ See [shared pipeline instructions](../references/pipeline-config.md) for model r
    - If frontend/browser changes, also load `rules/web/` files
 2. **Priority:** project-level `{repo-root}/rules/` overrides package defaults
 3. Determine **diff scope** before selecting reviewers
-4. Use **`review_router`** tool to select reviewer personas based on diff metadata, and run **`multi_reviewer`** to orchestrate parallel reviewer subagents.
+4. Use **`review_router`** tool to select reviewer personas based on diff metadata, and run **`multi_reviewer`** (with `stepName: "04-review"`) to orchestrate parallel reviewer subagents.
 5. Read relevant **plan** artifact when exists
 6. Run solution search (see `references/solution-search.md`):
    - Extract keywords → `grep -rl "tags:.*keyword" docs/solutions/ ~/.pi/agent/docs/solutions/`
@@ -55,7 +55,7 @@ Code review is **technical evaluation**, not social performance:
 6. Apply each reviewer persona from `review_router`
 7. Merge all reviewer findings into a compiled review findings report (save to `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<date>-<topic>.md`) following the structure in `references/review-findings-template.md`
 8. Verify each finding against codebase and update the report
-9. Invoke the **`multi_reviewer`** tool (required, execute this every time) to review the compiled review findings report, passing the report content as the `primaryOutput` parameter, and use the sub-reviewer feedback to refine the report or find missing issues
+9. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "04-review"` to review the compiled review findings report, passing the report content as the `primaryOutput` parameter, and use the sub-reviewer feedback to refine the report or find missing issues
 10. Apply autofixes, re-run tests, re-review if needed
 
 ## Optional: QA Test Mode

@@ -32,7 +32,7 @@ See [shared pipeline instructions](../references/pipeline-config.md) for model r
 4. Search `docs/solutions/` for related artifacts and perform an overlap check.
 5. Choose the correct category using `references/category-map.md`.
 6. Write or update the solution artifact under `docs/solutions/<category>/`.
-7. Invoke the **`multi_reviewer`** tool (required, execute this every time) to review the newly written or updated solution card (the solution artifact).
+7. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "05-learn"` to review the newly written or updated solution card (the solution artifact).
 8. Mention how future `02-plan` and `04-review` runs should benefit from the new learning.
 9. Include `🧠 Context Status` (health, handoff path, active files, recommendation for `06-docsync`) for workflow progression.
 10. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`. Recommend `06-docsync` as the next step.
