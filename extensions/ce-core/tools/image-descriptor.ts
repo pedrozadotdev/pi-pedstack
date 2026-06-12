@@ -37,17 +37,28 @@ function detectSupportedImageMimeType(buffer: Buffer): string | null {
 async function detectSupportedMimeType(filePath: string): Promise<string | null> {
   try {
     const fd = fs.openSync(filePath, "r")
+    let mime: string | null = null
     try {
       const buffer = Buffer.alloc(12)
       const bytesRead = fs.readSync(fd, buffer, 0, 12, 0)
-      if (bytesRead < 3) return null
-      return detectSupportedImageMimeType(buffer.subarray(0, bytesRead) as Buffer)
+      if (bytesRead >= 3) {
+        mime = detectSupportedImageMimeType(buffer.subarray(0, bytesRead) as Buffer)
+      }
     } finally {
       fs.closeSync(fd)
     }
+    if (mime) return mime
   } catch {
-    return null
+    // ignore
   }
+
+  const ext = path.extname(filePath).toLowerCase()
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg"
+  if (ext === ".png") return "image/png"
+  if (ext === ".gif") return "image/gif"
+  if (ext === ".webp") return "image/webp"
+
+  return null
 }
 
 function computeHash(base64Data: string): string {
