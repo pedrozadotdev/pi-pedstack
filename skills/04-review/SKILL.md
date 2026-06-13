@@ -19,7 +19,7 @@ See [shared pipeline instructions](../references/pipeline-config.md) for model r
    - If frontend/browser changes, also load `rules/web/` files
 2. **Priority:** project-level `{repo-root}/rules/` overrides package defaults
 3. Determine **diff scope** before selecting reviewers
-4. Use **`review_router`** tool to select reviewer personas based on diff metadata, and run **`multi_reviewer`** (with `stepName: "04-review"`) to orchestrate parallel reviewer subagents.
+4. Use **`review_router`** tool to select reviewer personas based on diff metadata. You (the model) must perform the initial reviews yourself by applying each persona's perspective and rules. Do NOT run `multi_reviewer` to delegate or orchestrate parallel reviewer subagents at this stage; instead, apply all reviewer personas yourself to compile the initial findings report, and call `multi_reviewer` (with `stepName: "04-review"`) only after this initial review and pass it to the sub-reviewers to audit and refine the findings.
 5. Read relevant **plan** artifact when exists
 6. Run solution search (see `references/solution-search.md`):
    - Extract keywords → `grep -rl "tags:.*keyword" docs/solutions/ ~/.pi/agent/docs/solutions/`
@@ -52,7 +52,7 @@ Code review is **technical evaluation**, not social performance:
 3. Collect stats (files, insertions, deletions) → call `review_router`
 4. Read matching plan artifact
 5. Run solution search
-6. Apply each reviewer persona from `review_router`
+6. Apply each reviewer persona from `review_router` yourself. You must perform the evaluation for each persona yourself rather than delegating the task to `multi_reviewer` or other subagents at this stage.
 7. Merge all reviewer findings into a compiled review findings report (save to `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<topic>.md`) following the structure in `references/review-findings-template.md`
 8. Verify each finding against codebase and update the report
 9. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "04-review"` to review the compiled review findings report, passing the report content as the `primaryOutput` parameter, and use the sub-reviewer feedback to refine the report or find missing issues
