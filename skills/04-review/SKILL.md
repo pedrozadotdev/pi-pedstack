@@ -25,7 +25,7 @@ See [shared pipeline instructions](../references/pipeline-config.md) for model r
    - Extract keywords → `grep -rl "tags:.*keyword" docs/solutions/ ~/.pi/agent/docs/solutions/`
    - Read **frontmatter** only (first 15 lines) of matches → score by severity + tag relevance
    - Fully read top 3 candidates
-7. Produce a compiled review findings report under `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<date>-<topic>.md` (using `references/findings-schema.md` as the baseline structured findings format and `references/review-findings-template.md` as the document layout).
+7. Produce a compiled review findings report under `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<topic>.md` (using `references/findings-schema.md` as the baseline structured findings format and `references/review-findings-template.md` as the document layout).
 8. **Autofixable findings:** apply and re-review (max 3 iterations)
 
 ## Review discipline
@@ -53,7 +53,7 @@ Code review is **technical evaluation**, not social performance:
 4. Read matching plan artifact
 5. Run solution search
 6. Apply each reviewer persona from `review_router`
-7. Merge all reviewer findings into a compiled review findings report (save to `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<date>-<topic>.md`) following the structure in `references/review-findings-template.md`
+7. Merge all reviewer findings into a compiled review findings report (save to `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<topic>.md`) following the structure in `references/review-findings-template.md`
 8. Verify each finding against codebase and update the report
 9. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "04-review"` to review the compiled review findings report, passing the report content as the `primaryOutput` parameter, and use the sub-reviewer feedback to refine the report or find missing issues
 10. Apply autofixes, re-run tests, re-review if needed
