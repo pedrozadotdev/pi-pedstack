@@ -113,7 +113,7 @@ If no rule matches cleanly:
 | Brainstorm | `docs/brainstorms/` | — |
 | Plan | `docs/plans/` | — |
 | Review | `docs/reviews/` | — |
-| Solution | `docs/solutions/` | `~/.pi/agent/docs/solutions/` |
+| Solution | `docs/solutions/` | — |
 | Handoff | `.context/compound-engineering/handoffs/` | — |
 | Runtime | `.context/compound-engineering/` | — |
 

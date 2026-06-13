@@ -22,7 +22,7 @@ See [shared pipeline instructions](../references/pipeline-config.md) for model r
 4. Use **`review_router`** tool to select reviewer personas based on diff metadata. You (the model) must perform the initial reviews yourself by applying each persona's perspective and rules. Do NOT run `multi_reviewer` to delegate or orchestrate parallel reviewer subagents at this stage; instead, apply all reviewer personas yourself to compile the initial findings report, and call `multi_reviewer` (with `stepName: "04-review"`) only after this initial review and pass it to the sub-reviewers to audit and refine the findings.
 5. Read relevant **plan** artifact when exists
 6. Run solution search (see `references/solution-search.md`):
-   - Extract keywords → `grep -rl "tags:.*keyword" docs/solutions/ ~/.pi/agent/docs/solutions/`
+   - Extract keywords → `grep -rl "tags:.*keyword" docs/solutions/`
    - Read **frontmatter** only (first 15 lines) of matches → score by severity + tag relevance
    - Fully read top 3 candidates
 7. Produce a compiled review findings report under `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<topic>.md` (using `references/findings-schema.md` as the baseline structured findings format and `references/review-findings-template.md` as the document layout).

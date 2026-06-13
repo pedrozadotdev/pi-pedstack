@@ -18,10 +18,7 @@ See [shared pipeline instructions](../references/pipeline-config.md) for model r
 - Use `references/overlap-rules.md` to decide whether to create, update, or consolidate.
 - Use **`pattern_extractor`** to identify recurring patterns across existing artifacts before writing a new solution.
 - Structure the document with `assets/solution-template.md`.
-- Determine storage level:
-  - **Project-specific** → `{project-root}/docs/solutions/` (only relevant to current project)
-  - **Cross-project (global)** → `~/.pi/agent/docs/solutions/` (applicable to any project)
-  - Default to **global** when uncertain.
+- Save solutions in the project folder under `{project-root}/docs/solutions/`.
 - Make the result useful to future `02-plan` and `04-review` runs via the search strategy in `references/solution-search-strategy.md`.
 
 ## Workflow

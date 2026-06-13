@@ -2,10 +2,9 @@
 
 Grep-first, tiered retrieval for `docs/solutions/`. Use this in `02-plan` and `04-review` to find relevant learnings without loading all files.
 
-## Search order
+## Search locations
 
-1. **Project-level**: `{project-root}/docs/solutions/` — project-specific solutions
-2. **Global-level**: `~/.pi/agent/docs/solutions/` — cross-project solutions
+- **Project-level**: `{project-root}/docs/solutions/` — project-specific solutions
 
 ## Steps
 
@@ -18,15 +17,15 @@ From the task/feature description, identify:
 
 ### Step 2: Grep frontmatter fields
 
-Run parallel grep searches across both solution directories. Only return file paths, do not load content:
+Run parallel grep searches across the project solution directory. Only return file paths, do not load content:
 
 ```bash
 # Search tags (most precise)
-grep -rl "tags:.*keyword1" docs/solutions/ ~/.pi/agent/docs/solutions/
+grep -rl "tags:.*keyword1" docs/solutions/
 # Search title
-grep -rl "title:.*keyword" docs/solutions/ ~/.pi/agent/docs/solutions/
+grep -rl "title:.*keyword" docs/solutions/
 # Search applies_when
-grep -rl "applies_when:" docs/solutions/ ~/.pi/agent/docs/solutions/ | head -5
+grep -rl "applies_when:" docs/solutions/ | head -5
 ```
 
 ### Step 3: Narrow if needed

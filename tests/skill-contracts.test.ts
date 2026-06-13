@@ -117,7 +117,7 @@ describe("skill package contracts", () => {
     expect(content).toContain("contextqmd")
     // Must include grep-first solution search strategy
     expect(content).toContain("grep -rl")
-    expect(content).toContain("~/.pi/agent/docs/solutions")
+    expect(content).not.toContain("~/.pi/agent/docs/solutions")
     expect(content).toContain("frontmatter")
     expect(template).toContain("Implementation units")
     expect(unitTemplate).toContain("Goal")
@@ -228,7 +228,7 @@ describe("skill package contracts", () => {
     expect(content).toContain("technical evaluation")
     // Must include grep-first solution search strategy
     expect(content).toContain("grep -rl")
-    expect(content).toContain("~/.pi/agent/docs/solutions")
+    expect(content).not.toContain("~/.pi/agent/docs/solutions")
     expect(content).toContain("frontmatter")
     expect(findingsSchema).toContain("severity")
     expect(findingsSchema).toContain("summary")
@@ -277,8 +277,8 @@ describe("skill package contracts", () => {
     expect(strategy).toContain("frontmatter")
     expect(strategy).toContain("severity")
     expect(strategy).toContain("tags")
-    // Must define two-level search: project-level + global-level
-    expect(strategy).toContain("~/.pi/agent/docs/solutions")
+    // Must define project-level solutions search
+    expect(strategy).not.toContain("~/.pi/agent/docs/solutions")
   })
 
   test("contextqmd reference file exists and defines CLI search workflow", () => {
