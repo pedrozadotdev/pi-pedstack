@@ -15,11 +15,11 @@ The Feature Implementation Workflow describes the development pipeline: research
    - Prefer adopting or porting a proven approach over writing net-new code when it meets the requirement.
    - **Source-driven trigger:** When implementation depends on a framework/library API, version-specific behavior, or a recommended pattern, verify against official documentation using `contextqmd` CLI (see [shared contextqmd docs instruction](../../skills/references/contextqmd-docs.md)) and cite key sources in the output. Pure logic, renaming, or in-project pattern reuse does not require external citation.
 
-1. **Plan First**
-   - Use **planner** agent to create implementation plan
-   - Generate planning docs before coding: PRD, architecture, system_design, tech_doc, task_list
-   - Identify dependencies and risks
-   - Break down into phases
+1. **Brainstorm & Plan First**
+   - **No Direct-to-Implementation Bypass:** Skipping brainstorming and planning to go straight to coding is strictly prohibited. The full workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`) must be followed.
+   - Start with the **`01-brainstorm`** skill to discover requirements, followed by **`02-plan`** to define implementation units.
+   - Generate required artifacts under `docs/brainstorms/` and `docs/plans/` before writing any codebase implementation.
+   - Identify dependencies, edge cases, and risks.
 
 2. **TDD Approach**
    - Use **tdd-guide** agent

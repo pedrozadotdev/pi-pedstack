@@ -2,6 +2,12 @@
 
 Use these rules in all pipeline skills: `01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`.
 
+## Workflow Discipline
+
+- **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
+- **NO DIRECT-TO-IMPLEMENTATION BYPASS:** The model is prohibited from skipping the initial stages (Brainstorming/Planning) to go straight to code implementation or file editing. You must start every new feature or task with the `01-brainstorm` skill.
+
+
 ## Start of skill: model routing
 
 Model routing and thinking level switching are handled automatically by the ce-core extension. When a pipeline stage skill is invoked, the extension automatically sets the appropriate model and thinking level.

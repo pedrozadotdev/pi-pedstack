@@ -17,6 +17,11 @@ Built with TypeScript, tested with Bun test runner, published to npm as `pi-peds
 bun test              # Run all tests
 ```
 
+## Workflow Discipline
+
+- **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
+- **NO DIRECT-TO-IMPLEMENTATION BYPASS:** Do NOT skip the initial stages (Brainstorming/Planning) to go straight to code implementation or file editing. Start every new feature, bug fix, or task with the `01-brainstorm` skill.
+
 ## Architecture
 
 ```
