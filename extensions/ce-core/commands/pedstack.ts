@@ -580,7 +580,7 @@ export function cmdPedNext(
 
 			// Store the skill path for the model to read itself — clean UX, no content injection
 			setPendingSkillPath(computeSkillPath(stageKey));
-			pi.sendUserMessage(optionalPrompt || "/skill:" + stageKey);
+			pi.sendUserMessage(optionalPrompt || "Stage: " + stageKey);
 		},
 	};
 }
