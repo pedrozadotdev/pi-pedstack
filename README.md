@@ -51,9 +51,11 @@ You: continue
 **Resume after interruption:**
 
 ```
-You: /skill:03-work docs/plans/plan.md
-→ Loads checkpoint, skips completed units, resumes from breakpoint
+You: /ped-next
+→ Auto-resolves the next stage, applies model/thinking config, resumes from latest checkpoint
 ```
+
+You can also invoke skills directly via `/skill:03-work` if you know the exact stage, but model/thinking level switching will only happen via `/ped-start` and `/ped-next`.
 
 ---
 
@@ -83,7 +85,9 @@ The configuration is loaded with the following priority:
 1. **Project-level**: `.pi/pi-pedstack/config.json`
 2. **Global-level**: `~/.pi/pi-pedstack/config.json`
 
-Each stage switches the active model and thinking level automatically when you invoke it via `/skill:0X-stageName`. All pipeline skills declare `disable-model-invocation: true` in their frontmatter to ensure they can only be invoked by the user, thereby strictly guaranteeing that model routing rules are enforced.
+Model and thinking level switching is handled automatically by the ce-core extension when you invoke a pipeline stage via `/ped-start <prompt>` or `/ped-next [prompt]`. Each command reads the per-stage config and switches the active model and thinking level before invoking the skill.
+
+All pipeline skills declare `disable-model-invocation: true` in their frontmatter to ensure they can only be invoked by the user via explicit commands, strictly guaranteeing that model routing rules are enforced.
 
 Here is a complete configuration schema example:
 
@@ -250,6 +254,8 @@ Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, R
 | Command | Description |
 |---------|-------------|
 | `bun test` | Run all tests |
+| `/ped-start <prompt>` | Start a new Pedstack workflow with a user prompt, launching 01-brainstorm |
+| `/ped-next [prompt]` | Auto-resolve and advance to the next pipeline stage |
 
 ---
 
