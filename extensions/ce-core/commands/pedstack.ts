@@ -40,6 +40,9 @@ export function initSkillRegistry(
 /** Skill path the next before_agent_start handler should inject into system prompt. */
 let pendingSkillPath: string | null = null;
 
+/** Issue numbers for the next before_agent_start handler to inject fetch instructions. */
+let pendingFixIssues: string[] = [];
+
 /** Store a skill path for the next agent turn. */
 export function setPendingSkillPath(path: string | null): void {
 	pendingSkillPath = path;
@@ -50,6 +53,45 @@ export function getAndClearPendingSkillPath(): string | null {
 	const p = pendingSkillPath;
 	pendingSkillPath = null;
 	return p;
+}
+
+/**
+ * Store issue numbers for the next before_agent_start invocation.
+ * Stores a defensive copy to prevent mutation from outside.
+ */
+export function setPendingFixIssues(numbers: string[]): void {
+	pendingFixIssues = [...numbers];
+}
+
+/**
+ * Retrieve and clear the stored issue numbers.
+ * Returns an empty array when nothing is stored.
+ */
+export function getAndClearPendingFixIssues(): string[] {
+	const n = pendingFixIssues;
+	pendingFixIssues = [];
+	return n;
+}
+
+/** Reset all pedstack pending state (call in afterEach / session cleanup). */
+export function resetPedstackState(): void {
+	pendingSkillPath = null;
+	pendingFixIssues = [];
+}
+
+/**
+ * Parse issue numbers from a raw argument string.
+ * Trims, splits on whitespace, strips non-digit characters, filters empties,
+ * deduplicates (order-preserving), caps at 10.
+ * Returns an empty array if no valid numbers found.
+ */
+export function parseIssueNumbers(raw: string): string[] {
+	const segments = raw
+		.split(/\s+/)
+		.map((s) => s.replace(/\D/g, ""))
+		.filter(Boolean);
+	const deduped = [...new Set(segments)];
+	return deduped.slice(0, 10);
 }
 
 /** Compute the absolute SKILL.md path for a given stage key. */
@@ -581,6 +623,81 @@ export function cmdPedNext(
 			// Store the skill path for the model to read itself — clean UX, no content injection
 			setPendingSkillPath(computeSkillPath(stageKey));
 			pi.sendUserMessage(optionalPrompt || "Stage: " + stageKey);
+		},
+	};
+}
+
+// ── /ped-fix-issues command ────────────────────────────────────────
+
+/**
+ * Command factory for `/ped-fix-issues <numbers>`.
+ *
+ * Parses GitHub issue numbers, navigates to a fresh 01-brainstorm context,
+ * sets pending skill path and fix-issues state, and sends a message that
+ * instructs the agent to fetch issue content and brainstorm.
+ */
+export function cmdPedFixIssues(
+	pi: ExtensionAPI,
+): Omit<RegisteredCommand, "name" | "sourceInfo"> {
+	return {
+		description:
+			"Start a brainstorm with GitHub issues as context. " +
+			"Usage: /ped-fix-issues <numbers>",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			const parsedNumbers = parseIssueNumbers(_args);
+			if (parsedNumbers.length === 0) {
+				if (ctx.hasUI) {
+					ctx.ui.notify(
+						"No valid issue numbers. Usage: /ped-fix-issues <numbers>",
+						"warning",
+					);
+				}
+				return;
+			}
+
+			// Warn if truncation occurred (pre-cap unique count exceeds 10)
+			const rawSegments = _args
+				.split(/\s+/)
+				.map((s) => s.replace(/\D/g, ""))
+				.filter(Boolean);
+			const uniqueCount = [...new Set(rawSegments)].length;
+			if (uniqueCount > 10 && ctx.hasUI) {
+				ctx.ui.notify(
+					`Truncated to 10 issues (${uniqueCount} provided).`,
+					"warning",
+				);
+			}
+
+			const nav = await prepareStageNavigation(ctx);
+			if (!nav) return;
+			pi.appendEntry("ped-workflow-start", {
+				anchorLeafId: nav.departureLeafId,
+			});
+			const stageKey: PipelineStageKey = "01-brainstorm";
+			pi.appendEntry("ped-stage-start", {
+				returnTo: nav.departureLeafId,
+				stage: stageKey,
+			});
+			try {
+				await switchStageConfig(pi, ctx, stageKey);
+			} catch (err) {
+				if (ctx.hasUI) {
+					ctx.ui.notify(`Config switch failed: ${formatError(err)}`, "error");
+				}
+				return;
+			}
+			setPendingSkillPath(computeSkillPath(stageKey));
+			setPendingFixIssues(parsedNumbers);
+			const formattedList = parsedNumbers.map((n) => "#" + n).join(", ");
+			try {
+				pi.sendUserMessage(
+					`Fetch GitHub issues ${formattedList} and brainstorm solutions.`,
+				);
+			} catch (err) {
+				if (ctx.hasUI) {
+					ctx.ui.notify(`Failed to start: ${formatError(err)}`, "error");
+				}
+			}
 		},
 	};
 }

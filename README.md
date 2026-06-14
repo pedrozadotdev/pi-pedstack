@@ -45,7 +45,7 @@ You: I want to build a CLI tool that helps indie devs find early users
 → 06-docsync: synchronize documentation
 
 You: continue
-→ Next skill recommended via /skill:00-next
+→ Next skill recommended via 00-next
 ```
 
 **Resume after interruption:**
@@ -55,7 +55,7 @@ You: /ped-next
 → Auto-resolves the next stage, applies model/thinking config, resumes from latest checkpoint
 ```
 
-You can also invoke skills directly via `/skill:03-work` if you know the exact stage, but model/thinking level switching will only happen via `/ped-start` and `/ped-next`.
+Skill invocation and model/thinking level switching are handled automatically by `/ped-start` and `/ped-next`.
 
 ---
 
@@ -241,9 +241,9 @@ Commit everything to git — these files are the project's traceable memory.
 |-----------|------:|
 | Skills | 8 |
 | Tools | 11 CE + 10 Pi built-in |
-| Rules | 78 |
-| TypeScript lines | ~4,100 |
-| Tests | 170 (688 assertions) |
+| Rules | 79 |
+| TypeScript lines | ~4,985 |
+| Tests | 250 (854 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 

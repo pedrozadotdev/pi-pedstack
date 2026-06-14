@@ -1,0 +1,456 @@
+import { describe, expect, test, mock, afterEach } from "bun:test";
+import path from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+
+mock.module("@earendil-works/pi-ai", () => {
+	return {
+		completeSimple: async (model: any, prompt: any, options: any) => {
+			return {
+				content: [
+					{ type: "text", text: "A simulated description of the image." },
+				],
+				stopReason: "stop",
+			};
+		},
+	};
+});
+
+mock.module("node:child_process", () => {
+	return {
+		spawn: (command: string, args: string[], options: any) => {
+			const listeners: Record<string, Function[]> = {};
+			const stdoutListeners: Record<string, Function[]> = {};
+
+			const proc = {
+				stdout: {
+					on: (event: string, cb: Function) => {
+						stdoutListeners[event] = stdoutListeners[event] || [];
+						stdoutListeners[event].push(cb);
+					},
+				},
+				stderr: {
+					on: (event: string, cb: Function) => {
+						// no-op for tests
+					},
+				},
+				on: (event: string, cb: Function) => {
+					listeners[event] = listeners[event] || [];
+					listeners[event].push(cb);
+				},
+			};
+
+			setTimeout(() => {
+				const messageEvent = {
+					type: "message_end",
+					message: {
+						content: [
+							{
+								type: "text",
+								text: "```json\n[]\n```",
+							},
+						],
+					},
+				};
+				const dataStr = JSON.stringify(messageEvent) + "\n";
+				if (stdoutListeners["data"]) {
+					for (const cb of stdoutListeners["data"]) {
+						cb(Buffer.from(dataStr));
+					}
+				}
+
+				if (listeners["close"]) {
+					for (const cb of listeners["close"]) {
+						cb(0);
+					}
+				}
+			}, 5);
+
+			return proc;
+		},
+	};
+});
+
+import ceCoreExtension from "../extensions/ce-core/index";
+import { createMultiReviewerTool } from "../extensions/ce-core/tools/multi-reviewer";
+
+describe("ce-core extension runtime registration", () => {
+	test("registers 12 workflow control tools (no subagent tools)", () => {
+		const registeredNames: string[] = [];
+		const eventHandlers = new Map<string, any[]>();
+		const pi = {
+			registerTool(definition: { name: string }) {
+				registeredNames.push(definition.name);
+			},
+			on(event: string, handler: any) {
+				const handlers = eventHandlers.get(event) ?? [];
+				handlers.push(handler);
+				eventHandlers.set(event, handlers);
+			},
+			registerCommand(_name: string, _def: any) {
+				// no-op for tests
+			},
+		};
+
+		ceCoreExtension(pi as never);
+
+		expect(registeredNames).toEqual([
+			"artifact_helper",
+			"workflow_state",
+			"review_router",
+			"session_checkpoint",
+			"task_splitter",
+			"brainstorm_dialog",
+			"plan_diff",
+			"session_history",
+			"pattern_extractor",
+			"context_handoff",
+			"multi_reviewer",
+		]);
+	});
+
+	test("registers no bare subagent or parallel_subagent", () => {
+		const registeredNames: string[] = [];
+		const pi = {
+			registerTool(definition: { name: string }) {
+				registeredNames.push(definition.name);
+			},
+			on(_event: string, _handler: any) {},
+			registerCommand(_name: string, _def: any) {},
+		};
+
+		ceCoreExtension(pi as never);
+
+		// Subagent tools removed (Unit 1 guard)
+		expect(registeredNames).not.toContain("subagent");
+		expect(registeredNames).not.toContain("parallel_subagent");
+		expect(registeredNames).not.toContain("ce_subagent");
+		expect(registeredNames).not.toContain("ce_parallel_subagent");
+	});
+
+	test("brainstorm_dialog does not terminate the agent turn", async () => {
+		const definitions = new Map<string, any>();
+		const pi = {
+			registerTool(definition: { name: string }) {
+				definitions.set(definition.name, definition);
+			},
+			on(_event: string, _handler: any) {
+				// no-op for tests
+			},
+			registerCommand(_name: string, _def: any) {
+				// no-op for tests
+			},
+		};
+
+		ceCoreExtension(pi as never);
+
+		const brainstormDialog = definitions.get("brainstorm_dialog");
+		const result = await brainstormDialog.execute("tool-call-id", {
+			operation: "start",
+			repoRoot: `/tmp/pi-ce-bd-runtime-${Date.now()}`,
+			artifactPath: "docs/brainstorms/2026-04-24-runtime-requirements.md",
+			analysis: "Initial analysis",
+			questions: ["What exactly is broken?"],
+		});
+
+		expect(result.terminate).not.toBe(true);
+		expect(result.details.openQuestions).toEqual(["What exactly is broken?"]);
+	});
+
+	test("conversation-state tools do not terminate the agent turn", async () => {
+		const definitions = new Map<string, any>();
+		const pi = {
+			registerTool(definition: { name: string }) {
+				definitions.set(definition.name, definition);
+			},
+			on(_event: string, _handler: any) {
+				// no-op for tests
+			},
+			registerCommand(_name: string, _def: any) {
+				// no-op for tests
+			},
+		};
+
+		ceCoreExtension(pi as never);
+
+		const workflowState = definitions.get("workflow_state");
+		const reviewRouter = definitions.get("review_router");
+		const sessionCheckpoint = definitions.get("session_checkpoint");
+		const sessionHistory = definitions.get("session_history");
+		const patternExtractor = definitions.get("pattern_extractor");
+
+		const workflowStateResult = await workflowState.execute("tool-call-id", {
+			repoRoot: `/tmp/pi-ce-ws-runtime-${Date.now()}`,
+		});
+		expect(workflowStateResult.terminate).not.toBe(true);
+
+		const reviewRouterResult = await reviewRouter.execute("tool-call-id", {
+			filesChanged: ["src/auth.ts"],
+			insertions: 10,
+			deletions: 2,
+		});
+		expect(reviewRouterResult.terminate).not.toBe(true);
+
+		const checkpointRepoRoot = `/tmp/pi-ce-checkpoint-runtime-${Date.now()}`;
+		const checkpointResult = await sessionCheckpoint.execute("tool-call-id", {
+			operation: "load",
+			repoRoot: checkpointRepoRoot,
+			planPath: "docs/plans/demo-plan.md",
+		});
+		expect(checkpointResult.terminate).not.toBe(true);
+
+		const historyRepoRoot = `/tmp/pi-ce-history-runtime-${Date.now()}`;
+		const historyResult = await sessionHistory.execute("tool-call-id", {
+			operation: "query",
+			repoRoot: historyRepoRoot,
+		});
+		expect(historyResult.terminate).not.toBe(true);
+
+		const patternResult = await patternExtractor.execute("tool-call-id", {
+			operation: "extract",
+			artifacts: [{ path: "docs/a.md", content: "oauth token refresh oauth" }],
+			keywords: ["oauth"],
+		});
+		expect(patternResult.terminate).not.toBe(true);
+	});
+
+	test("context_handoff wrapper passes structured runtime-memory fields through", async () => {
+		const definitions = new Map<string, any>();
+		const pi = {
+			registerTool(definition: { name: string }) {
+				definitions.set(definition.name, definition);
+			},
+			on(_event: string, _handler: any) {
+				// no-op for tests
+			},
+			registerCommand(_name: string, _def: any) {
+				// no-op for tests
+			},
+		};
+
+		ceCoreExtension(pi as never);
+
+		const contextHandoff = definitions.get("context_handoff");
+		const repoRoot = `/tmp/pi-ce-handoff-wrapper-${Date.now()}`;
+
+		const result = await contextHandoff.execute("tool-call-id", {
+			operation: "save",
+			repoRoot,
+			currentStage: "03-work",
+			nextStage: "04-review",
+			activeFiles: ["src/a.ts"],
+			currentTruth: ["Fact A", "Fact B"],
+			invalidatedAssumptions: ["Old assumption"],
+			openDecisions: ["Decision X"],
+			recentlyAccessedFiles: ["file1.ts"],
+			compressionRisk: ["Risk Z"],
+		});
+
+		expect(result.details.currentTruth).toEqual(["Fact A", "Fact B"]);
+		expect(result.details.invalidatedAssumptions).toEqual(["Old assumption"]);
+		expect(result.details.openDecisions).toEqual(["Decision X"]);
+		expect(result.details.recentlyAccessedFiles).toEqual(["file1.ts"]);
+		expect(result.details.compressionRisk).toEqual(["Risk Z"]);
+	});
+
+	test("context_handoff wrapper supports validate operation with probes and checks", async () => {
+		const definitions = new Map<string, any>();
+		const pi = {
+			registerTool(definition: { name: string }) {
+				definitions.set(definition.name, definition);
+			},
+			on(_event: string, _handler: any) {
+				// no-op for tests
+			},
+			registerCommand(_name: string, _def: any) {
+				// no-op for tests
+			},
+		};
+
+		ceCoreExtension(pi as never);
+
+		const contextHandoff = definitions.get("context_handoff");
+		const repoRoot = `/tmp/pi-ce-handoff-validate-wrapper-${Date.now()}`;
+
+		// First save a handoff with recall + continuation evidence
+		await contextHandoff.execute("tool-call-id", {
+			operation: "save",
+			repoRoot,
+			currentStage: "02-plan",
+			nextStage: "03-work",
+			currentTruth: ["Fact A"],
+			handoffMarkdown:
+				"## Current Task\nTask.\n\n## Next Minimal Step\nDo it.\n",
+		});
+
+		// Now validate
+		const result = await contextHandoff.execute("tool-call-id", {
+			operation: "validate",
+			repoRoot,
+		});
+
+		expect(result.details.operation).toBe("validate");
+		expect(result.details.ok).toBe(true);
+		expect(result.details.probes).toBeDefined();
+		expect(result.details.probes.recall).toBe(true);
+		expect(result.details.probes.continuation).toBe(true);
+		expect(result.details.checks).toBeDefined();
+		expect(result.details.checks.length).toBeGreaterThan(0);
+		expect(result.details.recommendedAction).toBe("continue");
+	});
+});
+
+describe("multi_reviewer tool", () => {
+	test("returns empty findings when no reviewers are configured in config.json", async () => {
+		const repoRoot = `/tmp/pi-ce-reviewer-none-${Date.now()}`;
+		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+			JSON.stringify({
+				review: {
+					model: "anthropic/claude-3-opus",
+					thinkingLevel: "high",
+					reviewers: [],
+				},
+			}),
+			"utf8",
+		);
+
+		const tool = createMultiReviewerTool();
+		const result = await tool.execute({
+			stepName: "review",
+			primaryOutput: "const x = 1",
+			repoRoot,
+		});
+
+		expect(result.findings).toEqual([]);
+		expect(result.compiledSummary).toBe("No reviewers configured.");
+	});
+
+	test("compiles list of findings correctly", async () => {
+		const repoRoot = `/tmp/pi-ce-reviewer-compile-${Date.now()}`;
+		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+			JSON.stringify({
+				review: {
+					model: "anthropic/claude-3-opus",
+					thinkingLevel: "high",
+					reviewers: [],
+				},
+			}),
+			"utf8",
+		);
+
+		const tool = createMultiReviewerTool();
+		const result = await tool.execute({
+			stepName: "review",
+			primaryOutput: "const x = 1",
+			repoRoot,
+		});
+		expect(result.findings).toBeDefined();
+	});
+
+	test("automatically loads reviewers from config.json", async () => {
+		const repoRoot = `/tmp/pi-ce-reviewer-autoload-${Date.now()}`;
+		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+			JSON.stringify({
+				review: {
+					model: "anthropic/claude-3-opus",
+					thinkingLevel: "high",
+					reviewers: [
+						{ model: "anthropic/claude-3-opus", thinkingLevel: "high" },
+						{ model: "anthropic/claude-3-sonnet", thinkingLevel: "medium" },
+					],
+				},
+			}),
+			"utf8",
+		);
+
+		const tool = createMultiReviewerTool();
+		const result = await tool.execute({
+			stepName: "review",
+			primaryOutput: "const x = 1",
+			repoRoot,
+		});
+
+		expect(result.compiledSummary).toContain(
+			"We ran the review across 2 reviewer model(s).",
+		);
+	});
+
+	test("does not fallback and returns no reviewers configured when reviewer config is missing", async () => {
+		const repoRoot = `/tmp/pi-ce-reviewer-fallback-${Date.now()}`;
+		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+			JSON.stringify({
+				// Empty config, no "review" block
+			}),
+			"utf8",
+		);
+
+		const tool = createMultiReviewerTool();
+		const result = await tool.execute({
+			stepName: "review",
+			primaryOutput: "const x = 1",
+			repoRoot,
+		});
+
+		expect(result.findings).toEqual([]);
+		expect(result.compiledSummary).toBe("No reviewers configured.");
+	});
+
+	test("normalizes stepName (whitespace and casing) when loading configuration", async () => {
+		const repoRoot = `/tmp/pi-ce-reviewer-normalize-${Date.now()}`;
+		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+			JSON.stringify({
+				learn: {
+					model: "opencode-go/deepseek-v4-flash",
+					thinkingLevel: "medium",
+					reviewers: [
+						{ model: "opencode-go/mimo-v2.5", thinkingLevel: "medium" },
+					],
+				},
+			}),
+			"utf8",
+		);
+
+		const tool = createMultiReviewerTool();
+		const result = await tool.execute({
+			stepName: "  05-Learn  ",
+			primaryOutput: "const x = 1",
+			repoRoot,
+		});
+
+		expect(result.compiledSummary).toContain(
+			"We ran the review across 1 reviewer model(s).",
+		);
+	});
+});
+
+// ── Unit 1-5: Commands/pedstack module tests ──
+
+import {
+	resolveNextPipelineStage,
+	cmdPedStart,
+	cmdPedNext,
+	isModelVisible,
+	findPreConversationEntry,
+	findFreshTargetId,
+	isValidStageKey,
+	setPendingSkillPath,
+	getAndClearPendingSkillPath,
+	setPendingFixIssues,
+	getAndClearPendingFixIssues,
+	resetPedstackState,
+	type StageResolution,
+	type PipelineStageKey,
+} from "../extensions/ce-core/commands/pedstack";
+import { parseModelRef } from "../extensions/ce-core/utils/parse-model-ref";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+

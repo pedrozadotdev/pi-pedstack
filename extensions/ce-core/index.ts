@@ -7,9 +7,12 @@ import {
 import {
 	cmdPedStart,
 	cmdPedNext,
+	cmdPedFixIssues,
 	initSkillRegistry,
 	getAndClearPendingSkillPath,
+	getAndClearPendingFixIssues,
 } from "./commands/pedstack";
+import { buildSystemPromptAppend } from "./commands/prompt-inject";
 import { createReviewRouterTool } from "./tools/review-router";
 import { createSessionCheckpointTool } from "./tools/session-checkpoint";
 import { createTaskSplitterTool } from "./tools/task-splitter";
@@ -540,6 +543,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
 	pi.registerCommand("ped-start", cmdPedStart(pi));
 	pi.registerCommand("ped-next", cmdPedNext(pi));
+	pi.registerCommand("ped-fix-issues", cmdPedFixIssues(pi));
 
 	// Capture skills and inject pending skill path into system prompt
 	pi.on("before_agent_start", async (event) => {
@@ -548,18 +552,14 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		}
 
 		const skillPath = getAndClearPendingSkillPath();
-		if (skillPath) {
-			const skillDir = skillPath.replace(/\/SKILL\.md$/, "");
-			const instruction =
-				"\n\n---\n## Pipeline Stage: Skill Instructions\n\n" +
-				"You are entering a new pipeline stage. You MUST immediately read the following skill file " +
-				"using the read tool to understand this stage's purpose, rules, and expectations:\n\n" +
-				skillPath +
-				"\n\nAfter reading the skill, follow its instructions precisely.";
-			return {
-				systemPrompt: event.systemPrompt + instruction,
-			};
-		}
+		const fixIssues = getAndClearPendingFixIssues();
+
+		const append = buildSystemPromptAppend(skillPath, fixIssues);
+		if (!append) return undefined;
+
+		return {
+			systemPrompt: event.systemPrompt + append,
+		};
 	});
 
 	pi.registerTool({
