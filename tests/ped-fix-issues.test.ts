@@ -190,64 +190,116 @@ describe("buildSystemPromptAppend", () => {
 		expect(buildSystemPromptAppend(null, [])).toBe("");
 	});
 
-	test("returns guard + skill-reading when only skillPath set (non-03-work)", () => {
-		const result = buildSystemPromptAppend(
-			"/skills/01-brainstorm/SKILL.md",
-			[],
-		);
-		expect(result).toContain("Pipeline Discipline: No Implementation");
-		expect(result).toContain("Pipeline Stage: Skill Instructions");
-		expect(result).toContain("01-brainstorm");
-		expect(result).toContain("/skills/01-brainstorm/SKILL.md");
+	test("returns stage-focus guard + skill-reading for each pipeline stage", () => {
+		for (const stage of [
+			"01-brainstorm",
+			"02-plan",
+			"03-work",
+			"04-review",
+			"04-5-debug",
+			"05-learn",
+			"06-docsync",
+		]) {
+			const result = buildSystemPromptAppend(`/skills/${stage}/SKILL.md`, []);
+			expect(result).toContain("Pipeline Discipline: Stage Focus");
+			expect(result).toContain(`entering stage **${stage}**`);
+			expect(result).toContain("Pipeline Stage: Skill Instructions");
+			expect(result).toContain(`/skills/${stage}/SKILL.md`);
+			expect(result).not.toContain("Pipeline Discipline: No Implementation");
+		}
 	});
 
-	test("returns skill-reading only when skillPath is 03-work (no guard)", () => {
-		const result = buildSystemPromptAppend("/skills/03-work/SKILL.md", []);
-		expect(result).not.toContain("Pipeline Discipline");
-		expect(result).toContain("Pipeline Stage: Skill Instructions");
-		expect(result).toContain("/skills/03-work/SKILL.md");
+	test("each stage has distinct mandate and forbidden text", () => {
+		const results = [
+			"01-brainstorm",
+			"02-plan",
+			"03-work",
+			"04-review",
+			"04-5-debug",
+			"05-learn",
+			"06-docsync",
+		].map((stage) => buildSystemPromptAppend(`/skills/${stage}/SKILL.md`, []));
+		// Every result should be unique (distinct mandate per stage)
+		for (let i = 0; i < results.length; i++) {
+			for (let j = i + 1; j < results.length; j++) {
+				expect(results[i]).not.toBe(results[j]);
+			}
+		}
 	});
 
-	test("returns skill-reading for unrecognized stage (e.g., 00-next)", () => {
+	test("returns generic guard + skill-reading for unrecognized stage (e.g., 00-next)", () => {
 		const result = buildSystemPromptAppend("/skills/00-next/SKILL.md", []);
-		expect(result).not.toContain("Pipeline Discipline");
+		expect(result).toContain("Pipeline Discipline: No Implementation");
 		expect(result).toContain("Pipeline Stage: Skill Instructions");
 		expect(result).toContain("/skills/00-next/SKILL.md");
 	});
 
-	test("fix-issues only when only fixIssues set and stage is 01-brainstorm", () => {
+	test("fix-issues only when fixIssues set and stage is 01-brainstorm", () => {
 		const result = buildSystemPromptAppend("/skills/01-brainstorm/SKILL.md", [
 			"42",
 		]);
 		expect(result).toContain("Fetch GitHub Issues for Context");
-		expect(result).toContain("Pipeline Discipline: No Implementation");
+		expect(result).toContain("Pipeline Discipline: Stage Focus");
 		expect(result).toContain("Pipeline Stage: Skill Instructions");
 		expect(result).toContain("#42");
 	});
 
 	test("fix-issues omitted when stage is not 01-brainstorm", () => {
 		const result = buildSystemPromptAppend("/skills/02-plan/SKILL.md", ["42"]);
-		expect(result).toContain("Pipeline Discipline: No Implementation");
+		expect(result).toContain("Pipeline Discipline: Stage Focus");
 		expect(result).toContain("Pipeline Stage: Skill Instructions");
 		expect(result).not.toContain("Fetch GitHub Issues");
 	});
 
 	test("fix-issues omitted when stage is 03-work even with fixIssues", () => {
 		const result = buildSystemPromptAppend("/skills/03-work/SKILL.md", ["42"]);
-		expect(result).not.toContain("Pipeline Discipline");
+		expect(result).toContain("Pipeline Discipline: Stage Focus");
 		expect(result).toContain("Pipeline Stage: Skill Instructions");
 		expect(result).not.toContain("Fetch GitHub Issues");
 	});
 
-	test("guard text matches verbatim template with stage key substituted", () => {
-		const result = buildSystemPromptAppend("/skills/02-plan/SKILL.md", []);
-		expect(result).toContain("⛔ Pipeline Discipline: No Implementation");
-		expect(result).toContain("You are entering stage 02-plan");
-		expect(result).toContain("You must NEVER write, edit, modify");
-		expect(result).toContain("Stay strictly within the scope of this stage.");
-		expect(result).toContain(
-			"Implementation belongs exclusively to the 03-work stage",
+	test("stage-focus guard includes handoff instruction for non-terminal stages", () => {
+		for (const stage of [
+			"01-brainstorm",
+			"02-plan",
+			"03-work",
+			"04-review",
+			"04-5-debug",
+			"05-learn",
+		]) {
+			const result = buildSystemPromptAppend(`/skills/${stage}/SKILL.md`, []);
+			expect(result).toContain("save a context handoff");
+			expect(result).toContain("context_handoff tool");
+			expect(result).not.toContain("terminal stage");
+		}
+	});
+
+	test("terminal stage 06-docsync uses terminal handoff language", () => {
+		const result = buildSystemPromptAppend("/skills/06-docsync/SKILL.md", []);
+		expect(result).toContain("save a final context handoff");
+		expect(result).toContain("terminal stage");
+	});
+
+	test("01-brainstorm mandate forbids plans, architecture, and code", () => {
+		const result = buildSystemPromptAppend(
+			"/skills/01-brainstorm/SKILL.md",
+			[],
 		);
+		expect(result).toContain("Your mandate:");
+		expect(result).toContain("Explore ideas");
+		expect(result).toContain("Forbidden:");
+		expect(result).toContain("Do NOT write plans");
+		expect(result).toContain("do NOT write or edit any source code");
+	});
+
+	test("03-work mandate requires implementation and testing", () => {
+		const result = buildSystemPromptAppend("/skills/03-work/SKILL.md", []);
+		expect(result).toContain("Your mandate:");
+		expect(result).toContain("Implement the code");
+		expect(result).toContain("Write tests");
+		expect(result).toContain("Forbidden:");
+		expect(result).toContain("Do NOT change scope");
+		expect(result).toContain("do NOT move to review without passing tests");
 	});
 
 	test("fix-issues text matches verbatim template with issue list substituted", () => {
@@ -516,14 +568,14 @@ describe("before_agent_start handler", () => {
 
 		expect(result).toBeDefined();
 		expect(result.systemPrompt).toContain("base");
-		expect(result.systemPrompt).toContain(
-			"Pipeline Discipline: No Implementation",
-		);
+		expect(result.systemPrompt).toContain("Pipeline Discipline: Stage Focus");
 		expect(result.systemPrompt).toContain("Pipeline Stage: Skill Instructions");
 		expect(result.systemPrompt).toContain("Fetch GitHub Issues for Context");
 
 		// Verify order: guard → skill → fix-issues
-		const guardIdx = result.systemPrompt.indexOf("Pipeline Discipline");
+		const guardIdx = result.systemPrompt.indexOf(
+			"Pipeline Discipline: Stage Focus",
+		);
 		const skillIdx = result.systemPrompt.indexOf(
 			"Pipeline Stage: Skill Instructions",
 		);
@@ -532,7 +584,7 @@ describe("before_agent_start handler", () => {
 		expect(skillIdx).toBeLessThan(fixIdx);
 	});
 
-	test("guard omitted for 03-work stage transition", async () => {
+	test("stage-focus guard present for 03-work stage transition", async () => {
 		const handler = setupHandler()!;
 		setPendingSkillPath("/skills/03-work/SKILL.md");
 
@@ -541,11 +593,12 @@ describe("before_agent_start handler", () => {
 			systemPrompt: "base",
 		});
 
-		expect(result.systemPrompt).not.toContain("Pipeline Discipline");
+		expect(result.systemPrompt).toContain("Pipeline Discipline: Stage Focus");
+		expect(result.systemPrompt).toContain("Implement the code");
 		expect(result.systemPrompt).toContain("Pipeline Stage: Skill Instructions");
 	});
 
-	test("guard omitted for unrecognized stage keys", async () => {
+	test("generic guard present for unrecognized stage keys (00-next)", async () => {
 		const handler = setupHandler()!;
 		setPendingSkillPath("/skills/00-next/SKILL.md");
 
@@ -554,7 +607,9 @@ describe("before_agent_start handler", () => {
 			systemPrompt: "base",
 		});
 
-		expect(result.systemPrompt).not.toContain("Pipeline Discipline");
+		expect(result.systemPrompt).toContain(
+			"Pipeline Discipline: No Implementation",
+		);
 		expect(result.systemPrompt).toContain("Pipeline Stage: Skill Instructions");
 	});
 
