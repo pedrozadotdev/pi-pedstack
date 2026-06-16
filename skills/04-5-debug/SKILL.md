@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Use this skill after `04-review` has completed. This is a routing-only step to evaluate user testing.
 
-See [shared pipeline instructions](../references/pipeline-config.md) for model routing and pipeline behavior.
+See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/pipeline-config.md) for model routing and pipeline behavior.
 
 ## Core rules
 
@@ -19,4 +19,5 @@ See [shared pipeline instructions](../references/pipeline-config.md) for model r
    - **Clean / No bugs**: Recommend proceeding to `05-learn` (using `/skill:05-learn`).
 
 ## Exit Criteria
+
 - Next step recommended clearly based on user response.

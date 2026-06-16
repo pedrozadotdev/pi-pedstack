@@ -23,7 +23,7 @@ Use this skill when the user wants to know what to run next in the Compound Engi
 When the user asks "what should I do next?", "continue", or runs `/skill:00-next`:
 
 1. Call `workflow_state` with the repo root
-2. Inspect `workflow_state.context` first — apply **context-first priority chain** from `references/recommendation-logic.md` (health → blocker → recommendNewSession → nextStage → mismatch → fallback)
+2. Inspect `workflow_state.context` first — apply **context-first priority chain** from `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/00-next/references/recommendation-logic.md` (health → blocker → recommendNewSession → nextStage → mismatch → fallback)
 3. If no context signals trigger, fall back to artifact-count rules
 4. Return: skill name, reason (1-2 lines), brief workflow state summary
 
@@ -38,9 +38,10 @@ When the user asks "show status", "what's the current state", or uses `--verbose
 
 ## Artifact locations
 
-See `references/recommendation-logic.md` for full recommendation rules and skill list.
+See `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/00-next/references/recommendation-logic.md` for full recommendation rules and skill list.
 
 **Quick reference:**
+
 | Artifact | Path |
 |---|---|
 | Brainstorm | `docs/brainstorms/` |
@@ -53,4 +54,4 @@ See `references/recommendation-logic.md` for full recommendation rules and skill
 
 **Fallback:** If `workflow_state` is unavailable, use `bash ls/find` to check directories, then `read` recent artifacts.
 
-Before finishing this skill, apply the completion checklist in [shared pipeline instructions](../references/pipeline-config.md).
+Before finishing this skill, apply the completion checklist in [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/pipeline-config.md).

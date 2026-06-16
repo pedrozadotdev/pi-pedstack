@@ -4,18 +4,18 @@ Detect the project's primary language by checking for these files in the repo ro
 
 | File(s) | Language | Rules directory |
 |---------|----------|----------------|
-| `tsconfig.json` | TypeScript | `rules/typescript/` |
-| `package.json` (without `tsconfig.json`) | JavaScript | `rules/typescript/` |
-| `Cargo.toml` | Rust | `rules/rust/` |
-| `go.mod` | Go | `rules/golang/` |
-| `pubspec.yaml` | Dart | `rules/dart/` |
-| `pom.xml` / `build.gradle` | Java | `rules/java/` |
-| `*.sln` / `*.csproj` | C# | `rules/csharp/` |
-| `Package.swift` | Swift | `rules/swift/` |
-| `requirements.txt` / `pyproject.toml` / `setup.py` | Python | `rules/python/` |
-| `composer.json` | PHP | `rules/php/` |
-| `Makefile.PL` / `cpanfile` | Perl | `rules/perl/` |
-| `build.gradle.kts` | Kotlin | `rules/kotlin/` |
+| `tsconfig.json` | TypeScript | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/typescript/` |
+| `package.json` (without `tsconfig.json`) | JavaScript | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/typescript/` |
+| `Cargo.toml` | Rust | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/rust/` |
+| `go.mod` | Go | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/golang/` |
+| `pubspec.yaml` | Dart | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/dart/` |
+| `pom.xml` / `build.gradle` | Java | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/java/` |
+| `*.sln` / `*.csproj` | C# | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/csharp/` |
+| `Package.swift` | Swift | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/swift/` |
+| `requirements.txt` / `pyproject.toml` / `setup.py` | Python | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/python/` |
+| `composer.json` | PHP | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/php/` |
+| `Makefile.PL` / `cpanfile` | Perl | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/perl/` |
+| `build.gradle.kts` | Kotlin | `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/rules/kotlin/` |
 
 ## Rules loading strategy
 
@@ -33,6 +33,7 @@ language-specific > web > common
 ```
 
 Override mapping by topic:
+
 - `common/testing.md` ← `web/testing.md` ← `<lang>/testing.md`
 - `common/coding-style.md` ← `web/coding-style.md` ← `<lang>/coding-style.md`
 - `common/patterns.md` ← `web/patterns.md` ← `<lang>/patterns.md`

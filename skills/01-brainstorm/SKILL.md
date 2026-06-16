@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Use this skill when the request is ambiguous, needs requirements discovery, or the user describes a new idea/product.
 
-See [shared pipeline instructions](../references/pipeline-config.md) for model routing and pipeline behavior.
+See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/pipeline-config.md) for model routing and pipeline behavior.
 
 ## Core rules
 
@@ -27,6 +27,7 @@ See [shared pipeline instructions](../references/pipeline-config.md) for model r
 After initial context, determine mode by asking the user directly in your response:
 
 > What's your goal?
+>
 > - **Building a startup** → Startup Diagnostic
 > - **Intrapreneurship** → Startup Diagnostic
 > - **Side project / hackathon** → Builder Mode
@@ -35,9 +36,10 @@ After initial context, determine mode by asking the user directly in your respon
 Skip question if mode is obvious from request.
 
 **Mode mapping:**
-- Startup / intrapreneurship → **Startup Diagnostic** (see `references/startup-diagnostic.md`)
-- Side project / hackathon → **Builder Mode** (see `references/builder-mode.md`)
-- Feature addition → **CE Brainstorm** (see `references/ce-brainstorm-mode.md`)
+
+- Startup / intrapreneurship → **Startup Diagnostic** (see `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/01-brainstorm/references/startup-diagnostic.md`)
+- Side project / hackathon → **Builder Mode** (see `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/01-brainstorm/references/builder-mode.md`)
+- Feature addition → **CE Brainstorm** (see `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/01-brainstorm/references/ce-brainstorm-mode.md`)
 
 ## Mode summaries
 
@@ -51,11 +53,12 @@ See reference files for full question sets and patterns.
 
 ## Premise Challenge
 
-After mode-specific questions, run Premise Challenge. See `references/premise-challenge.md`.
+After mode-specific questions, run Premise Challenge. See `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/01-brainstorm/references/premise-challenge.md`.
 
 ## Design checklist
 
 Before summarizing, ensure the design answers:
+
 - What are we building?
 - Why does it exist?
 - What files/modules will change?
@@ -67,7 +70,7 @@ Before summarizing, ensure the design answers:
 
 After mode-specific questions, check if the project has a `CONTEXT.md` at root.
 If not, and the brainstorm reveals 3+ domain-specific terms with ambiguous meanings,
-offer to create one using `references/context-glossary.md`. Update it inline during
+offer to create one using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/01-brainstorm/references/context-glossary.md`. Update it inline during
 the session — don't batch. If it exists, cross-reference and flag conflicts:
 
 > "Your CONTEXT.md defines 'cancellation' as X, but you seem to mean Y — which is it?"
@@ -94,10 +97,10 @@ Stop and ask instead of guessing when: requirements conflict, success criteria u
 10. Capture requirements in `docs/brainstorms/`
 11. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "01-brainstorm"` to review the generated brainstorm/requirements artifact.
 12. Get explicit user approval
-13. Handoff to `02-plan` using `references/handoff.md`
+13. Handoff to `02-plan` using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/01-brainstorm/references/handoff.md`
 
 ## Artifact contract
 
-Use `references/requirements-template.md` to structure the document. Keep implementation details out unless specifically about architecture.
+Use `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/01-brainstorm/references/requirements-template.md` to structure the document. Keep implementation details out unless specifically about architecture.
 
-Before finishing this skill, apply the completion checklist in [shared pipeline instructions](../references/pipeline-config.md).
+Before finishing this skill, apply the completion checklist in [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/pipeline-config.md).
