@@ -1,4 +1,8 @@
-import { isValidStageKey, type PipelineStageKey } from "./pedstack";
+import {
+	isValidStageKey,
+	type PipelineStageKey,
+	getAndClearPendingAppendContent,
+} from "./pedstack";
 
 /**
  * Extract the stage key (e.g. "01-brainstorm") from a SKILL.md path.
@@ -75,9 +79,10 @@ const STAGE_DISCIPLINES: Record<PipelineStageKey, StageDiscipline> = {
 };
 
 /**
- * Build the system prompt append block for a pending skill path and fix-issues.
+ * Build the system prompt append block for a pending skill path, fix-issues,
+ * and per-stage APPEND.md context.
  *
- * Injection order: Pipeline Discipline guard → skill-reading → fix-issues fetch.
+ * Injection order: Pipeline Discipline guard → Append instructions → skill-reading → fix-issues fetch.
  * Returns empty string when nothing to inject.
  */
 export function buildSystemPromptAppend(
@@ -114,7 +119,17 @@ export function buildSystemPromptAppend(
 		);
 	}
 
-	// 2. Skill-reading instruction (for any non-empty skill path)
+	// 2. Per-stage APPEND.md instructions (user-provided)
+	const appendContent = getAndClearPendingAppendContent();
+	if (appendContent) {
+		blocks.push(
+			"\n\n---\n## 📋 Stage Append Instructions\n\n" +
+				"The following project-specific instructions apply to this stage:\n\n" +
+				appendContent,
+		);
+	}
+
+	// 3. Skill-reading instruction (for any non-empty skill path)
 	if (skillPath) {
 		blocks.push(
 			"\n\n---\n## 📖 Pipeline Stage: Skill Instructions\n\n" +

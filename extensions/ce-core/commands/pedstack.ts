@@ -43,6 +43,21 @@ let pendingSkillPath: string | null = null;
 /** Issue numbers for the next before_agent_start handler to inject fetch instructions. */
 let pendingFixIssues: string[] = [];
 
+/** Per-stage APPEND.md content to inject into the next system prompt. */
+let pendingAppendContent: string | null = null;
+
+/** Store append content for the next before_agent_start invocation. */
+export function setPendingAppendContent(content: string | null): void {
+	pendingAppendContent = content;
+}
+
+/** Retrieve and clear the stored append content. */
+export function getAndClearPendingAppendContent(): string | null {
+	const c = pendingAppendContent;
+	pendingAppendContent = null;
+	return c;
+}
+
 /** Store a skill path for the next agent turn. */
 export function setPendingSkillPath(path: string | null): void {
 	pendingSkillPath = path;
@@ -77,6 +92,7 @@ export function getAndClearPendingFixIssues(): string[] {
 export function resetPedstackState(): void {
 	pendingSkillPath = null;
 	pendingFixIssues = [];
+	pendingAppendContent = null;
 }
 
 /**
@@ -390,14 +406,17 @@ function switchThinkingLevel(
 	}
 }
 
-/** Load APPEND.md context for the given stage. */
+/** Load APPEND.md context for the given stage. Stores it so buildSystemPromptAppend can inject it. */
 async function loadStageAppend(
 	ctx: ExtensionCommandContext,
 	stageKey: PipelineStageKey,
 ): Promise<void> {
 	const appendContent = await loadAppendContext(ctx.cwd, stageKey);
-	if (appendContent && ctx.hasUI) {
-		ctx.ui.notify(`Loaded APPEND.md context for ${stageKey}`, "info");
+	if (appendContent) {
+		setPendingAppendContent(appendContent);
+		if (ctx.hasUI) {
+			ctx.ui.notify(`Loaded APPEND.md context for ${stageKey}`, "info");
+		}
 	}
 }
 

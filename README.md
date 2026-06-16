@@ -82,6 +82,7 @@ Skill invocation and model/thinking level switching are handled automatically by
 You can customize the model and thinking level used for each workflow stage by editing the configuration file.
 
 The configuration is loaded with the following priority:
+
 1. **Project-level**: `.pi/pi-pedstack/config.json`
 2. **Global-level**: `~/.pi/pi-pedstack/config.json`
 
@@ -138,20 +139,21 @@ Here is a complete configuration schema example:
 
 #### Supported Keys and Options
 
-* **`reviewers`**: Stages that support parallel reviews (`brainstorm`, `plan`, `review`, `learn`) can define an array of sub-reviewers. These reviews will run concurrently using subagents on the specified models.
+- **`reviewers`**: Stages that support parallel reviews (`brainstorm`, `plan`, `review`, `learn`) can define an array of sub-reviewers. These reviews will run concurrently using subagents on the specified models.
 
 ### Dynamic Append Instructions
 
-For each stage, you can inject custom project-specific instructions by creating markdown files in the `.pi/pi-pedstack/appends/` directory.
+For each stage, you can inject custom project-specific instructions by creating markdown files in the `.agents/appends/` directory at your project root.
 
 The system will search for uppercase file names matching the active step name:
-- `.pi/pi-pedstack/appends/BRAINSTORM.md`
-- `.pi/pi-pedstack/appends/PLAN.md`
-- `.pi/pi-pedstack/appends/WORK.md`
-- `.pi/pi-pedstack/appends/REVIEW.md`
-- `.pi/pi-pedstack/appends/DEBUG.md`
-- `.pi/pi-pedstack/appends/LEARN.md`
-- `.pi/pi-pedstack/appends/DOCSYNC.md`
+
+- `.agents/appends/BRAINSTORM.md`
+- `.agents/appends/PLAN.md`
+- `.agents/appends/WORK.md`
+- `.agents/appends/REVIEW.md`
+- `.agents/appends/DEBUG.md`
+- `.agents/appends/LEARN.md`
+- `.agents/appends/DOCSYNC.md`
 
 If present, these files are loaded and appended directly to the active prompt context, helping customize guidelines for specific steps.
 
@@ -261,7 +263,7 @@ Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, R
 
 ## Links
 
-- **GitHub**: https://github.com/pedrozadotdev/pi-pedstack
+- **GitHub**: <https://github.com/pedrozadotdev/pi-pedstack>
 - **License**: MIT
 
 ---
