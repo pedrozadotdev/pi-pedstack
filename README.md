@@ -145,7 +145,11 @@ Here is a complete configuration schema example:
 
 For each stage, you can inject custom project-specific instructions by creating markdown files in the `.agents/appends/` directory at your project root.
 
-The system will search for uppercase file names matching the active step name:
+The system loads two sources per stage, merged into the system prompt:
+
+**Global (all stages):** `.agents/appends/ALL.md` — if present, injected into every stage.
+
+**Per-stage:** Uppercase file names matching the active step name:
 
 - `.agents/appends/BRAINSTORM.md`
 - `.agents/appends/PLAN.md`
@@ -155,7 +159,7 @@ The system will search for uppercase file names matching the active step name:
 - `.agents/appends/LEARN.md`
 - `.agents/appends/DOCSYNC.md`
 
-If present, these files are loaded and appended directly to the active prompt context, helping customize guidelines for specific steps.
+If both `ALL.md` and a per-stage file exist, their contents are combined (global first, then stage-specific). If present, these files are loaded and appended directly to the active prompt context, helping customize guidelines for specific steps.
 
 ## Design Philosophy & Acknowledgements
 

@@ -40,3 +40,23 @@ export async function loadAppendContext(
 		return null;
 	}
 }
+
+/**
+ * Load the global append context from `<project-root>/.agents/appends/ALL.md`.
+ * This file applies to all pipeline stages.
+ *
+ * @param cwd - Project root directory
+ * @returns File contents if found, null otherwise
+ */
+export async function loadAllAppendContext(
+	cwd: string,
+): Promise<string | null> {
+	const appendPath = path.join(cwd, ".agents", "appends", "ALL.md");
+
+	try {
+		const content = await readFile(appendPath, "utf8");
+		return content.trim() || null;
+	} catch {
+		return null;
+	}
+}

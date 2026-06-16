@@ -10,7 +10,7 @@ import {
 	readPiPedstackConfig,
 	getConfigKeyForSkill,
 } from "../utils/config-types";
-import { loadAppendContext } from "../utils/append-loader";
+import { loadAllAppendContext, loadAppendContext } from "../utils/append-loader";
 import { parseModelRef } from "../utils/parse-model-ref";
 import {
 	createWorkflowStateTool,
@@ -411,11 +411,26 @@ async function loadStageAppend(
 	ctx: ExtensionCommandContext,
 	stageKey: PipelineStageKey,
 ): Promise<void> {
-	const appendContent = await loadAppendContext(ctx.cwd, stageKey);
-	if (appendContent) {
-		setPendingAppendContent(appendContent);
+	// Load the global ALL.md (applies to every stage) and the stage-specific file
+	const [allContent, stageContent] = await Promise.all([
+		loadAllAppendContext(ctx.cwd),
+		loadAppendContext(ctx.cwd, stageKey),
+	]);
+
+	let combined: string | null = null;
+	if (allContent && stageContent) {
+		combined = allContent + "\n\n" + stageContent;
+	} else if (allContent) {
+		combined = allContent;
+	} else if (stageContent) {
+		combined = stageContent;
+	}
+
+	if (combined) {
+		setPendingAppendContent(combined);
 		if (ctx.hasUI) {
-			ctx.ui.notify(`Loaded APPEND.md context for ${stageKey}`, "info");
+			const label = `${stageKey}` + (allContent ? " + ALL" : "");
+			ctx.ui.notify(`Loaded APPEND.md context for ${label}`, "info");
 		}
 	}
 }
