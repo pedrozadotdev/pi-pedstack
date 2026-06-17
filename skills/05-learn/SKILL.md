@@ -17,7 +17,7 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 - Check for overlap with nearby solution docs before creating a new artifact.
 - Use `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/05-learn/references/overlap-rules.md` to decide whether to create, update, or consolidate.
 - Use **`pattern_extractor`** to identify recurring patterns across existing artifacts before writing a new solution.
-- Structure the document with `assets/solution-template.md`.
+- Structure the document with `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/05-learn/assets/solution-template.md`.
 - Save solutions in the project folder under `{project-root}/docs/solutions/`.
 - Make the result useful to future `02-plan` and `04-review` runs via the search strategy in `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/05-learn/references/solution-search-strategy.md`.
 
