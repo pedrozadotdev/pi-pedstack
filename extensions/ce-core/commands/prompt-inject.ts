@@ -53,14 +53,14 @@ const STAGE_DISCIPLINES: Record<PipelineStageKey, StageDiscipline> = {
 			"Review every changed file for correctness, style, type safety, test coverage, and adherence to project standards.",
 		forbidden:
 			"Do NOT modify code, do NOT re-implement anything, do NOT add features, and do NOT fix issues yourself — only identify and document them.",
-		nextStage: "05-learn",
+		nextStage: "04-5-debug",
 	},
 	"04-5-debug": {
 		mandate:
 			"Fix only the bugs and issues identified during review. Make targeted, minimal changes to resolve each issue.",
 		forbidden:
 			"Do NOT add new features, do NOT change scope, do NOT refactor unrelated code — fix only what was flagged.",
-		nextStage: "04-review",
+		nextStage: "05-learn",
 	},
 	"05-learn": {
 		mandate:

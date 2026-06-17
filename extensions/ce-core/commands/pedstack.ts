@@ -10,7 +10,10 @@ import {
 	readPiPedstackConfig,
 	getConfigKeyForSkill,
 } from "../utils/config-types";
-import { loadAllAppendContext, loadAppendContext } from "../utils/append-loader";
+import {
+	loadAllAppendContext,
+	loadAppendContext,
+} from "../utils/append-loader";
 import { parseModelRef } from "../utils/parse-model-ref";
 import {
 	createWorkflowStateTool,
