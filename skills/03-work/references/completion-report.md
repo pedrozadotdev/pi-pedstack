@@ -47,5 +47,5 @@ All tests pass. Build succeeds. No regressions.
 **Commands run:** all verification commands
 **Verification:** pass/fail status for each
 
-**Next:** `/skill:04-review`
+**Next:** `/ped-next`
 ```

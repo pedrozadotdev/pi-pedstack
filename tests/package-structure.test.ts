@@ -1,91 +1,105 @@
-import { describe, expect, test } from "bun:test"
-import { existsSync, readFileSync } from "node:fs"
-import path from "node:path"
+import { describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 
-const repoRoot = path.resolve(import.meta.dir, "..")
+const repoRoot = path.resolve(import.meta.dir, "..");
 
 describe("package bootstrap structure", () => {
-  test("exposes the initial Bun + TypeScript package structure", () => {
-    expect(existsSync(path.join(repoRoot, "package.json"))).toBe(true)
-    expect(existsSync(path.join(repoRoot, "tsconfig.json"))).toBe(true)
-    expect(existsSync(path.join(repoRoot, "README.md"))).toBe(true)
-    expect(existsSync(path.join(repoRoot, "skills"))).toBe(true)
-    expect(existsSync(path.join(repoRoot, "extensions"))).toBe(true)
-    expect(existsSync(path.join(repoRoot, "tests"))).toBe(true)
-  })
+	test("exposes the initial Bun + TypeScript package structure", () => {
+		expect(existsSync(path.join(repoRoot, "package.json"))).toBe(true);
+		expect(existsSync(path.join(repoRoot, "tsconfig.json"))).toBe(true);
+		expect(existsSync(path.join(repoRoot, "README.md"))).toBe(true);
+		expect(existsSync(path.join(repoRoot, "skills"))).toBe(true);
+		expect(existsSync(path.join(repoRoot, "extensions"))).toBe(true);
+		expect(existsSync(path.join(repoRoot, "tests"))).toBe(true);
+	});
 
-  test("keeps skills and extensions as top-level Pi package resources", () => {
-    expect(existsSync(path.join(repoRoot, "skills"))).toBe(true)
-    expect(existsSync(path.join(repoRoot, "extensions", "ce-core"))).toBe(true)
-  })
+	test("keeps skills and extensions as top-level Pi package resources", () => {
+		expect(existsSync(path.join(repoRoot, "skills"))).toBe(true);
+		expect(existsSync(path.join(repoRoot, "extensions", "ce-core"))).toBe(true);
+	});
 
-  test("declares a Pi package manifest for skills and extensions", () => {
-    const packageJson = readFileSync(path.join(repoRoot, "package.json"), "utf8")
+	test("declares a Pi package manifest for skills and extensions", () => {
+		const packageJson = readFileSync(
+			path.join(repoRoot, "package.json"),
+			"utf8",
+		);
 
-    expect(packageJson).toContain('"pi"')
-    expect(packageJson).toContain('"skills"')
-    expect(packageJson).toContain('"extensions"')
-  })
+		expect(packageJson).toContain('"pi"');
+		expect(packageJson).toContain('"skills"');
+		expect(packageJson).toContain('"extensions"');
+	});
 
-  test("declares Pi core packages as peer dependencies", () => {
-    const packageJson = readFileSync(path.join(repoRoot, "package.json"), "utf8")
+	test("declares Pi core packages as peer dependencies", () => {
+		const packageJson = readFileSync(
+			path.join(repoRoot, "package.json"),
+			"utf8",
+		);
 
-    expect(packageJson).toContain('"peerDependencies"')
-    expect(packageJson).toContain('"@earendil-works/pi-coding-agent"')
-    expect(packageJson).toContain('"typebox"')
-  })
+		expect(packageJson).toContain('"peerDependencies"');
+		expect(packageJson).toContain('"@earendil-works/pi-coding-agent"');
+		expect(packageJson).toContain('"typebox"');
+	});
 
-  test("README documents installation and the commands", () => {
-    const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8")
+	test("README documents installation and the commands", () => {
+		const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
 
-    expect(readme).toContain("pi install")
-    expect(readme).toContain("01-brainstorm")
-    expect(readme).toContain("02-plan")
-    expect(readme).toContain("03-work")
-    expect(readme).toContain("04-review")
-    expect(readme).toContain("05-learn")
-    expect(readme).toContain("04-5-debug")
-    expect(readme).toContain("06-docsync")
-    expect(readme).toContain("00-next")
-  })
+		expect(readme).toContain("pi install");
+		expect(readme).toContain("01-brainstorm");
+		expect(readme).toContain("02-plan");
+		expect(readme).toContain("03-work");
+		expect(readme).toContain("04-review");
+		expect(readme).toContain("05-learn");
+		expect(readme).toContain("04-5-debug");
+		expect(readme).toContain("06-docsync");
+		expect(readme).toContain("/ped-next");
+	});
 
-  test("README does not reference removed CE subagent tools", () => {
-    const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8")
+	test("README does not reference removed CE subagent tools", () => {
+		const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
 
-    expect(readme).not.toContain("ce_subagent")
-    expect(readme).not.toContain("ce_parallel_subagent")
-  })
+		expect(readme).not.toContain("ce_subagent");
+		expect(readme).not.toContain("ce_parallel_subagent");
+	});
 
-  test("package metadata is publish-ready", () => {
-    const packageJson = readFileSync(path.join(repoRoot, "package.json"), "utf8")
+	test("package metadata is publish-ready", () => {
+		const packageJson = readFileSync(
+			path.join(repoRoot, "package.json"),
+			"utf8",
+		);
 
-    expect(packageJson).toContain('"keywords"')
-    expect(packageJson).toContain('"pi-package"')
-    expect(packageJson).toContain('"license"')
-    expect(packageJson).toContain('"repository"')
-    expect(packageJson).toContain('"homepage"')
-    expect(packageJson).toContain('"bugs"')
-    expect(packageJson).toContain('"publishConfig"')
-    expect(packageJson).toContain('"access": "public"')
-    expect(packageJson).toContain('"files"')
-    expect(packageJson).toContain('"private": false')
-    expect(packageJson).toContain('"https://github.com/pedrozadotdev/pi-pedstack"')
-  })
+		expect(packageJson).toContain('"keywords"');
+		expect(packageJson).toContain('"pi-package"');
+		expect(packageJson).toContain('"license"');
+		expect(packageJson).toContain('"repository"');
+		expect(packageJson).toContain('"homepage"');
+		expect(packageJson).toContain('"bugs"');
+		expect(packageJson).toContain('"publishConfig"');
+		expect(packageJson).toContain('"access": "public"');
+		expect(packageJson).toContain('"files"');
+		expect(packageJson).toContain('"private": false');
+		expect(packageJson).toContain(
+			'"https://github.com/pedrozadotdev/pi-pedstack"',
+		);
+	});
 
-  test("repo includes a gitignore for node and Pi package development", () => {
-    const gitignore = readFileSync(path.join(repoRoot, ".gitignore"), "utf8")
+	test("repo includes a gitignore for node and Pi package development", () => {
+		const gitignore = readFileSync(path.join(repoRoot, ".gitignore"), "utf8");
 
-    expect(gitignore).toContain("node_modules")
-    expect(gitignore).toContain("dist")
-    expect(gitignore).toContain(".DS_Store")
-  })
+		expect(gitignore).toContain("node_modules");
+		expect(gitignore).toContain("dist");
+		expect(gitignore).toContain(".DS_Store");
+	});
 
-  test("includes test workflow triggered on push and PR to main", () => {
-    const workflow = readFileSync(path.join(repoRoot, ".github", "workflows", "test.yml"), "utf8")
+	test("includes test workflow triggered on push and PR to main", () => {
+		const workflow = readFileSync(
+			path.join(repoRoot, ".github", "workflows", "test.yml"),
+			"utf8",
+		);
 
-    expect(workflow).toContain("push")
-    expect(workflow).toContain("pull_request")
-    expect(workflow).toContain("main")
-    expect(workflow).toContain("bun test")
-  })
-})
+		expect(workflow).toContain("push");
+		expect(workflow).toContain("pull_request");
+		expect(workflow).toContain("main");
+		expect(workflow).toContain("bun test");
+	});
+});

@@ -45,7 +45,7 @@ You: I want to build a CLI tool that helps indie devs find early users
 → 06-docsync: synchronize documentation
 
 You: continue
-→ Next skill recommended via 00-next
+→ Auto-resolves next stage via /ped-next
 ```
 
 **Resume after interruption:**
@@ -75,7 +75,6 @@ Skill invocation and model/thinking level switching are handled automatically by
 | **04-5-debug** | Routing based on user testing (return to work or continue to learn) | `context_handoff` |
 | **05-learn** | Pattern extraction → searchable solution artifacts | `pattern_extractor`, `context_handoff`, `artifact_helper` |
 | **06-docsync** | Synchronize project documentation after completion | `context_handoff` |
-| **00-next** | Next-step recommendation + workflow status | `workflow_state`, `session_history` |
 
 ### Model & Thinking Routing
 

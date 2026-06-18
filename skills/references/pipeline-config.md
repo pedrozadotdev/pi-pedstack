@@ -7,7 +7,6 @@ Use these rules in all pipeline skills: `01-brainstorm` → `02-plan` → `03-wo
 - **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
 - **NO DIRECT-TO-IMPLEMENTATION BYPASS:** The model is prohibited from skipping the initial stages (Brainstorming/Planning) to go straight to code implementation or file editing. You must start every new feature or task with the `01-brainstorm` skill.
 
-
 ## Start of skill: model routing
 
 Model routing and thinking level switching are handled automatically by the ce-core extension. When a pipeline stage skill is invoked, the extension automatically sets the appropriate model and thinking level.
@@ -71,12 +70,13 @@ Before final completion, always output these blocks (replace placeholders with r
 ```
 
 Next step mapping:
-- `01-brainstorm` → `/skill:02-plan`
-- `02-plan` → `/skill:03-work`
-- `03-work` → `/skill:04-review`
-- `04-review` → `/skill:04-5-debug`
-- `04-5-debug` → `/skill:05-learn`
-- `05-learn` → `/skill:06-docsync`
+
+- `01-brainstorm` → `/ped-next`
+- `02-plan` → `/ped-next`
+- `03-work` → `/ped-next`
+- `04-review` → `/ped-next`
+- `04-5-debug` → `/ped-next`
+- `05-learn` → `/ped-next`
 - `06-docsync` → `Completed`
 
 ### Handoff-lite template
@@ -131,6 +131,7 @@ When a stage produces or updates handoff-lite, use this evidence-first structure
 ```
 
 Rules:
+
 - Use `N/A` instead of inventing facts.
 - Keep broad history in artifact paths, not expanded narrative.
 - If `context_handoff` is unavailable, manually write this shape to `.context/compound-engineering/handoffs/latest.md` and mention the path.
@@ -162,7 +163,7 @@ Please read first:
 - <latest checkpoint path or summary>
 
 Then continue:
-- Run <next skill command>
+- Run `/ped-next`
 
 Context Strategy:
 - hot: keep only files necessary for current execution (1-5)
@@ -174,4 +175,5 @@ Core principles:
 - Prioritize verifying current stage output
 - Control tokens to maintain high ROI
 ```
+
 ```

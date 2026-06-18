@@ -15,8 +15,8 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 1. **Load context**: Check latest handoff from `04-review`.
 2. **Present summary**: Show a concise list of implemented features and review findings to the user.
 3. **Prompt the user**: Ask the user directly if they found any bugs during manual verification or testing.
-   - **Bugs found**: Stop execution, prompt the user for bug reports, and recommend returning to `03-work` (using `/skill:03-work`).
-   - **Clean / No bugs**: Recommend proceeding to `05-learn` (using `/skill:05-learn`).
+   - **Bugs found**: Stop execution, prompt the user for bug reports, and recommend running `/ped-next` to return to `03-work`.
+   - **Clean / No bugs**: Recommend running `/ped-next` to proceed to `05-learn`.
 
 ## Exit Criteria
 

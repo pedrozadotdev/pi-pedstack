@@ -227,11 +227,11 @@ describe("buildSystemPromptAppend", () => {
 		}
 	});
 
-	test("returns generic guard + skill-reading for unrecognized stage (e.g., 00-next)", () => {
-		const result = buildSystemPromptAppend("/skills/00-next/SKILL.md", []);
+	test("returns generic guard + skill-reading for unrecognized stage (e.g., 00-foo)", () => {
+		const result = buildSystemPromptAppend("/skills/00-foo/SKILL.md", []);
 		expect(result).toContain("Pipeline Discipline: No Implementation");
 		expect(result).toContain("Pipeline Stage: Skill Instructions");
-		expect(result).toContain("/skills/00-next/SKILL.md");
+		expect(result).toContain("/skills/00-foo/SKILL.md");
 	});
 
 	test("fix-issues only when fixIssues set and stage is 01-brainstorm", () => {
@@ -598,9 +598,9 @@ describe("before_agent_start handler", () => {
 		expect(result.systemPrompt).toContain("Pipeline Stage: Skill Instructions");
 	});
 
-	test("generic guard present for unrecognized stage keys (00-next)", async () => {
+	test("generic guard present for unrecognized stage keys (00-foo)", async () => {
 		const handler = setupHandler()!;
-		setPendingSkillPath("/skills/00-next/SKILL.md");
+		setPendingSkillPath("/skills/00-foo/SKILL.md");
 
 		const result = await handler({
 			systemPromptOptions: { skills: [] },

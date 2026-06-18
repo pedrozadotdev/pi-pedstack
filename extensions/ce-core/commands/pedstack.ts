@@ -540,7 +540,7 @@ async function handleResolutionAbort(
 	}
 
 	if (resolution.reason === "new_session_recommended") {
-		const p = `Continue this pi-pedstack workflow, do not restart.\nRepo: ${ctx.cwd}\nPlease read first:\n- Latest handoff: ${resolution.details.latestHandoffPath}\nThen continue:\n- /skill:${resolution.details.nextStage}`;
+		const p = `Continue this pi-pedstack workflow, do not restart.\nRepo: ${ctx.cwd}\nPlease read first:\n- Latest handoff: ${resolution.details.latestHandoffPath}\nThen continue:\n- /ped-next`;
 		if (ctx.hasUI)
 			ctx.ui.notify(
 				`New session recommended for ${resolution.details.nextStage}. Copyable prompt:\n${p}`,
