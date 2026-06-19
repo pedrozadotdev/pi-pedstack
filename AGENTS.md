@@ -21,7 +21,6 @@ bun test              # Run all tests
 
 - **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
 - **NO DIRECT-TO-IMPLEMENTATION BYPASS:** Do NOT skip the initial stages (Brainstorming/Planning) to go straight to code implementation or file editing. Start every new feature, bug fix, or task with the `01-brainstorm` skill.
-- **TASK TRACKING:** Register micro-tasks at the start of each stage using `todo_add`. Track progress with `todo_list` and mark items complete with `todo_done`. The `context_handoff` tool blocks handoff if pending tasks exist. Never execute `context_handoff` with unfinished tasks.
 
 ## Architecture
 
@@ -29,7 +28,7 @@ bun test              # Run all tests
 skills/          # 7 pipeline skills (01-brainstorm, 02-plan, 03-work, 04-review, 04-5-debug, 05-learn, 06-docsync)
   references/    # Shared templates and schemas
   rules/         # Coding standards (common + language-specific)
-extensions/      # Optional Pi extensions (e.g. ce-core with todo_list/context_handoff/checkpoint tools)
+extensions/      # Optional Pi extensions
 tests/           # Test files
 docs/            # Documentation and assets
 ```

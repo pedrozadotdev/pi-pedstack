@@ -27,7 +27,6 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 6. Write plan to `docs/plans/`
 7. If plan exists, use **`plan_diff`** to compare and patch incrementally
 8. End by recommending `03-work`
-9. **Task Tracking:** Before initiating the work in this stage, register your micro-tasks using `todo_add`. Continually check your list using `todo_list` and mark items complete with `todo_done`. **CRITICAL:** You must not execute `context_handoff` to the next stage if there are pending tasks on your list.
 
 ## Hard gates — TDD enforcement
 

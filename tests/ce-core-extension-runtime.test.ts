@@ -103,9 +103,6 @@ describe("ce-core extension runtime registration", () => {
 			"plan_diff",
 			"session_history",
 			"pattern_extractor",
-			"todo_add",
-			"todo_list",
-			"todo_done",
 			"context_handoff",
 			"multi_reviewer",
 		]);

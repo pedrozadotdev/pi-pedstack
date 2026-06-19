@@ -20,7 +20,6 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 - Structure the document with `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/05-learn/assets/solution-template.md`.
 - Save solutions in the project folder under `{project-root}/docs/solutions/`.
 - Make the result useful to future `02-plan` and `04-review` runs via the search strategy in `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/05-learn/references/solution-search-strategy.md`.
-- **Task Tracking:** Before initiating the work in this stage, register your micro-tasks using `todo_add`. Continually check your list using `todo_list` and mark items complete with `todo_done`. **CRITICAL:** You must not execute `context_handoff` to the next stage if there are pending tasks on your list.
 
 ## Workflow
 

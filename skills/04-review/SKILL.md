@@ -27,7 +27,6 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
    - Fully read top 3 candidates
 7. Produce a compiled review findings report under `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<topic>.md` (using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/findings-schema.md` as the baseline structured findings format and `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/review-findings-template.md` as the document layout).
 8. **Autofixable findings:** apply and re-review (max 3 iterations)
-9. **Task Tracking:** Before initiating the work in this stage, register your micro-tasks using `todo_add`. Continually check your list using `todo_list` and mark items complete with `todo_done`. **CRITICAL:** You must not execute `context_handoff` to the next stage if there are pending tasks on your list.
 
 ## Review discipline
 

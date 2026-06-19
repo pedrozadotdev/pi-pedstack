@@ -24,7 +24,6 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 6. Use **`session_checkpoint`** to track progress and enable resume
 7. Use **`task_splitter`** to analyze dependencies before execution
 8. End by recommending `04-review`
-9. **Task Tracking:** Before initiating the work in this stage, register your micro-tasks using `todo_add`. Continually check your list using `todo_list` and mark items complete with `todo_done`. **CRITICAL:** You must not execute `context_handoff` to the next stage if there are pending tasks on your list.
 
 ## Hard gates — TDD enforcement
 
