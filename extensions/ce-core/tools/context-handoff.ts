@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { normalizeSlug } from "../utils/name-utils";
+import { readTodoStateForRepo } from "./todo-list";
 
 export type ContextHealth = "good" | "watch" | "heavy" | "critical";
 
@@ -173,6 +174,7 @@ function buildDefaultHandoffMarkdown(input: {
 	recentlyAccessedFiles: string[];
 	compressionRisk: string[];
 	activeRules: string[];
+	pendingTasks?: { id: number; task: string }[];
 }): string {
 	const currentTask = input.nextStage
 		? `Continue from ${input.currentStage} to ${input.nextStage}.`
@@ -190,6 +192,12 @@ function buildDefaultHandoffMarkdown(input: {
 	const blocker = input.blocker ?? "N/A";
 	const verification = input.verification ?? "Not run";
 	const nextMinimalStep = input.nextStage ? `/ped-next` : "N/A";
+
+	const pendingTasks = input.pendingTasks ?? [];
+	const pendingTasksBlock =
+		pendingTasks.length > 0
+			? pendingTasks.map((t) => `- [ ] #${t.id}: ${t.task}`).join("\n")
+			: "- No pending tasks";
 
 	return [
 		"## Current Task",
@@ -230,6 +238,9 @@ function buildDefaultHandoffMarkdown(input: {
 		"",
 		"## Compression Risk",
 		formatBullets(input.compressionRisk),
+		"",
+		"## Todo Status",
+		pendingTasksBlock,
 		"",
 		"## Do Not Repeat",
 		"- Do not reload full history unless the handoff lacks required evidence.",
@@ -371,6 +382,10 @@ async function save(input: ContextHandoffInput): Promise<ContextHandoffResult> {
 	const compressionRisk = input.compressionRisk ?? [];
 	const activeRules = input.activeRules ?? [];
 
+	// Read pending tasks from todo state for the handoff markdown
+	const todoState = await readTodoStateForRepo(input.repoRoot);
+	const pendingTasks = todoState.tasks.filter((t) => t.status === "pending");
+
 	const handoffMarkdown = input.handoffMarkdown?.trim().length
 		? input.handoffMarkdown
 		: buildDefaultHandoffMarkdown({
@@ -386,6 +401,10 @@ async function save(input: ContextHandoffInput): Promise<ContextHandoffResult> {
 				recentlyAccessedFiles,
 				compressionRisk,
 				activeRules,
+				pendingTasks: pendingTasks.map((t) => ({
+					id: t.id,
+					task: t.task,
+				})),
 			});
 
 	const recommendNewSession = computeRecommendNewSession(
@@ -674,6 +693,34 @@ async function validate(
 			? "Found handoff markdown"
 			: "No handoff markdown found",
 	});
+
+	// --- Todo completion check ---
+	let pendingTaskCount = 0;
+	try {
+		const todoState = await readTodoStateForRepo(input.repoRoot);
+		pendingTaskCount = todoState.tasks.filter(
+			(t) => t.status === "pending",
+		).length;
+	} catch {
+		// Todo state may not exist yet — graceful degradation
+	}
+
+	if (pendingTaskCount > 0) {
+		checks.push({
+			name: "todo_completion",
+			passed: false,
+			reason: `There ${pendingTaskCount === 1 ? "is" : "are"} ${pendingTaskCount} pending task${pendingTaskCount === 1 ? "" : "s"} that must be completed before handoff`,
+		});
+		missing.push(
+			`todo: ${pendingTaskCount} pending task${pendingTaskCount === 1 ? "" : "s"} — use todo_done or todo_list to resolve`,
+		);
+	} else {
+		checks.push({
+			name: "todo_completion",
+			passed: true,
+			reason: "No pending tasks",
+		});
+	}
 
 	// --- Recall probe ---
 	const hasCurrentTruth = state

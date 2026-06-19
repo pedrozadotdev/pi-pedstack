@@ -10,6 +10,10 @@ This skill is executed at the end of a session, after implementing features, or 
 
 See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/pipeline-config.md) for model routing and pipeline behavior.
 
+## Core rules
+
+- **Task Tracking:** Before initiating the work in this stage, register your micro-tasks using `todo_add`. Continually check your list using `todo_list` and mark items complete with `todo_done`. **CRITICAL:** You must not execute `context_handoff` to the next stage if there are pending tasks on your list.
+
 ## Execution Workflow
 
 ### Step 1: Gather Session Telemetry

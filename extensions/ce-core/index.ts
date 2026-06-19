@@ -24,6 +24,11 @@ import { createContextHandoffTool } from "./tools/context-handoff";
 import { filterBashOutput } from "./tools/bash-output-filter";
 import { filterReadOutput } from "./tools/read-output-filter";
 import { COMPACTION_FOCUS_INSTRUCTIONS } from "./tools/compaction-optimizer";
+import {
+	createTodoAddTool,
+	createTodoListTool,
+	createTodoDoneTool,
+} from "./tools/todo-list";
 import { createMultiReviewerTool } from "./tools/multi-reviewer";
 import { createWorkflowStateTool } from "./tools/workflow-state";
 
@@ -192,6 +197,42 @@ const patternSchema = Type.Object({
 	sources: Type.Array(Type.String(), { description: "Artifact sources" }),
 });
 
+const todoAddParams = Type.Object({
+	repoRoot: Type.String({
+		description:
+			"Repository root for the project (used to locate the todo state file)",
+	}),
+	task: Type.String({
+		description: "The task description to add",
+	}),
+});
+
+const todoListParams = Type.Object({
+	repoRoot: Type.String({
+		description:
+			"Repository root for the project (used to locate the todo state file)",
+	}),
+	filter: Type.Optional(
+		Type.Union(
+			[Type.Literal("all"), Type.Literal("pending"), Type.Literal("done")],
+			{
+				description:
+					"Filter tasks by status: 'all', 'pending', or 'done' (default: 'all')",
+			},
+		),
+	),
+});
+
+const todoDoneParams = Type.Object({
+	repoRoot: Type.String({
+		description:
+			"Repository root for the project (used to locate the todo state file)",
+	}),
+	taskId: Type.Number({
+		description: "The ID of the task to mark as done",
+	}),
+});
+
 const contextHandoffParams = Type.Object({
 	operation: Type.Union(
 		[
@@ -312,6 +353,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const planDiff = createPlanDiffTool();
 	const sessionHistory = createSessionHistoryTool();
 	const patternExtractor = createPatternExtractorTool();
+	const todoAdd = createTodoAddTool();
+	const todoList = createTodoListTool();
+	const todoDone = createTodoDoneTool();
 	const contextHandoff = createContextHandoffTool();
 	const multiReviewer = createMultiReviewerTool();
 
@@ -500,6 +544,75 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
 			return {
 				content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+				details: result,
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: todoAdd.name,
+		label: "Todo Add",
+		description:
+			"Register a new pending task in the persistent todo list. Use this at the start of any stage to track micro-tasks.",
+		parameters: todoAddParams,
+		async execute(_toolCallId, params) {
+			const result = await todoAdd.execute({
+				repoRoot: params.repoRoot,
+				task: params.task,
+			});
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify(result, null, 2),
+					},
+				],
+				details: result,
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: todoList.name,
+		label: "Todo List",
+		description:
+			"List tasks in the persistent todo list with optional status filter. Check this frequently to track what remains.",
+		parameters: todoListParams,
+		async execute(_toolCallId, params) {
+			const result = await todoList.execute({
+				repoRoot: params.repoRoot,
+				filter: params.filter,
+			});
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify(result, null, 2),
+					},
+				],
+				details: result,
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: todoDone.name,
+		label: "Todo Done",
+		description:
+			"Mark a pending task as done by its ID. Remember to call this as each micro-task is completed.",
+		parameters: todoDoneParams,
+		async execute(_toolCallId, params) {
+			const result = await todoDone.execute({
+				repoRoot: params.repoRoot,
+				taskId: params.taskId,
+			});
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify(result, null, 2),
+					},
+				],
 				details: result,
 			};
 		},

@@ -74,7 +74,7 @@ import ceCoreExtension from "../extensions/ce-core/index";
 import { createMultiReviewerTool } from "../extensions/ce-core/tools/multi-reviewer";
 
 describe("ce-core extension runtime registration", () => {
-	test("registers 12 workflow control tools (no subagent tools)", () => {
+	test("registers 15 workflow control tools (no subagent tools)", () => {
 		const registeredNames: string[] = [];
 		const eventHandlers = new Map<string, any[]>();
 		const pi = {
@@ -103,6 +103,9 @@ describe("ce-core extension runtime registration", () => {
 			"plan_diff",
 			"session_history",
 			"pattern_extractor",
+			"todo_add",
+			"todo_list",
+			"todo_done",
 			"context_handoff",
 			"multi_reviewer",
 		]);
@@ -453,4 +456,3 @@ import {
 import { parseModelRef } from "../extensions/ce-core/utils/parse-model-ref";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-

@@ -21,6 +21,7 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 - **Explicit user approval required** before handoff to `02-plan`.
 - Write result to `docs/brainstorms/` as durable requirements document.
 - For design validation, the **`multi_reviewer`** tool is required (execute this every time) with `stepName: "01-brainstorm"` to review the drafted brainstorm/requirements artifact.
+- **Task Tracking:** Before initiating the work in this stage, register your micro-tasks using `todo_add`. Continually check your list using `todo_list` and mark items complete with `todo_done`. **CRITICAL:** You must not execute `context_handoff` to the next stage if there are pending tasks on your list.
 
 ## Mode selection
 

@@ -4,6 +4,19 @@
 
 The Feature Implementation Workflow describes the development pipeline: research, planning, TDD, code review, and then committing to git.
 
+## Universal Task Registration
+
+> Applies to ALL phases of the development workflow (brainstorm through docsync).
+
+Before executing any long chain of commands or multi-step work in any phase, the agent must:
+
+1. **Register micro-tasks**: Use `todo_add` to explicitly log each intention, subtask, or verification step.
+2. **Track progress**: Use `todo_list` throughout execution to check which tasks remain.
+3. **Mark completion**: Use `todo_done` as each micro-task is completed.
+4. **No premature handoff**: The agent must NOT execute `context_handoff` to proceed to the next stage if there are any pending (unfinished) tasks in the todo list.
+
+This prevents context loss, dropped tasks, and premature stage handoffs across all workflow stages.
+
 ## Feature Implementation Workflow
 
 0. **Research & Reuse** _(mandatory before any new implementation)_
