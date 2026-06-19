@@ -1,10 +1,8 @@
 import { describe, expect, test, mock, afterEach } from "bun:test";
-import path from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
 
 mock.module("@earendil-works/pi-ai", () => {
 	return {
-		completeSimple: async (model: any, prompt: any, options: any) => {
+		completeSimple: async (_model: any, _prompt: any, _options: any) => {
 			return {
 				content: [
 					{ type: "text", text: "A simulated description of the image." },
@@ -17,7 +15,7 @@ mock.module("@earendil-works/pi-ai", () => {
 
 mock.module("node:child_process", () => {
 	return {
-		spawn: (command: string, args: string[], options: any) => {
+		spawn: (_command: string, _args: string[], _options: any) => {
 			const listeners: Record<string, Function[]> = {};
 			const stdoutListeners: Record<string, Function[]> = {};
 
@@ -29,7 +27,7 @@ mock.module("node:child_process", () => {
 					},
 				},
 				stderr: {
-					on: (event: string, cb: Function) => {
+					on: (_event: string, _cb: Function) => {
 						// no-op for tests
 					},
 				},
@@ -143,11 +141,6 @@ describe("pending fix-issues state", () => {
 });
 
 // ── Unit 2: buildSystemPromptAppend and extractStageKey ──
-
-import {
-	buildSystemPromptAppend,
-	extractStageKey,
-} from "../extensions/ce-core/commands/prompt-inject";
 
 describe("extractStageKey", () => {
 	test("extracts stage key from POSIX path", () => {
@@ -329,14 +322,68 @@ describe("buildSystemPromptAppend", () => {
 			"After reading the skill, follow its instructions precisely.",
 		);
 	});
+
+	describe("checklist discipline block", () => {
+		test("appears for all valid pipeline stages", () => {
+			for (const stage of [
+				"01-brainstorm",
+				"02-plan",
+				"03-work",
+				"04-review",
+				"04-5-debug",
+				"05-learn",
+				"06-docsync",
+			]) {
+				const result = buildSystemPromptAppend(`/skills/${stage}/SKILL.md`, []);
+				expect(result).toContain("✅ Checklist Discipline");
+				expect(result).toContain("checklist_add");
+				expect(result).toContain("checklist_show");
+				expect(result).toContain("checklist_del");
+				expect(result).toContain("context_handoff save");
+			}
+		});
+
+		test("does NOT appear when skillPath is null", () => {
+			const result = buildSystemPromptAppend(null, []);
+			expect(result).not.toContain("✅ Checklist Discipline");
+			expect(result).not.toContain("checklist_add");
+		});
+
+		test("does NOT appear for unrecognized stage key", () => {
+			const result = buildSystemPromptAppend("/skills/00-foo/SKILL.md", []);
+			expect(result).not.toContain("✅ Checklist Discipline");
+			expect(result).not.toContain("checklist_add");
+		});
+
+		test("checklist block appears after skill-reading block and before fix-issues block", () => {
+			const result = buildSystemPromptAppend("/skills/01-brainstorm/SKILL.md", [
+				"42",
+			]);
+			const skillReadingIdx = result.indexOf(
+				"Pipeline Stage: Skill Instructions",
+			);
+			const checklistIdx = result.indexOf("✅ Checklist Discipline");
+			const fixIssuesIdx = result.indexOf("Fetch GitHub Issues for Context");
+
+			expect(skillReadingIdx).toBeGreaterThan(-1);
+			expect(checklistIdx).toBeGreaterThan(-1);
+			expect(fixIssuesIdx).toBeGreaterThan(-1);
+			expect(checklistIdx).toBeGreaterThan(skillReadingIdx);
+			expect(fixIssuesIdx).toBeGreaterThan(checklistIdx);
+		});
+
+		test("checklist block has no fix-issues when fixIssues is empty", () => {
+			const result = buildSystemPromptAppend(
+				"/skills/01-brainstorm/SKILL.md",
+				[],
+			);
+			expect(result).toContain("✅ Checklist Discipline");
+			expect(result).not.toContain("Fetch GitHub Issues");
+		});
+	});
 });
 
 // ── Unit 3: parseIssueNumbers and cmdPedFixIssues ──
-
-import {
-	parseIssueNumbers,
-	cmdPedFixIssues,
-} from "../extensions/ce-core/commands/pedstack";
 
 describe("parseIssueNumbers", () => {
 	test("parses space-separated numbers", () => {
@@ -381,12 +428,11 @@ describe("parseIssueNumbers", () => {
 describe("cmdPedFixIssues", () => {
 	test("empty args notifies warning and does not send message", async () => {
 		const notifications: Array<{ message: string; level: string }> = [];
-		let appended: any = null;
 		let sentMessage: any = null;
 
 		const pi = {
-			appendEntry(type: string, data?: any) {
-				appended = { type, data };
+			appendEntry(_type: string, _data?: any) {
+				// no-op for this test
 			},
 			sendUserMessage(content: any) {
 				sentMessage = content;
@@ -685,6 +731,9 @@ describe("public exports", () => {
 			"createPatternExtractorTool",
 			"createContextHandoffTool",
 			"createMultiReviewerTool",
+			"createChecklistAddTool",
+			"createChecklistShowTool",
+			"createChecklistDelTool",
 			"getBrainstormArtifactPath",
 			"getPlanArtifactPath",
 			"getSolutionArtifactPath",

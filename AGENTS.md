@@ -17,6 +17,13 @@ Built with TypeScript, tested with Bun test runner, published to npm as `pi-peds
 bun test              # Run all tests
 ```
 
+| Command | Description |
+|---------|-------------|
+| `/ped-start <prompt>` | Start a new Pedstack workflow, launching 01-brainstorm |
+| `/ped-next [prompt]` | Auto-resolve and advance to the next pipeline stage |
+| `/ped-reload` | Restart the current stage from a fresh context, re-applying skill config |
+| `/ped-fix-issues <#1,#2,...>` | Prompt-inject GitHub issue context into 01-brainstorm |
+
 ## Workflow Discipline
 
 - **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
@@ -28,10 +35,29 @@ bun test              # Run all tests
 skills/          # 7 pipeline skills (01-brainstorm, 02-plan, 03-work, 04-review, 04-5-debug, 05-learn, 06-docsync)
   references/    # Shared templates and schemas
   rules/         # Coding standards (common + language-specific)
-extensions/      # Optional Pi extensions
+extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt injection)
 tests/           # Test files
-docs/            # Documentation and assets
+docs/            # Documentation, brainstorms, plans, reviews, solutions
 ```
+
+### CE Core Extension (Tools)
+
+| Tool | Purpose |
+|------|---------|
+| `artifact_helper` | Resolve and create standard CE artifact paths |
+| `workflow_state` | Scan repo for workflow artifacts |
+| `review_router` | Recommend reviewer personas from diff metadata |
+| `session_checkpoint` | Save/load/resume execution checkpoints |
+| `task_splitter` | Analyze parallel-safe execution groups |
+| `brainstorm_dialog` | Multi-round interactive brainstorming |
+| `plan_diff` | Compare/update plan units |
+| `session_history` | Record and query skill execution history |
+| `pattern_extractor` | Extract recurring patterns from artifacts |
+| `context_handoff` | Save/load/validate cross-stage handoffs |
+| `multi_reviewer` | Orchestrate parallel reviewer subagents |
+| `checklist_add` / `checklist_show` / `checklist_del` | Persistent task tracking with handoff gating |
+
+**Handoff gating:** `context_handoff save` blocks cross-stage saves when the checklist is non-empty. The model must complete or delete all pending tasks before advancing to the next stage. Use `checklist_add` when discovering tasks from SKILL.md, rules, or references to avoid dropped tasks.
 
 ## Code Style
 

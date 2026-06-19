@@ -656,6 +656,187 @@ describe("context_handoff", () => {
 		expect(loadResult.activeRules).toEqual(manyRules);
 	});
 
+	describe("checklist blocking in save", () => {
+		test("blocks cross-stage save when checklist is non-empty", async () => {
+			const repoRoot = `/tmp/pi-ce-checklist-block-${Date.now()}`;
+			const tool = createContextHandoffTool();
+			const { createChecklistAddTool } = await import(
+				"../extensions/ce-core/tools/checklist"
+			);
+			const addTool = createChecklistAddTool();
+
+			// Save to set up initial state
+			await tool.execute({
+				operation: "save",
+				repoRoot,
+				currentStage: "03-work",
+				nextStage: "04-review",
+				contextHealth: "good",
+				handoffMarkdown: "test",
+			});
+
+			// Add a task to checklist (uses cwd, so need to chdir)
+			const origCwd = process.cwd();
+			process.chdir(repoRoot);
+			try {
+				await addTool.execute({ description: "Task X" });
+			} finally {
+				process.chdir(origCwd);
+			}
+
+			// Try cross-stage save — should be blocked
+			const result = await tool.execute({
+				operation: "save",
+				repoRoot,
+				currentStage: "03-work",
+				nextStage: "04-review",
+				contextHealth: "good",
+				handoffMarkdown: "test",
+			});
+
+			expect(result.operation).toBe("save");
+			expect(result.found).toBe(true);
+			expect(result.blocker).toBeDefined();
+			expect(result.blocker).toContain("checklist");
+			expect(result.blocker).toContain("Task X");
+
+			// Cleanup
+			const { rm } = await import("node:fs/promises");
+			await rm(repoRoot, { recursive: true, force: true }).catch(() => {});
+		});
+
+		test("allows cross-stage save when checklist is empty", async () => {
+			const repoRoot = `/tmp/pi-ce-checklist-empty-${Date.now()}`;
+			const tool = createContextHandoffTool();
+
+			const result = await tool.execute({
+				operation: "save",
+				repoRoot,
+				currentStage: "03-work",
+				nextStage: "04-review",
+				contextHealth: "good",
+				handoffMarkdown: "test",
+			});
+
+			expect(result.operation).toBe("save");
+			expect(result.found).toBe(true);
+			expect(result.blocker).toBeUndefined();
+
+			const { rm } = await import("node:fs/promises");
+			await rm(repoRoot, { recursive: true, force: true }).catch(() => {});
+		});
+
+		test("allows same-stage save even when checklist is non-empty", async () => {
+			const repoRoot = `/tmp/pi-ce-checklist-same-${Date.now()}`;
+			const tool = createContextHandoffTool();
+			const { createChecklistAddTool } = await import(
+				"../extensions/ce-core/tools/checklist"
+			);
+			const addTool = createChecklistAddTool();
+
+			// Save to set up initial state
+			await tool.execute({
+				operation: "save",
+				repoRoot,
+				currentStage: "03-work",
+				contextHealth: "good",
+				handoffMarkdown: "test",
+			});
+
+			// Add a task
+			const origCwd = process.cwd();
+			process.chdir(repoRoot);
+			try {
+				await addTool.execute({ description: "Task Y" });
+			} finally {
+				process.chdir(origCwd);
+			}
+
+			// Same-stage save — should be allowed
+			const result = await tool.execute({
+				operation: "save",
+				repoRoot,
+				currentStage: "03-work",
+				contextHealth: "good",
+				handoffMarkdown: "test",
+			});
+
+			expect(result.operation).toBe("save");
+			expect(result.found).toBe(true);
+			expect(result.blocker).toBeUndefined();
+
+			const { rm } = await import("node:fs/promises");
+			await rm(repoRoot, { recursive: true, force: true }).catch(() => {});
+		});
+
+		test("allows cross-stage save when no checklist file exists", async () => {
+			const repoRoot = `/tmp/pi-ce-checklist-nofile-${Date.now()}`;
+			const tool = createContextHandoffTool();
+
+			const result = await tool.execute({
+				operation: "save",
+				repoRoot,
+				currentStage: "03-work",
+				nextStage: "04-review",
+				contextHealth: "good",
+				handoffMarkdown: "test",
+			});
+
+			expect(result.operation).toBe("save");
+			expect(result.found).toBe(true);
+			expect(result.blocker).toBeUndefined();
+
+			const { rm } = await import("node:fs/promises");
+			await rm(repoRoot, { recursive: true, force: true }).catch(() => {});
+		});
+
+		test("validate reports warning when checklist is non-empty", async () => {
+			const repoRoot = `/tmp/pi-ce-checklist-validate-${Date.now()}`;
+			const tool = createContextHandoffTool();
+			const { createChecklistAddTool } = await import(
+				"../extensions/ce-core/tools/checklist"
+			);
+			const addTool = createChecklistAddTool();
+
+			// Save to set up initial state
+			await tool.execute({
+				operation: "save",
+				repoRoot,
+				currentStage: "03-work",
+				nextStage: "04-review",
+				contextHealth: "good",
+				handoffMarkdown:
+					"## Current Task\nTest\n## Next Minimal Step\nContinue\n## Current Truth\n- fact 1\n## Verified Facts\n- Stage: 03-work\n- Next: 04-review\n",
+			});
+
+			// Add a task
+			const origCwd = process.cwd();
+			process.chdir(repoRoot);
+			await addTool.execute({ description: "Pending Task" });
+			process.chdir(origCwd);
+
+			// Validate
+			const result = await tool.execute({
+				operation: "validate",
+				repoRoot,
+			});
+
+			expect(result.operation).toBe("validate");
+			expect(result.warnings).toBeDefined();
+			expect(
+				result.warnings!.some((w: string) =>
+					w.toLowerCase().includes("checklist"),
+				) ||
+					result.warnings!.some((w: string) =>
+						w.toLowerCase().includes("pending"),
+					),
+			).toBe(true);
+
+			const { rm } = await import("node:fs/promises");
+			await rm(repoRoot, { recursive: true, force: true }).catch(() => {});
+		});
+	});
+
 	test("backward compatibility: old state without activeRules loads with empty array", async () => {
 		const repoRoot = `/tmp/pi-ce-handoff-activeRules-compat-${Date.now()}`;
 		const tool = createContextHandoffTool();

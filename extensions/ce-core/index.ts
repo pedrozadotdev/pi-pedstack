@@ -27,6 +27,11 @@ import { filterReadOutput } from "./tools/read-output-filter";
 import { COMPACTION_FOCUS_INSTRUCTIONS } from "./tools/compaction-optimizer";
 import { createMultiReviewerTool } from "./tools/multi-reviewer";
 import { createWorkflowStateTool } from "./tools/workflow-state";
+import {
+	createChecklistAddTool,
+	createChecklistShowTool,
+	createChecklistDelTool,
+} from "./tools/checklist";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -275,6 +280,20 @@ const contextHandoffParams = Type.Object({
 	),
 });
 
+const checklistAddParams = Type.Object({
+	description: Type.String({
+		description: "Task description to add to the checklist",
+	}),
+});
+
+const checklistShowParams = Type.Object({});
+
+const checklistDelParams = Type.Object({
+	indexes: Type.Array(Type.Integer(), {
+		description: "1-based indexes of tasks to remove",
+	}),
+});
+
 const multiReviewerParams = Type.Object({
 	stepName: Type.String({ description: "Pipeline step name" }),
 	primaryOutput: Type.String({
@@ -315,6 +334,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const patternExtractor = createPatternExtractorTool();
 	const contextHandoff = createContextHandoffTool();
 	const multiReviewer = createMultiReviewerTool();
+	const checklistAdd = createChecklistAddTool();
+	const checklistShow = createChecklistShowTool();
+	const checklistDel = createChecklistDelTool();
 
 	pi.registerTool({
 		name: artifactHelper.name,
@@ -542,6 +564,60 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerTool({
+		name: checklistAdd.name,
+		label: "Checklist Add",
+		description:
+			"Add a task to the checklist. Use this when discovering tasks from skills, rules, or instructions.",
+		parameters: checklistAddParams,
+		async execute(_toolCallId, params) {
+			const result = await checklistAdd.execute({
+				description: params.description,
+			});
+
+			return {
+				content: [{ type: "text", text: JSON.stringify(result) }],
+				details: result,
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: checklistShow.name,
+		label: "Checklist Show",
+		description:
+			"Show all pending checklist tasks. Returns items with 1-based indexes for use with checklist_del.",
+		parameters: checklistShowParams,
+		async execute(_toolCallId, params) {
+			const result = await checklistShow.execute(
+				params as Record<string, never>,
+			);
+
+			return {
+				content: [{ type: "text", text: JSON.stringify(result) }],
+				details: result,
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: checklistDel.name,
+		label: "Checklist Delete",
+		description:
+			"Remove completed or cancelled tasks from the checklist by 1-based index.",
+		parameters: checklistDelParams,
+		async execute(_toolCallId, params) {
+			const result = await checklistDel.execute({
+				indexes: params.indexes,
+			});
+
+			return {
+				content: [{ type: "text", text: JSON.stringify(result) }],
+				details: result,
+			};
+		},
+	});
+
 	pi.registerCommand("ped-start", cmdPedStart(pi));
 	pi.registerCommand("ped-next", cmdPedNext(pi));
 	pi.registerCommand("ped-fix-issues", cmdPedFixIssues(pi));
@@ -689,6 +765,11 @@ export { createSessionHistoryTool } from "./tools/session-history";
 export { createPatternExtractorTool } from "./tools/pattern-extractor";
 export { createContextHandoffTool } from "./tools/context-handoff";
 export { createMultiReviewerTool } from "./tools/multi-reviewer";
+export {
+	createChecklistAddTool,
+	createChecklistShowTool,
+	createChecklistDelTool,
+} from "./tools/checklist";
 export {
 	getBrainstormArtifactPath,
 	getPlanArtifactPath,

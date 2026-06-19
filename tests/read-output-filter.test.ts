@@ -1,13 +1,13 @@
-import { describe, expect, test } from "bun:test"
-import { filterReadOutput } from "../extensions/ce-core/tools/read-output-filter"
+import { describe, expect, test } from "bun:test";
+import { filterReadOutput } from "../extensions/ce-core/tools/read-output-filter";
 
 // Helper: generate multi-line content
 function repeatLines(line: string, count: number): string {
-  return Array(count).fill(line).join("\n")
+	return Array(count).fill(line).join("\n");
 }
 
 function sizeOf(text: string): number {
-  return Buffer.byteLength(text, "utf-8")
+	return Buffer.byteLength(text, "utf-8");
 }
 
 // ============================================================================
@@ -15,439 +15,635 @@ function sizeOf(text: string): number {
 // ============================================================================
 
 describe("read-output-filter: thresholds and safety", () => {
-  test("does not filter small files", () => {
-    const output = "const x = 1\nexport default x"
-    const result = filterReadOutput({ path: "src/x.ts", output })
-    expect(result.filtered).toBe(false)
-    expect(result.strategy).toContain("below threshold")
-  })
+	test("does not filter small files", () => {
+		const output = "const x = 1\nexport default x";
+		const result = filterReadOutput({ path: "src/x.ts", output });
+		expect(result.filtered).toBe(false);
+		expect(result.strategy).toContain("below threshold");
+	});
 
-  test("does not filter error outputs", () => {
-    const output = repeatLines("line of code", 500)
-    const result = filterReadOutput({ path: "src/big.ts", output, isError: true })
-    expect(result.filtered).toBe(false)
-    expect(result.strategy).toContain("error")
-  })
+	test("does not filter error outputs", () => {
+		const output = repeatLines("line of code", 500);
+		const result = filterReadOutput({
+			path: "src/big.ts",
+			output,
+			isError: true,
+		});
+		expect(result.filtered).toBe(false);
+		expect(result.strategy).toContain("error");
+	});
 
-  test("does not filter images", () => {
-    const result = filterReadOutput({
-      path: "image.png",
-      output: "[binary image data]",
-      isImage: true,
-    })
-    expect(result.filtered).toBe(false)
-  })
-})
+	test("does not filter images", () => {
+		const result = filterReadOutput({
+			path: "image.png",
+			output: "[binary image data]",
+			isImage: true,
+		});
+		expect(result.filtered).toBe(false);
+	});
+});
 
 // ============================================================================
 // Lock / Generated Files
 // ============================================================================
 
 describe("read-output-filter: lock and generated files", () => {
-  test("extremely compresses package-lock.json", () => {
-    const output = JSON.stringify({
-      name: "my-project",
-      lockfileVersion: 3,
-      requires: true,
-      packages: Object.fromEntries(
-        Array(500).fill(0).map((_, i) => [`node_modules/pkg-${i}`, { version: `${i}.0.0` }])
-      ),
-    }, null, 2)
-    const result = filterReadOutput({ path: "package-lock.json", output })
-    expect(result.filtered).toBe(true)
-    expect(result.output).toContain("Lock file")
-    expect(result.filteredBytes).toBeLessThan(result.originalBytes * 0.1) // >90% reduction
-  })
+	test("extremely compresses package-lock.json", () => {
+		const output = JSON.stringify(
+			{
+				name: "my-project",
+				lockfileVersion: 3,
+				requires: true,
+				packages: Object.fromEntries(
+					Array(500)
+						.fill(0)
+						.map((_, i) => [`node_modules/pkg-${i}`, { version: `${i}.0.0` }]),
+				),
+			},
+			null,
+			2,
+		);
+		const result = filterReadOutput({ path: "package-lock.json", output });
+		expect(result.filtered).toBe(true);
+		expect(result.output).toContain("Lock file");
+		expect(result.filteredBytes).toBeLessThan(result.originalBytes * 0.1); // >90% reduction
+	});
 
-  test("extremely compresses yarn.lock", () => {
-    const output = repeatLines('"pkg@^1.0.0:\n  resolved "https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz"\n  integrity sha512-abc=="', 200)
-    const result = filterReadOutput({ path: "yarn.lock", output })
-    expect(result.filtered).toBe(true)
-    expect(result.output).toContain("Lock file")
-  })
+	test("extremely compresses yarn.lock", () => {
+		const output = repeatLines(
+			'"pkg@^1.0.0:\n  resolved "https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz"\n  integrity sha512-abc=="',
+			200,
+		);
+		const result = filterReadOutput({ path: "yarn.lock", output });
+		expect(result.filtered).toBe(true);
+		expect(result.output).toContain("Lock file");
+	});
 
-  test("compresses bun.lock", () => {
-    const output = repeatLines('pkg@1.0.0: resolved https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz integrity sha512-xyz', 200)
-    const result = filterReadOutput({ path: "bun.lock", output })
-    expect(result.filtered).toBe(true)
-  })
+	test("compresses bun.lock", () => {
+		const output = repeatLines(
+			"pkg@1.0.0: resolved https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz integrity sha512-xyz",
+			200,
+		);
+		const result = filterReadOutput({ path: "bun.lock", output });
+		expect(result.filtered).toBe(true);
+	});
 
-  test("compresses minified JS files", () => {
-    const output = "var a=1,b=2,c=3;" + "function x(){return a+b+c}".repeat(200)
-    const result = filterReadOutput({ path: "dist/bundle.min.js", output })
-    expect(result.filtered).toBe(true)
-    expect(result.output).toContain("minified")
-  })
+	test("compresses minified JS files", () => {
+		const output =
+			"var a=1,b=2,c=3;" + "function x(){return a+b+c}".repeat(200);
+		const result = filterReadOutput({ path: "dist/bundle.min.js", output });
+		expect(result.filtered).toBe(true);
+		expect(result.output).toContain("minified");
+	});
 
-  test("compresses .generated.ts files", () => {
-    const output = repeatLines("export type GeneratedType = { field: string }", 200)
-    const result = filterReadOutput({ path: "src/types.generated.ts", output })
-    expect(result.filtered).toBe(true)
-  })
-})
+	test("compresses .generated.ts files", () => {
+		const output = repeatLines(
+			"export type GeneratedType = { field: string }",
+			200,
+		);
+		const result = filterReadOutput({ path: "src/types.generated.ts", output });
+		expect(result.filtered).toBe(true);
+	});
+});
 
 // ============================================================================
 // package.json Smart Filter
 // ============================================================================
 
 describe("read-output-filter: package.json", () => {
-  test("keeps scripts, deps summary; drops full dep versions list", () => {
-    const pkg = {
-      name: "my-app",
-      version: "1.0.0",
-      scripts: { dev: "next dev", build: "next build", test: "vitest" },
-      dependencies: Object.fromEntries(
-        Array(100).fill(0).map((_, i) => [`dep-${i}`, `^${i}.0.0`])
-      ),
-      devDependencies: Object.fromEntries(
-        Array(50).fill(0).map((_, i) => [`dev-dep-${i}`, `^${i}.0.0`])
-      ),
-    }
-    const output = JSON.stringify(pkg, null, 2)
-    const result = filterReadOutput({ path: "package.json", output })
-    expect(result.filtered).toBe(true)
-    expect(result.output).toContain("scripts")
-    expect(result.output).toContain("my-app")
-    expect(result.output).toContain("Dependencies")
-  })
-})
+	test("keeps scripts, deps summary; drops full dep versions list", () => {
+		const pkg = {
+			name: "my-app",
+			version: "1.0.0",
+			scripts: { dev: "next dev", build: "next build", test: "vitest" },
+			dependencies: Object.fromEntries(
+				Array(100)
+					.fill(0)
+					.map((_, i) => [`dep-${i}`, `^${i}.0.0`]),
+			),
+			devDependencies: Object.fromEntries(
+				Array(50)
+					.fill(0)
+					.map((_, i) => [`dev-dep-${i}`, `^${i}.0.0`]),
+			),
+		};
+		const output = JSON.stringify(pkg, null, 2);
+		const result = filterReadOutput({ path: "package.json", output });
+		expect(result.filtered).toBe(true);
+		expect(result.output).toContain("scripts");
+		expect(result.output).toContain("my-app");
+		expect(result.output).toContain("Dependencies");
+	});
+});
 
 // ============================================================================
 // Large Code Files — Structural Compression
 // ============================================================================
 
 describe("read-output-filter: large code files", () => {
-  test("compresses large TypeScript by keeping signatures, collapsing bodies", () => {
-    const lines = [
-      "import { something } from 'lib'",
-      "import { other } from 'lib2'",
-      "",
-      "interface Config {",
-      "  name: string",
-      "  value: number",
-      "}",
-      "",
-      "export class MyService {",
-      "  private data: Map<string, any>",
-      "",
-      "  constructor(config: Config) {",
-      "    this.data = new Map()",
-      "    // lots of initialization",
-      ...Array(30).fill("    this.data.set('key', 'value')"),
-      "  }",
-      "",
-      "  process(input: string): string {",
-      ...Array(40).fill("    // processing step"),
-      "    return input",
-      "  }",
-      "",
-      "  helper(x: number): void {",
-      ...Array(20).fill("    console.log(x)"),
-      "  }",
-      "}",
-    ]
-    const output = lines.join("\n")
-    // Pad to exceed threshold
-    const padded = output + "\n" + repeatLines("// padding line", 100)
-    const result = filterReadOutput({ path: "src/service.ts", output: padded })
-    if (result.filtered) {
-      // Should keep imports and class signature
-      expect(result.output).toContain("import")
-      expect(result.output).toContain("class MyService")
-      // Should collapse long function bodies
-      expect(result.filteredBytes).toBeLessThan(result.originalBytes)
-    }
-  })
+	test("compresses large TypeScript by keeping signatures, collapsing bodies", () => {
+		const lines = [
+			"import { something } from 'lib'",
+			"import { other } from 'lib2'",
+			"",
+			"interface Config {",
+			"  name: string",
+			"  value: number",
+			"}",
+			"",
+			"export class MyService {",
+			"  private data: Map<string, any>",
+			"",
+			"  constructor(config: Config) {",
+			"    this.data = new Map()",
+			"    // lots of initialization",
+			...Array(30).fill("    this.data.set('key', 'value')"),
+			"  }",
+			"",
+			"  process(input: string): string {",
+			...Array(40).fill("    // processing step"),
+			"    return input",
+			"  }",
+			"",
+			"  helper(x: number): void {",
+			...Array(20).fill("    console.log(x)"),
+			"  }",
+			"}",
+		];
+		const output = lines.join("\n");
+		// Pad to exceed threshold
+		const padded = output + "\n" + repeatLines("// padding line", 100);
+		const result = filterReadOutput({ path: "src/service.ts", output: padded });
+		if (result.filtered) {
+			// Should keep imports and class signature
+			expect(result.output).toContain("import");
+			expect(result.output).toContain("class MyService");
+			// Should collapse long function bodies
+			expect(result.filteredBytes).toBeLessThan(result.originalBytes);
+		}
+	});
 
-  test("keeps TODO/FIXME/HACK comments in compressed output", () => {
-    const lines = [
-      "export function simple(): void {",
-      "  // TODO: fix this later",
-      "  console.log('todo item')",
-      "}",
-      ...Array(200).fill("// regular comment"),
-      "export function other(): void {",
-      "  // HACK: workaround for bug #123",
-      "  console.log('hack')",
-      "}",
-    ]
-    const output = lines.join("\n")
-    const result = filterReadOutput({ path: "src/code.ts", output })
-    if (result.filtered) {
-      expect(result.output).toContain("TODO")
-      expect(result.output).toContain("HACK")
-    }
-  })
+	test("keeps TODO/FIXME/HACK comments in compressed output", () => {
+		const lines = [
+			"export function simple(): void {",
+			"  // TODO: fix this later",
+			"  console.log('todo item')",
+			"}",
+			...Array(200).fill("// regular comment"),
+			"export function other(): void {",
+			"  // HACK: workaround for bug #123",
+			"  console.log('hack')",
+			"}",
+		];
+		const output = lines.join("\n");
+		const result = filterReadOutput({ path: "src/code.ts", output });
+		if (result.filtered) {
+			expect(result.output).toContain("TODO");
+			expect(result.output).toContain("HACK");
+		}
+	});
 
-  test("preserves export signatures", () => {
-    const lines = [
-      "export function foo(a: string, b: number): boolean {",
-      ...Array(50).fill("  // body"),
-      "  return true",
-      "}",
-      "",
-      "export const CONFIG = {",
-      ...Array(50).fill("  key: 'value',"),
-      "}",
-    ]
-    const output = repeatLines("// header\n", 50) + lines.join("\n")
-    const result = filterReadOutput({ path: "src/exports.ts", output })
-    if (result.filtered) {
-      expect(result.output).toContain("export function foo")
-      expect(result.output).toContain("export const CONFIG")
-    }
-  })
-})
+	test("preserves export signatures", () => {
+		const lines = [
+			"export function foo(a: string, b: number): boolean {",
+			...Array(50).fill("  // body"),
+			"  return true",
+			"}",
+			"",
+			"export const CONFIG = {",
+			...Array(50).fill("  key: 'value',"),
+			"}",
+		];
+		const output = repeatLines("// header\n", 50) + lines.join("\n");
+		const result = filterReadOutput({ path: "src/exports.ts", output });
+		if (result.filtered) {
+			expect(result.output).toContain("export function foo");
+			expect(result.output).toContain("export const CONFIG");
+		}
+	});
+});
 
 // ============================================================================
 // Markdown Files
 // ============================================================================
 
 describe("read-output-filter: markdown files", () => {
-  test("compresses markdown by keeping headings, lists, code and expanded paragraphs", () => {
-    const lines = [
-      "# Project README",
-      "",
-      "This is a long description of the project.",
-      "It spans many lines with details.",
-      ...Array(50).fill("More details about the project here."),
-      "",
-      "## Installation",
-      "",
-      "Run the following commands:",
-      ...Array(30).fill("Additional installation notes."),
-      "",
-      "## API Reference",
-      "",
-      "Details about the API.",
-      ...Array(100).fill("API documentation line."),
-    ]
-    const output = lines.join("\n")
-    const result = filterReadOutput({ path: "README.md", output })
-    if (result.filtered) {
-      expect(result.output).toContain("# Project README")
-      expect(result.output).toContain("## Installation")
-      expect(result.output).toContain("## API Reference")
-      // Paragraph content is now expanded (3 lines instead of 1)
-      expect(result.output).toContain("It spans many lines with details.")
-      expect(result.filteredBytes).toBeLessThan(result.originalBytes * 0.8)
-    }
-  })
+	test("compresses markdown by keeping headings, lists, code and expanded paragraphs", () => {
+		const lines = [
+			"# Project README",
+			"",
+			"This is a long description of the project.",
+			"It spans many lines with details.",
+			...Array(50).fill("More details about the project here."),
+			"",
+			"## Installation",
+			"",
+			"Run the following commands:",
+			...Array(30).fill("Additional installation notes."),
+			"",
+			"## API Reference",
+			"",
+			"Details about the API.",
+			...Array(100).fill("API documentation line."),
+		];
+		const output = lines.join("\n");
+		const result = filterReadOutput({ path: "README.md", output });
+		if (result.filtered) {
+			expect(result.output).toContain("# Project README");
+			expect(result.output).toContain("## Installation");
+			expect(result.output).toContain("## API Reference");
+			// Paragraph content is now expanded (3 lines instead of 1)
+			expect(result.output).toContain("It spans many lines with details.");
+			expect(result.filteredBytes).toBeLessThan(result.originalBytes * 0.8);
+		}
+	});
 
-  test("preserves code block content in markdown", () => {
-    const lines = [
-      "# Guide",
-      "",
-      "Intro text.",
-      ...Array(50).fill("More intro text."),
-      "",
-      "## Example",
-      "",
-      "```typescript",
-      "import { foo } from 'bar'",
-      "const x = foo()",
-      "console.log(x)",
-      "// This is important code",
-      "const y = x + 1",
-      "```",
-      "",
-      "After code block text.",
-      ...Array(50).fill("More after text."),
-    ]
-    const output = lines.join("\n")
-    const result = filterReadOutput({ path: "guide.md", output })
-    if (result.filtered) {
-      // Code block lines must be preserved
-      expect(result.output).toContain("import { foo } from 'bar'")
-      expect(result.output).toContain("const y = x + 1")
-      // Paragraph compression keeps first 3 lines + following line
-      expect(result.output).toContain("After code block text.")
-      // Filter notice should include actionable guidance with actual path
-      expect(result.output).toContain("bash cat guide.md")
-    }
-  })
-})
+	test("preserves code block content in markdown", () => {
+		const lines = [
+			"# Guide",
+			"",
+			"Intro text.",
+			...Array(50).fill("More intro text."),
+			"",
+			"## Example",
+			"",
+			"```typescript",
+			"import { foo } from 'bar'",
+			"const x = foo()",
+			"console.log(x)",
+			"// This is important code",
+			"const y = x + 1",
+			"```",
+			"",
+			"After code block text.",
+			...Array(50).fill("More after text."),
+		];
+		const output = lines.join("\n");
+		const result = filterReadOutput({ path: "guide.md", output });
+		if (result.filtered) {
+			// Code block lines must be preserved
+			expect(result.output).toContain("import { foo } from 'bar'");
+			expect(result.output).toContain("const y = x + 1");
+			// Paragraph compression keeps first 3 lines + following line
+			expect(result.output).toContain("After code block text.");
+			// Filter notice should include actionable guidance with actual path
+			expect(result.output).toContain("bash cat guide.md");
+		}
+	});
+});
 
 // ============================================================================
 // Markdown: list preservation
 // ============================================================================
 
 describe("read-output-filter: markdown list preservation", () => {
-  test("preserves list items in markdown", () => {
-    const lines = [
-      "# Architecture",
-      "",
-      "The system has these components:",
-      "",
-      "- **Builder**: Orchestrates execution agents and manages runtime lifecycle",
-      "- **Schema OS**: Defines data schemas and validation rules",
-      "- **Prompt OS**: Manages prompt templates and versioning",
-      "- **Pipeline OS**: Controls execution flow and parallel dispatch",
-      "- **QA OS**: Handles quality assurance and testing",
-      "- **Versioning OS**: Manages version compatibility and migrations",
-      "",
-      "## Details",
-      "",
-      "Each subsystem is described below.",
-      ...Array(100).fill("Detail paragraph content that is very long and repetitive."),
-    ]
-    const output = lines.join("\n")
-    const result = filterReadOutput({ path: "docs/architecture.md", output })
-    if (result.filtered) {
-      // All list items must be preserved
-      expect(result.output).toContain("**Builder**")
-      expect(result.output).toContain("**Schema OS**")
-      expect(result.output).toContain("**Prompt OS**")
-      expect(result.output).toContain("**Pipeline OS**")
-      expect(result.output).toContain("**QA OS**")
-      expect(result.output).toContain("**Versioning OS**")
-    }
-  })
+	test("preserves list items in markdown", () => {
+		const lines = [
+			"# Architecture",
+			"",
+			"The system has these components:",
+			"",
+			"- **Builder**: Orchestrates execution agents and manages runtime lifecycle",
+			"- **Schema OS**: Defines data schemas and validation rules",
+			"- **Prompt OS**: Manages prompt templates and versioning",
+			"- **Pipeline OS**: Controls execution flow and parallel dispatch",
+			"- **QA OS**: Handles quality assurance and testing",
+			"- **Versioning OS**: Manages version compatibility and migrations",
+			"",
+			"## Details",
+			"",
+			"Each subsystem is described below.",
+			...Array(100).fill(
+				"Detail paragraph content that is very long and repetitive.",
+			),
+		];
+		const output = lines.join("\n");
+		const result = filterReadOutput({ path: "docs/architecture.md", output });
+		if (result.filtered) {
+			// All list items must be preserved
+			expect(result.output).toContain("**Builder**");
+			expect(result.output).toContain("**Schema OS**");
+			expect(result.output).toContain("**Prompt OS**");
+			expect(result.output).toContain("**Pipeline OS**");
+			expect(result.output).toContain("**QA OS**");
+			expect(result.output).toContain("**Versioning OS**");
+		}
+	});
 
-  test("preserves numbered list items", () => {
-    const lines = [
-      "# Setup Steps",
-      "",
-      "Follow these steps:",
-      "",
-      "1. Install dependencies",
-      "2. Configure environment",
-      "3. Run the build",
-      "4. Deploy to production",
-      "5. Verify deployment",
-      "",
-      "## Extra",
-      "",
-      "More text.",
-      ...Array(100).fill("Padding line to exceed threshold."),
-    ]
-    const output = lines.join("\n")
-    const result = filterReadOutput({ path: "setup.md", output })
-    if (result.filtered) {
-      expect(result.output).toContain("1. Install dependencies")
-      expect(result.output).toContain("5. Verify deployment")
-    }
-  })
-})
+	test("preserves numbered list items", () => {
+		const lines = [
+			"# Setup Steps",
+			"",
+			"Follow these steps:",
+			"",
+			"1. Install dependencies",
+			"2. Configure environment",
+			"3. Run the build",
+			"4. Deploy to production",
+			"5. Verify deployment",
+			"",
+			"## Extra",
+			"",
+			"More text.",
+			...Array(100).fill("Padding line to exceed threshold."),
+		];
+		const output = lines.join("\n");
+		const result = filterReadOutput({ path: "setup.md", output });
+		if (result.filtered) {
+			expect(result.output).toContain("1. Install dependencies");
+			expect(result.output).toContain("5. Verify deployment");
+		}
+	});
+});
 
 // ============================================================================
 // Markdown: 8KB threshold
 // ============================================================================
 
 describe("read-output-filter: markdown threshold", () => {
-  test("does not filter markdown files between 2KB and 8KB", () => {
-    // Generate content between 2KB and 8KB
-    // It should pass the 2KB general threshold but NOT be filtered because markdown threshold is 8KB
-    const lines = [
-      "# Medium Doc",
-      "",
-      "Some content here that is meaningful.",
-      "More content that adds detail.",
-      "Even more content for the first section.",
-      ...Array(80).fill("Extra line of content that makes this file exceed 2KB general threshold."),
-    ]
-    const output = lines.join("\n")
-    const size = Buffer.byteLength(output, "utf-8")
-    // Verify the file is between 2KB and 8KB
-    expect(size).toBeGreaterThan(2048)
-    expect(size).toBeLessThan(8192)
-    const result = filterReadOutput({ path: "medium.md", output })
-    expect(result.filtered).toBe(false)
-    expect(result.strategy).toContain("below 8KB")
-  })
-})
+	test("does not filter markdown files between 2KB and 8KB", () => {
+		// Generate content between 2KB and 8KB
+		// It should pass the 2KB general threshold but NOT be filtered because markdown threshold is 8KB
+		const lines = [
+			"# Medium Doc",
+			"",
+			"Some content here that is meaningful.",
+			"More content that adds detail.",
+			"Even more content for the first section.",
+			...Array(80).fill(
+				"Extra line of content that makes this file exceed 2KB general threshold.",
+			),
+		];
+		const output = lines.join("\n");
+		const size = Buffer.byteLength(output, "utf-8");
+		// Verify the file is between 2KB and 8KB
+		expect(size).toBeGreaterThan(2048);
+		expect(size).toBeLessThan(8192);
+		const result = filterReadOutput({ path: "medium.md", output });
+		expect(result.filtered).toBe(false);
+		expect(result.strategy).toContain("below 8KB");
+	});
+});
 
 // ============================================================================
 // Unknown / Other Files
 // ============================================================================
 
 describe("read-output-filter: unknown and edge cases", () => {
-  test("does not filter files without recognizable extension below threshold", () => {
-    const output = "some content\nmore content"
-    const result = filterReadOutput({ path: "Makefile", output })
-    expect(result.filtered).toBe(false)
-  })
+	test("does not filter files without recognizable extension below threshold", () => {
+		const output = "some content\nmore content";
+		const result = filterReadOutput({ path: "Makefile", output });
+		expect(result.filtered).toBe(false);
+	});
 
-  test("generic filter for large unknown text files", () => {
-    const output = repeatLines("line of text that repeats many times here", 500)
-    const result = filterReadOutput({ path: "data/trace.log", output })
-    if (result.filtered) {
-      expect(result.filteredBytes).toBeLessThan(result.originalBytes)
-    }
-  })
+	test("generic filter for large unknown text files", () => {
+		const output = repeatLines(
+			"line of text that repeats many times here",
+			500,
+		);
+		const result = filterReadOutput({ path: "data/trace.log", output });
+		if (result.filtered) {
+			expect(result.filteredBytes).toBeLessThan(result.originalBytes);
+		}
+	});
 
-  test("handles empty output", () => {
-    const result = filterReadOutput({ path: "src/empty.ts", output: "" })
-    expect(result.filtered).toBe(false)
-  })
+	test("handles empty output", () => {
+		const result = filterReadOutput({ path: "src/empty.ts", output: "" });
+		expect(result.filtered).toBe(false);
+	});
 
-  test("includes filter notice with original/filtered size", () => {
-    const output = JSON.stringify({
-      packages: Object.fromEntries(
-        Array(300).fill(0).map((_, i) => [`pkg-${i}`, { version: `${i}.0.0` }])
-      ),
-    }, null, 2)
-    const result = filterReadOutput({ path: "package-lock.json", output })
-    if (result.filtered) {
-      expect(result.output).toContain("filtered")
-      // Filter notice should include actual path
-      expect(result.output).toContain("package-lock.json")
-    }
-  })
-})
+	test("includes filter notice with original/filtered size", () => {
+		const output = JSON.stringify(
+			{
+				packages: Object.fromEntries(
+					Array(300)
+						.fill(0)
+						.map((_, i) => [`pkg-${i}`, { version: `${i}.0.0` }]),
+				),
+			},
+			null,
+			2,
+		);
+		const result = filterReadOutput({ path: "package-lock.json", output });
+		if (result.filtered) {
+			expect(result.output).toContain("filtered");
+			// Filter notice should include actual path
+			expect(result.output).toContain("package-lock.json");
+		}
+	});
+});
+
+// ============================================================================
+// Instructional File Directive
+// ============================================================================
+
+describe("read-output-filter: instructional file directive", () => {
+	test("appends directive when reading SKILL.md", () => {
+		const output = "# SKILL.md\n\nThis is a skill file.";
+		const result = filterReadOutput({
+			path: "skills/01-brainstorm/SKILL.md",
+			output,
+		});
+		expect(result.filtered).toBe(true);
+		expect(result.output).toContain("checklist_add");
+		expect(result.output).toContain("checklist_show");
+		expect(result.output).toContain("checklist_del");
+		expect(result.strategy).toContain("instructional-directive");
+	});
+
+	test("appends directive when reading rules/*.md", () => {
+		const output = "# Testing Rules\n\nRules for testing.";
+		const result = filterReadOutput({
+			path: "rules/typescript/testing.md",
+			output,
+		});
+		expect(result.filtered).toBe(true);
+		expect(result.output).toContain("checklist_add");
+		expect(result.strategy).toContain("instructional-directive");
+	});
+
+	test("appends directive when reading references/*.md", () => {
+		const output = "# Language Detection\n\nDetect project language.";
+		const result = filterReadOutput({
+			path: "skills/references/language-detection.md",
+			output,
+		});
+		expect(result.filtered).toBe(true);
+		expect(result.output).toContain("checklist_add");
+		expect(result.strategy).toContain("instructional-directive");
+	});
+
+	test("does NOT append directive for README.md", () => {
+		const output = "# README\n\nProject readme.";
+		// Small files normally pass through unfiltered
+		const result = filterReadOutput({ path: "README.md", output });
+		// Should NOT have directive (no checklist mention)
+		expect(result.output).not.toContain("checklist_add");
+		// Should still be unfiltered (small, non-instructional)
+		expect(result.filtered).toBe(false);
+	});
+
+	test("appends directive even for small (<2KB) instructional files", () => {
+		const output =
+			"# Small SKILL\n\nJust a small instructional file under threshold.";
+		const result = filterReadOutput({
+			path: "skills/03-work/SKILL.md",
+			output,
+		});
+		expect(result.filtered).toBe(true);
+		expect(result.output).toContain("checklist_add");
+		expect(result.strategy).toContain("instructional-directive");
+	});
+
+	test("appends directive for filtered large instructional file", () => {
+		const lines = [
+			"# Instructions",
+			"",
+			"This is a large SKILL.md file that would be filtered.",
+			...Array(200).fill("More content here that makes this file large."),
+		];
+		const output = lines.join("\n");
+		const result = filterReadOutput({
+			path: "skills/04-review/SKILL.md",
+			output,
+		});
+		expect(result.filtered).toBe(true);
+		expect(result.output).toContain("checklist_add");
+		expect(result.output).toContain("checklist_del");
+		// Should also have the structural filtering notice
+		expect(result.output).toContain("Read output filtered");
+	});
+
+	test("does NOT append directive for error outputs even if SKILL.md", () => {
+		const output = "Error: file not found";
+		const result = filterReadOutput({
+			path: "skills/01-brainstorm/SKILL.md",
+			output,
+			isError: true,
+		});
+		expect(result.filtered).toBe(false);
+		expect(result.output).not.toContain("checklist_add");
+	});
+
+	test("does NOT append directive for CHANGELOG.md", () => {
+		const output = "# Changelog\n\n## 1.0.0\nFirst release.";
+		const result = filterReadOutput({ path: "CHANGELOG.md", output });
+		expect(result.output).not.toContain("checklist_add");
+		expect(result.filtered).toBe(false);
+	});
+});
+
+// ============================================================================
+// isInstructionalFile (direct unit tests)
+// ============================================================================
+
+describe("read-output-filter: isInstructionalFile direct tests", () => {
+	// We test the helper indirectly via filterReadOutput since it's not exported.
+	// An instructional file triggers the directive; a non-instructional one does not.
+
+	test("SKILL.md at root level is instructional", () => {
+		const output = repeatLines("# Skill\n\nInstructions here.", 120);
+		const result = filterReadOutput({ path: "SKILL.md", output });
+		expect(result.output).toContain("checklist_add");
+	});
+
+	test("deeply nested SKILL.md is instructional", () => {
+		const output = repeatLines("# Skill\n\nInstructions here.", 120);
+		const result = filterReadOutput({
+			path: "/very/deep/.pi/skills/01-brainstorm/SKILL.md",
+			output,
+		});
+		expect(result.output).toContain("checklist_add");
+	});
+
+	test("rules/foo.md is instructional", () => {
+		const output = repeatLines("# Rule\n\nFollow this.", 120);
+		const result = filterReadOutput({ path: "rules/coding-style.md", output });
+		expect(result.output).toContain("checklist_add");
+	});
+
+	test("nested rules/deep/file.md is instructional", () => {
+		const output = repeatLines("# Rule\n\nFollow this.", 120);
+		const result = filterReadOutput({
+			path: "skills/04-review/references/findings-schema.md",
+			output,
+		});
+		expect(result.output).toContain("checklist_add");
+	});
+
+	test("README.md is NOT instructional", () => {
+		const output = repeatLines("# README\n\nProject info.", 120);
+		const result = filterReadOutput({ path: "README.md", output });
+		expect(result.output).not.toContain("checklist_add");
+	});
+
+	test(".ts source file is NOT instructional", () => {
+		const output = repeatLines("export function foo() {}", 500);
+		const result = filterReadOutput({ path: "src/index.ts", output });
+		expect(result.output).not.toContain("checklist_add");
+	});
+});
 
 // ============================================================================
 // Real-world Savings Estimation
 // ============================================================================
 
 describe("read-output-filter: real-world savings", () => {
-  test("package-lock.json ~500KB → extreme compression", () => {
-    const pkg = {
-      name: "big-project",
-      lockfileVersion: 3,
-      packages: Object.fromEntries(
-        Array(1000).fill(0).map((_, i) => [
-          `node_modules/pkg-${i}`,
-          {
-            version: `${i}.0.0`,
-            resolved: `https://registry.npmjs.org/pkg-${i}/-/pkg-${i}-${i}.0.0.tgz`,
-            integrity: `sha512-${"abc".repeat(30)}`,
-            requires: Object.fromEntries(
-              Array(5).fill(0).map((_, j) => [`dep-${j}`, `^${j}.0.0`])
-            ),
-          },
-        ])
-      ),
-    }
-    const output = JSON.stringify(pkg, null, 2)
-    const result = filterReadOutput({ path: "package-lock.json", output })
-    console.log(`package-lock.json: ${sizeOf(output)} → ${result.filteredBytes} bytes (${((1 - result.filteredBytes / sizeOf(output)) * 100).toFixed(0)}% reduction, strategy: ${result.strategy})`)
-    if (result.filtered) {
-      expect(result.filteredBytes).toBeLessThan(sizeOf(output) * 0.05) // >95% reduction expected
-    }
-  })
+	test("package-lock.json ~500KB → extreme compression", () => {
+		const pkg = {
+			name: "big-project",
+			lockfileVersion: 3,
+			packages: Object.fromEntries(
+				Array(1000)
+					.fill(0)
+					.map((_, i) => [
+						`node_modules/pkg-${i}`,
+						{
+							version: `${i}.0.0`,
+							resolved: `https://registry.npmjs.org/pkg-${i}/-/pkg-${i}-${i}.0.0.tgz`,
+							integrity: `sha512-${"abc".repeat(30)}`,
+							requires: Object.fromEntries(
+								Array(5)
+									.fill(0)
+									.map((_, j) => [`dep-${j}`, `^${j}.0.0`]),
+							),
+						},
+					]),
+			),
+		};
+		const output = JSON.stringify(pkg, null, 2);
+		const result = filterReadOutput({ path: "package-lock.json", output });
+		console.log(
+			`package-lock.json: ${sizeOf(output)} → ${result.filteredBytes} bytes (${((1 - result.filteredBytes / sizeOf(output)) * 100).toFixed(0)}% reduction, strategy: ${result.strategy})`,
+		);
+		if (result.filtered) {
+			expect(result.filteredBytes).toBeLessThan(sizeOf(output) * 0.05); // >95% reduction expected
+		}
+	});
 
-  test("large TS file ~20KB → structural compression", () => {
-    const lines = [
-      "import { A, B, C } from 'module'",
-      "import { D } from 'other'",
-      "",
-      "interface Props { name: string; age: number }",
-      "",
-      "export class BigComponent {",
-      ...Array(100).fill("  private method(): void { /* body */ }"),
-      "",
-      "  render(): JSX.Element {",
-      ...Array(150).fill("    <div>content</div>"),
-      "  }",
-      "}",
-    ]
-    const output = lines.join("\n")
-    const result = filterReadOutput({ path: "src/BigComponent.tsx", output })
-    console.log(`BigComponent.tsx: ${sizeOf(output)} → ${result.filteredBytes} bytes (${((1 - result.filteredBytes / sizeOf(output)) * 100).toFixed(0)}% reduction, strategy: ${result.strategy})`)
-    if (result.filtered) {
-      expect(result.output).toContain("import")
-      expect(result.output).toContain("class BigComponent")
-    }
-  })
-})
+	test("large TS file ~20KB → structural compression", () => {
+		const lines = [
+			"import { A, B, C } from 'module'",
+			"import { D } from 'other'",
+			"",
+			"interface Props { name: string; age: number }",
+			"",
+			"export class BigComponent {",
+			...Array(100).fill("  private method(): void { /* body */ }"),
+			"",
+			"  render(): JSX.Element {",
+			...Array(150).fill("    <div>content</div>"),
+			"  }",
+			"}",
+		];
+		const output = lines.join("\n");
+		const result = filterReadOutput({ path: "src/BigComponent.tsx", output });
+		console.log(
+			`BigComponent.tsx: ${sizeOf(output)} → ${result.filteredBytes} bytes (${((1 - result.filteredBytes / sizeOf(output)) * 100).toFixed(0)}% reduction, strategy: ${result.strategy})`,
+		);
+		if (result.filtered) {
+			expect(result.output).toContain("import");
+			expect(result.output).toContain("class BigComponent");
+		}
+	});
+});

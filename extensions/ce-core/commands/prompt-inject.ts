@@ -141,7 +141,19 @@ export function buildSystemPromptAppend(
 		);
 	}
 
-	// 3. Fix-issues fetch instruction (only for 01-brainstorm)
+	// 3.5 Checklist discipline (for all valid pipeline stages)
+	if (stageKey && isValidStageKey(stageKey)) {
+		blocks.push(
+			"\n\n---\n## ✅ Checklist Discipline\n\n" +
+				"Use `checklist_add` to add tasks discovered from skills, rules, and instructions.\n" +
+				"Use `checklist_show` to review pending tasks.\n" +
+				"Use `checklist_del` to remove completed tasks.\n" +
+				"Before saving a cross-stage handoff via `context_handoff save`, ensure the checklist is empty " +
+				"by completing or deleting all pending tasks.",
+		);
+	}
+
+	// 4. Fix-issues fetch instruction (only for 01-brainstorm)
 	if (fixIssues.length > 0 && stageKey === "01-brainstorm") {
 		const issueList = fixIssues.map((n) => "#" + n).join(", ");
 		blocks.push(

@@ -1,10 +1,10 @@
-import { describe, expect, test, mock, afterEach } from "bun:test";
+import { describe, expect, test, mock } from "bun:test";
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 
 mock.module("@earendil-works/pi-ai", () => {
 	return {
-		completeSimple: async (model: any, prompt: any, options: any) => {
+		completeSimple: async (_model: any, _prompt: any, _options: any) => {
 			return {
 				content: [
 					{ type: "text", text: "A simulated description of the image." },
@@ -17,7 +17,7 @@ mock.module("@earendil-works/pi-ai", () => {
 
 mock.module("node:child_process", () => {
 	return {
-		spawn: (command: string, args: string[], options: any) => {
+		spawn: (_command: string, _args: string[], _options: any) => {
 			const listeners: Record<string, Function[]> = {};
 			const stdoutListeners: Record<string, Function[]> = {};
 
@@ -29,13 +29,12 @@ mock.module("node:child_process", () => {
 					},
 				},
 				stderr: {
-					on: (event: string, cb: Function) => {
+					on: (_event: string, _cb: Function) => {
 						// no-op for tests
 					},
 				},
-				on: (event: string, cb: Function) => {
-					listeners[event] = listeners[event] || [];
-					listeners[event].push(cb);
+				on: (_event: string, _cb: Function) => {
+					// no-op for mock
 				},
 			};
 
@@ -74,7 +73,7 @@ import ceCoreExtension from "../extensions/ce-core/index";
 import { createMultiReviewerTool } from "../extensions/ce-core/tools/multi-reviewer";
 
 describe("ce-core extension runtime registration", () => {
-	test("registers 15 workflow control tools (no subagent tools)", () => {
+	test("registers 14 workflow control tools (no subagent tools)", () => {
 		const registeredNames: string[] = [];
 		const eventHandlers = new Map<string, any[]>();
 		const pi = {
@@ -104,6 +103,9 @@ describe("ce-core extension runtime registration", () => {
 			"session_history",
 			"pattern_extractor",
 			"context_handoff",
+			"checklist_add",
+			"checklist_show",
+			"checklist_del",
 			"multi_reviewer",
 		]);
 	});
@@ -433,23 +435,3 @@ describe("multi_reviewer tool", () => {
 });
 
 // ── Unit 1-5: Commands/pedstack module tests ──
-
-import {
-	resolveNextPipelineStage,
-	cmdPedStart,
-	cmdPedNext,
-	isModelVisible,
-	findPreConversationEntry,
-	findFreshTargetId,
-	isValidStageKey,
-	setPendingSkillPath,
-	getAndClearPendingSkillPath,
-	setPendingFixIssues,
-	getAndClearPendingFixIssues,
-	resetPedstackState,
-	type StageResolution,
-	type PipelineStageKey,
-} from "../extensions/ce-core/commands/pedstack";
-import { parseModelRef } from "../extensions/ce-core/utils/parse-model-ref";
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";

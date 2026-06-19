@@ -21,7 +21,8 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **TDD enforcement** — every unit follows RED → GREEN → REFACTOR with hard gates
 - **Evidence-first review** — auto-assigned reviewers across five axes, autofix loop
 - **Knowledge compounding** — solved problems become searchable solution artifacts
-- **Token-efficient** — ~3,160 tokens new-conversation overhead; progressive loading
+- **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
+- **Token-efficient** — ~3,490 tokens new-conversation overhead; progressive loading
 
 ---
 
@@ -55,7 +56,14 @@ You: /ped-next
 → Auto-resolves the next stage, applies model/thinking config, resumes from latest checkpoint
 ```
 
-Skill invocation and model/thinking level switching are handled automatically by `/ped-start` and `/ped-next`.
+**Restart current stage clean:**
+
+```
+You: /ped-reload
+→ Refreshes the current stage with a clean context, re-applies the stage's skill config
+```
+
+Skill invocation, reload, and model/thinking level switching are handled automatically by `/ped-start`, `/ped-next`, and `/ped-reload`.
 
 ---
 
@@ -207,12 +215,12 @@ All reviewers evaluate changes across: **correctness, readability, architecture,
 
 ## Token Cost
 
-New conversation overhead: **~3,160 tokens** (1.6% of 200K context).
+New conversation overhead: **~3,490 tokens** (1.7% of 200K context).
 
 | Component | Tokens |
 |-----------|--------|
-| 8 pipeline skill registrations | ~850 |
-| 21 tool schemas (11 CE + 10 built-in) | ~2,310 |
+| 7 pipeline skill registrations | ~850 |
+| 24 tool schemas (14 CE + 10 built-in) | ~2,640 |
 | Skill context (per user invocation) | ~300–1,200 |
 
 Progressive loading: only needed skills loaded on-demand.
@@ -233,7 +241,8 @@ your-project/
     └── compound-engineering/
         ├── checkpoints/   # Breakpoint files
         ├── handoffs/      # Cross-stage context
-        └── history/       # Execution history
+        ├── history/       # Execution history
+        └── checklist.json # Persistent task list
 ```
 
 Commit everything to git — these files are the project's traceable memory.
@@ -244,11 +253,11 @@ Commit everything to git — these files are the project's traceable memory.
 
 | Component | Count |
 |-----------|------:|
-| Skills | 8 |
-| Tools | 11 CE + 10 Pi built-in |
+| Skills | 7 |
+| Tools | 14 CE + 10 Pi built-in |
 | Rules | 79 |
 | TypeScript lines | ~4,985 |
-| Tests | 250 (854 assertions) |
+| Tests | 289 (1,037 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -261,6 +270,8 @@ Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, R
 | `bun test` | Run all tests |
 | `/ped-start <prompt>` | Start a new Pedstack workflow with a user prompt, launching 01-brainstorm |
 | `/ped-next [prompt]` | Auto-resolve and advance to the next pipeline stage |
+| `/ped-reload` | Restart the current pipeline stage from a fresh context, re-applying skill config |
+| `/ped-fix-issues <#1,#2,...>` | Prompt-inject GitHub issue context into 01-brainstorm |
 
 ---
 

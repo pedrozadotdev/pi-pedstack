@@ -2,21 +2,22 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { normalizeSlug } from "../utils/name-utils";
+import { readChecklist } from "./checklist";
 
-export type ContextHealth = "good" | "watch" | "heavy" | "critical";
+type ContextHealth = "good" | "watch" | "heavy" | "critical";
 
-export type ContextHandoffRecommendedAction =
+type ContextHandoffRecommendedAction =
 	| "continue"
 	| "save_handoff"
 	| "fill_required_context";
 
-export interface ContextHandoffValidationCheck {
+interface ContextHandoffValidationCheck {
 	name: string;
 	passed: boolean;
 	reason: string;
 }
 
-export interface ContextHandoffValidationProbes {
+interface ContextHandoffValidationProbes {
 	recall: boolean;
 	continuation: boolean;
 	artifact: boolean;
@@ -43,7 +44,7 @@ export interface ContextHandoffInput {
 	activeRules?: string[];
 }
 
-export interface ContextStateEntry {
+interface ContextStateEntry {
 	currentStage: string;
 	nextStage?: string;
 	contextHealth: ContextHealth;
@@ -358,6 +359,36 @@ async function save(input: ContextHandoffInput): Promise<ContextHandoffResult> {
 	const currentStage = input.currentStage ?? "unknown";
 	const nextStage = input.nextStage;
 	const contextHealth = input.contextHealth ?? "watch";
+
+	// Block cross-stage saves when checklist is non-empty
+	if (nextStage) {
+		try {
+			const checklist = await readChecklist(input.repoRoot);
+			if (checklist.items.length > 0) {
+				const taskList = checklist.items
+					.map(
+						(item: { description: string }, idx: number) =>
+							idx + 1 + ". " + item.description,
+					)
+					.join("\n");
+				return {
+					operation: "save",
+					found: true,
+					currentStage,
+					nextStage,
+					contextHealth,
+					blocker:
+						"Cannot save cross-stage handoff: checklist has " +
+						checklist.items.length +
+						" pending task(s).\n\nPending tasks:\n" +
+						taskList +
+						"\n\nUse \\`checklist_del\\` to remove completed tasks before saving.",
+				};
+			}
+		} catch {
+			// If readChecklist throws unexpectedly, allow save to proceed safely
+		}
+	}
 	const activeFiles = input.activeFiles ?? [];
 	const blocker = input.blocker;
 	const verification = input.verification;
@@ -842,8 +873,36 @@ async function validate(
 		warnings.push("decision: decisions or invalidated assumptions are missing");
 	}
 
+	// --- Checklist probe ---
+	let checklistNonEmpty = false;
+	try {
+		const checklist = await readChecklist(input.repoRoot);
+		checklistNonEmpty = checklist.items.length > 0;
+		if (checklistNonEmpty) {
+			const summary = checklist.items
+				.map((item, idx) => idx + 1 + ". " + item.description)
+				.join("; ");
+			warnings.push(
+				"checklist: " +
+					checklist.items.length +
+					" pending task(s) — " +
+					summary,
+			);
+		}
+	} catch (err) {
+		// If readChecklist throws, skip the probe
+	}
+
+	checks.push({
+		name: "checklist_empty",
+		passed: !checklistNonEmpty,
+		reason: checklistNonEmpty
+			? "Checklist has pending tasks that should be completed before handoff"
+			: "Checklist is empty or absent",
+	});
+
 	// --- ok derivation ---
-	const ok = recallPass && continuationPass;
+	const ok = recallPass && continuationPass && !checklistNonEmpty;
 
 	// --- recommended action ---
 	let recommendedAction: ContextHandoffRecommendedAction;
