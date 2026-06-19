@@ -679,7 +679,7 @@ describe("context_handoff", () => {
 			const origCwd = process.cwd();
 			process.chdir(repoRoot);
 			try {
-				await addTool.execute({ description: "Task X" });
+				await addTool.execute({ descriptions: ["Task X"] });
 			} finally {
 				process.chdir(origCwd);
 			}
@@ -747,7 +747,7 @@ describe("context_handoff", () => {
 			const origCwd = process.cwd();
 			process.chdir(repoRoot);
 			try {
-				await addTool.execute({ description: "Task Y" });
+				await addTool.execute({ descriptions: ["Task Y"] });
 			} finally {
 				process.chdir(origCwd);
 			}
@@ -812,7 +812,7 @@ describe("context_handoff", () => {
 			// Add a task
 			const origCwd = process.cwd();
 			process.chdir(repoRoot);
-			await addTool.execute({ description: "Pending Task" });
+			await addTool.execute({ descriptions: ["Pending Task"] });
 			process.chdir(origCwd);
 
 			// Validate

@@ -55,9 +55,9 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 | `pattern_extractor` | Extract recurring patterns from artifacts |
 | `context_handoff` | Save/load/validate cross-stage handoffs |
 | `multi_reviewer` | Orchestrate parallel reviewer subagents |
-| `checklist_add` / `checklist_show` / `checklist_del` | Persistent task tracking with handoff gating |
+| `checklist_add` / `checklist_show` / `checklist_del` | Persistent task tracking with handoff gating (bulk add via `descriptions[]`) |
 
-**Handoff gating:** `context_handoff save` blocks cross-stage saves when the checklist is non-empty. The model must complete or delete all pending tasks before advancing to the next stage. Use `checklist_add` when discovering tasks from SKILL.md, rules, or references to avoid dropped tasks.
+**Handoff gating:** `context_handoff save` blocks cross-stage saves when the checklist is non-empty. The model must complete or delete all pending tasks before advancing to the next stage. Use `checklist_add` (accepts `descriptions: string[]`) when discovering tasks from SKILL.md, rules, or references to avoid dropped tasks.
 
 ## Code Style
 

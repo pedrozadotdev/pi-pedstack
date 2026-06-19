@@ -281,8 +281,9 @@ const contextHandoffParams = Type.Object({
 });
 
 const checklistAddParams = Type.Object({
-	description: Type.String({
-		description: "Task description to add to the checklist",
+	descriptions: Type.Array(Type.String(), {
+		description:
+			"Task descriptions to add — pass one or more items to create them all at once",
 	}),
 });
 
@@ -568,11 +569,11 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		name: checklistAdd.name,
 		label: "Checklist Add",
 		description:
-			"Add a task to the checklist. Use this when discovering tasks from skills, rules, or instructions.",
+			"Add one or more tasks to the checklist in a single call. Use this when discovering tasks from skills, rules, or instructions.",
 		parameters: checklistAddParams,
 		async execute(_toolCallId, params) {
 			const result = await checklistAdd.execute({
-				description: params.description,
+				descriptions: params.descriptions,
 			});
 
 			return {

@@ -33,8 +33,9 @@ mock.module("node:child_process", () => {
 						// no-op for tests
 					},
 				},
-				on: (_event: string, _cb: Function) => {
-					// no-op for mock
+				on: (event: string, cb: Function) => {
+					listeners[event] = listeners[event] || [];
+					listeners[event].push(cb);
 				},
 			};
 

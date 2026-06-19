@@ -30,11 +30,10 @@ describe("checklist tools", () => {
 
 	describe("checklist_add", () => {
 		test("adds a single task and returns 1-based index", async () => {
-			const result = await addTool.execute({ description: "Task A" });
+			const result = await addTool.execute({ descriptions: ["Task A"] });
 
 			expect(result).toEqual({
-				index: 1,
-				description: "Task A",
+				items: [{ index: 1, description: "Task A" }],
 			});
 
 			const data = await readChecklist();
@@ -43,28 +42,62 @@ describe("checklist tools", () => {
 			expect(data.items[0].addedAt).toBeDefined();
 		});
 
-		test("adds multiple tasks with incrementing indexes", async () => {
-			await addTool.execute({ description: "Task 1" });
-			const result2 = await addTool.execute({ description: "Task 2" });
-			const result3 = await addTool.execute({ description: "Task 3" });
+		test("adds multiple tasks at once with correct indexes", async () => {
+			const result = await addTool.execute({
+				descriptions: ["Task 1", "Task 2", "Task 3"],
+			});
 
-			expect(result2).toEqual({ index: 2, description: "Task 2" });
-			expect(result3).toEqual({ index: 3, description: "Task 3" });
+			expect(result).toEqual({
+				items: [
+					{ index: 1, description: "Task 1" },
+					{ index: 2, description: "Task 2" },
+					{ index: 3, description: "Task 3" },
+				],
+			});
+
+			const data = await readChecklist();
+			expect(data.items).toHaveLength(3);
+			expect(data.items[0].description).toBe("Task 1");
+			expect(data.items[1].description).toBe("Task 2");
+			expect(data.items[2].description).toBe("Task 3");
+		});
+
+		test("adds multiple tasks across consecutive calls", async () => {
+			await addTool.execute({ descriptions: ["Task 1"] });
+			const result2 = await addTool.execute({ descriptions: ["Task 2"] });
+			const result3 = await addTool.execute({ descriptions: ["Task 3"] });
+
+			expect(result2).toEqual({
+				items: [{ index: 2, description: "Task 2" }],
+			});
+			expect(result3).toEqual({
+				items: [{ index: 3, description: "Task 3" }],
+			});
 
 			const data = await readChecklist();
 			expect(data.items).toHaveLength(3);
 		});
 
-		test("accepts empty string description", async () => {
-			const result = await addTool.execute({ description: "" });
-			expect(result.index).toBe(1);
+		test("accepts empty descriptions array", async () => {
+			const result = await addTool.execute({ descriptions: [] });
+			expect(result.items).toEqual([]);
+
+			const data = await readChecklist();
+			expect(data.items).toHaveLength(0);
+		});
+
+		test("accepts list with empty string description", async () => {
+			const result = await addTool.execute({ descriptions: [""] });
+			expect(result.items).toHaveLength(1);
+			expect(result.items[0].index).toBe(1);
+			expect(result.items[0].description).toBe("");
 		});
 	});
 
 	describe("checklist_show", () => {
 		test("shows added tasks with 1-based indexes", async () => {
-			await addTool.execute({ description: "Task A" });
-			await addTool.execute({ description: "Task B" });
+			await addTool.execute({ descriptions: ["Task A"] });
+			await addTool.execute({ descriptions: ["Task B"] });
 
 			const result = await showTool.execute({});
 
@@ -81,6 +114,22 @@ describe("checklist tools", () => {
 			expect(result.items[0].addedAt).toBeDefined();
 		});
 
+		test("shows tasks added in bulk with correct indexes", async () => {
+			await addTool.execute({ descriptions: ["Task X", "Task Y", "Task Z"] });
+
+			const result = await showTool.execute({});
+
+			expect(result.count).toBe(3);
+			expect(result.items[0]).toMatchObject({
+				index: 1,
+				description: "Task X",
+			});
+			expect(result.items[2]).toMatchObject({
+				index: 3,
+				description: "Task Z",
+			});
+		});
+
 		test("returns empty when checklist is empty", async () => {
 			const result = await showTool.execute({});
 			expect(result.count).toBe(0);
@@ -90,9 +139,7 @@ describe("checklist tools", () => {
 
 	describe("checklist_del", () => {
 		test("deletes a single task by index", async () => {
-			await addTool.execute({ description: "Task A" });
-			await addTool.execute({ description: "Task B" });
-			await addTool.execute({ description: "Task C" });
+			await addTool.execute({ descriptions: ["Task A", "Task B", "Task C"] });
 
 			const result = await delTool.execute({ indexes: [2] });
 
@@ -109,8 +156,7 @@ describe("checklist tools", () => {
 		});
 
 		test("deduplicates indexes", async () => {
-			await addTool.execute({ description: "Task A" });
-			await addTool.execute({ description: "Task B" });
+			await addTool.execute({ descriptions: ["Task A", "Task B"] });
 
 			const result = await delTool.execute({ indexes: [1, 1, 2] });
 
@@ -119,7 +165,7 @@ describe("checklist tools", () => {
 		});
 
 		test("skips invalid indexes", async () => {
-			await addTool.execute({ description: "Task A" });
+			await addTool.execute({ descriptions: ["Task A"] });
 
 			const result = await delTool.execute({ indexes: [1, 99, -1] });
 

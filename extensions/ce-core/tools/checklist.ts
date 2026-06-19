@@ -47,22 +47,26 @@ export function createChecklistAddTool() {
 	return {
 		name: "checklist_add",
 		async execute(input: {
-			description: string;
-		}): Promise<{ index: number; description: string }> {
+			descriptions: string[];
+		}): Promise<{ items: Array<{ index: number; description: string }> }> {
 			const data = await readChecklist();
+			const added: Array<{ index: number; description: string }> = [];
 
-			const item: ChecklistItem = {
-				description: input.description,
-				addedAt: new Date().toISOString(),
-			};
+			for (const desc of input.descriptions) {
+				const item: ChecklistItem = {
+					description: desc,
+					addedAt: new Date().toISOString(),
+				};
+				data.items.push(item);
+				added.push({
+					index: data.items.length,
+					description: desc,
+				});
+			}
 
-			data.items.push(item);
 			await writeChecklist(data);
 
-			return {
-				index: data.items.length,
-				description: input.description,
-			};
+			return { items: added };
 		},
 	};
 }
