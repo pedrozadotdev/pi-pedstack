@@ -738,3 +738,70 @@ export function cmdPedFixIssues(
 		},
 	};
 }
+
+// ── /ped-reload command ────────────────────────────────────────────
+
+/**
+ * Command factory for `/ped-reload`.
+ *
+ * Reads the current stage from workflow state and restarts it cleanly:
+ * fresh context branch, re-applied skill config (model/thinking/APPEND.md),
+ * and a clean skill prompt. Falls back to 01-brainstorm if no stage exists.
+ */
+export function cmdPedReload(
+	pi: ExtensionAPI,
+): Omit<RegisteredCommand, "name" | "sourceInfo"> {
+	return {
+		description:
+			"Restart the current pipeline stage cleanly. Usage: /ped-reload",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			await ctx.waitForIdle();
+
+			// Determine the current stage from workflow state
+			let stageKey: PipelineStageKey;
+			try {
+				const state = await createWorkflowStateTool().execute({
+					repoRoot: ctx.cwd,
+				});
+				const current = state.context.currentStage;
+				if (current && isValidStageKey(current)) {
+					stageKey = current;
+				} else {
+					// No context or invalid stage — fall back to brainstorm
+					stageKey = "01-brainstorm";
+					if (ctx.hasUI) {
+						ctx.ui.notify(
+							"No active stage found; starting 01-brainstorm.",
+							"info",
+						);
+					}
+				}
+			} catch (err) {
+				// Error reading state — fall back gracefully
+				stageKey = "01-brainstorm";
+				if (ctx.hasUI) {
+					ctx.ui.notify(
+						`Could not read workflow state: ${formatError(err)}. Falling back to 01-brainstorm.`,
+						"warning",
+					);
+				}
+			}
+
+			const nav = await prepareStageNavigation(ctx);
+			if (!nav) return;
+
+			pi.appendEntry("ped-stage-reload", {
+				returnTo: nav.departureLeafId,
+				stage: stageKey,
+			});
+
+			await switchStageConfig(pi, ctx, stageKey);
+
+			// Store the skill path for the model to read itself
+			setPendingSkillPath(computeSkillPath(stageKey));
+			pi.sendUserMessage(
+				`Reloading stage: ${stageKey}. Restart this stage clean — follow the skill instructions from scratch.`,
+			);
+		},
+	};
+}

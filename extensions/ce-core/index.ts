@@ -8,6 +8,7 @@ import {
 	cmdPedStart,
 	cmdPedNext,
 	cmdPedFixIssues,
+	cmdPedReload,
 	initSkillRegistry,
 	getAndClearPendingSkillPath,
 	getAndClearPendingFixIssues,
@@ -657,6 +658,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	pi.registerCommand("ped-start", cmdPedStart(pi));
 	pi.registerCommand("ped-next", cmdPedNext(pi));
 	pi.registerCommand("ped-fix-issues", cmdPedFixIssues(pi));
+	pi.registerCommand("ped-reload", cmdPedReload(pi));
 
 	// Capture skills and inject pending skill path into system prompt
 	pi.on("before_agent_start", async (event) => {

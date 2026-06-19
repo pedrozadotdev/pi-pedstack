@@ -1,6 +1,6 @@
 import { describe, expect, test, mock, afterEach } from "bun:test";
 import path from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 
 mock.module("@earendil-works/pi-ai", () => {
 	return {
@@ -74,6 +74,7 @@ import {
 	resolveNextPipelineStage,
 	cmdPedStart,
 	cmdPedNext,
+	cmdPedReload,
 	isModelVisible,
 	findPreConversationEntry,
 	findFreshTargetId,
@@ -770,5 +771,286 @@ describe("commands/pedstack: session-traversal helpers", () => {
 	});
 });
 
-// ── Unit 1: Pending fix-issues state ──
+// ── /ped-reload command ────────────────────────────────────────────
 
+describe("cmdPedReload", () => {
+	test("without current stage falls back to 01-brainstorm", async () => {
+		const appendCalls: Array<{ type: string; data: any }> = [];
+		const sentMessages: Array<{ content: any; opts?: any }> = [];
+		const notifications: Array<{ message: string; level: string }> = [];
+
+		const pi = {
+			appendEntry(type: string, data?: any) {
+				appendCalls.push({ type, data });
+			},
+			sendUserMessage(content: any, opts?: any) {
+				sentMessages.push({ content, opts });
+			},
+			setModel: async () => true,
+			setThinkingLevel: () => {},
+			getThinkingLevel: () => "medium",
+		} as any;
+
+		const ctx = {
+			hasUI: true,
+			cwd: "/tmp/test",
+			sessionManager: {
+				getLeafId: () => "leaf-1",
+				getBranch: () => [
+					{
+						type: "message",
+						id: "msg-1",
+						parentId: "root-1",
+					} as SessionEntry,
+				],
+			},
+			model: { provider: "anthropic", id: "sonnet" },
+			modelRegistry: {
+				find: () => ({ provider: "anthropic", id: "opus-4-1" }),
+			},
+			ui: {
+				notify(message: string, level?: string) {
+					notifications.push({ message, level: level ?? "info" });
+				},
+			},
+			navigateTree: async () => ({ cancelled: false }),
+			waitForIdle: async () => {},
+		} as any;
+
+		const cmd = cmdPedReload(pi);
+		await cmd.handler("", ctx);
+
+		expect(appendCalls.length).toBe(1);
+		expect(appendCalls[0].type).toBe("ped-stage-reload");
+		expect(appendCalls[0].data.stage).toBe("01-brainstorm");
+		expect(appendCalls[0].data.returnTo).toBe("leaf-1");
+
+		expect(sentMessages.length).toBe(1);
+		expect(sentMessages[0].content).toContain("Reloading stage: 01-brainstorm");
+
+		// Should notify about fallback (may be intermixed with config notifications)
+		expect(
+			notifications.some((n) => n.message.includes("No active stage found")),
+		).toBe(true);
+	});
+
+	test("with current stage reloads that stage", async () => {
+		const appendCalls: Array<{ type: string; data: any }> = [];
+		const sentMessages: Array<{ content: any; opts?: any }> = [];
+
+		const pi = {
+			appendEntry(type: string, data?: any) {
+				appendCalls.push({ type, data });
+			},
+			sendUserMessage(content: any, opts?: any) {
+				sentMessages.push({ content, opts });
+			},
+			setModel: async () => true,
+			setThinkingLevel: () => {},
+			getThinkingLevel: () => "medium",
+		} as any;
+
+		const ctx = {
+			hasUI: false,
+			cwd: "/tmp/test",
+			sessionManager: {
+				getLeafId: () => "leaf-1",
+				getBranch: () => [
+					{
+						type: "message",
+						id: "msg-1",
+						parentId: "root-1",
+					} as SessionEntry,
+				],
+			},
+			model: { provider: "anthropic", id: "sonnet" },
+			modelRegistry: {
+				find: () => undefined,
+			},
+			ui: { notify: () => {} },
+			navigateTree: async () => ({ cancelled: false }),
+			waitForIdle: async () => {},
+		} as any;
+
+		// The reload command reads workflow state from disk. Since /tmp/test
+		// won't have a context-state.json, it falls back to 01-brainstorm.
+		// This validates the no-state fallback path.
+		const cmd = cmdPedReload(pi);
+		await cmd.handler("", ctx);
+
+		expect(appendCalls.length).toBe(1);
+		expect(appendCalls[0].type).toBe("ped-stage-reload");
+		expect(sentMessages.length).toBe(1);
+	});
+
+	test("with navigation cancelled notifies and stops", async () => {
+		const appendCalls: Array<{ type: string; data: any }> = [];
+		const sentMessages: any[] = [];
+		const notifications: Array<{ message: string; level: string }> = [];
+
+		const pi = {
+			appendEntry: () => {},
+			sendUserMessage(content: any) {
+				sentMessages.push(content);
+			},
+			setModel: async () => true,
+			setThinkingLevel: () => {},
+			getThinkingLevel: () => "medium",
+		} as any;
+
+		const ctx = {
+			hasUI: true,
+			cwd: "/tmp/test",
+			sessionManager: {
+				getLeafId: () => "leaf-1",
+				getBranch: () => [
+					{
+						type: "message",
+						id: "msg-1",
+						parentId: "root-1",
+					} as SessionEntry,
+				],
+			},
+			model: { provider: "anthropic", id: "sonnet" },
+			modelRegistry: { find: () => undefined },
+			ui: {
+				notify(message: string, level?: string) {
+					notifications.push({ message, level: level ?? "info" });
+				},
+			},
+			navigateTree: async () => ({ cancelled: true }),
+			waitForIdle: async () => {},
+		} as any;
+
+		const cmd = cmdPedReload(pi);
+		await cmd.handler("", ctx);
+
+		expect(
+			notifications.some((n) => n.message.includes("Navigation cancelled")),
+		).toBe(true);
+		expect(sentMessages.length).toBe(0);
+		expect(appendCalls.length).toBe(0);
+	});
+
+	test("without UI does not notify", async () => {
+		const notifications: any[] = [];
+		const appendCalls: Array<{ type: string; data: any }> = [];
+
+		const pi = {
+			appendEntry(type: string, data?: any) {
+				appendCalls.push({ type, data });
+			},
+			sendUserMessage: () => {},
+			setModel: async () => true,
+			setThinkingLevel: () => {},
+			getThinkingLevel: () => "medium",
+		} as any;
+
+		const ctx = {
+			hasUI: false,
+			cwd: "/tmp/test",
+			sessionManager: {
+				getLeafId: () => "leaf-1",
+				getBranch: () => [
+					{
+						type: "message",
+						id: "msg-1",
+						parentId: "root-1",
+					} as SessionEntry,
+				],
+			},
+			model: { provider: "anthropic", id: "sonnet" },
+			modelRegistry: { find: () => undefined },
+			ui: {
+				notify(message: string, level?: string) {
+					notifications.push({ message, level });
+				},
+			},
+			navigateTree: async () => ({ cancelled: false }),
+			waitForIdle: async () => {},
+		} as any;
+
+		const cmd = cmdPedReload(pi);
+		await cmd.handler("", ctx);
+
+		// No notifications because hasUI is false
+		expect(notifications.length).toBe(0);
+	});
+
+	test("when workflow state has current stage, reloads that stage", async () => {
+		const appendCalls: Array<{ type: string; data: any }> = [];
+		const sentMessages: Array<{ content: any; opts?: any }> = [];
+
+		const pi = {
+			appendEntry(type: string, data?: any) {
+				appendCalls.push({ type, data });
+			},
+			sendUserMessage(content: any, opts?: any) {
+				sentMessages.push({ content, opts });
+			},
+			setModel: async () => true,
+			setThinkingLevel: () => {},
+			getThinkingLevel: () => "medium",
+		} as any;
+
+		// Mock the workflow state to have a current stage of 03-work
+		// We need to mock the createWorkflowStateTool function.
+		// Since it's called directly (not injected), we use mock.module at the top.
+		// Instead, let's write a context-state.json to /tmp/test-workflow.
+		const testRepo = path.join(
+			import.meta.dirname ?? __dirname,
+			"..",
+			".tmp-test-reload-valid-stage",
+		);
+		const ceDir = path.join(testRepo, ".context", "compound-engineering");
+		await mkdir(ceDir, { recursive: true });
+		await writeFile(
+			path.join(ceDir, "context-state.json"),
+			JSON.stringify({
+				currentStage: "03-work",
+				contextHealth: "good",
+				activeFiles: [],
+				currentTruth: [],
+				invalidatedAssumptions: [],
+				openDecisions: [],
+				compressionRisk: [],
+				updatedAt: new Date().toISOString(),
+			}),
+		);
+
+		const ctx = {
+			hasUI: false,
+			cwd: testRepo,
+			sessionManager: {
+				getLeafId: () => "leaf-1",
+				getBranch: () => [
+					{
+						type: "message",
+						id: "msg-1",
+						parentId: "root-1",
+					} as SessionEntry,
+				],
+			},
+			model: { provider: "anthropic", id: "sonnet" },
+			modelRegistry: { find: () => undefined },
+			ui: { notify: () => {} },
+			navigateTree: async () => ({ cancelled: false }),
+			waitForIdle: async () => {},
+		} as any;
+
+		const cmd = cmdPedReload(pi);
+		await cmd.handler("", ctx);
+
+		expect(appendCalls.length).toBe(1);
+		expect(appendCalls[0].type).toBe("ped-stage-reload");
+		expect(appendCalls[0].data.stage).toBe("03-work");
+
+		expect(sentMessages.length).toBe(1);
+		expect(sentMessages[0].content).toContain("Reloading stage: 03-work");
+
+		// Cleanup
+		await rm(testRepo, { recursive: true, force: true }).catch(() => {});
+	});
+});
+
+// ── Unit 1: Pending fix-issues state ──
