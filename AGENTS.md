@@ -28,6 +28,33 @@ bun test              # Run all tests
 
 - **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
 - **NO DIRECT-TO-IMPLEMENTATION BYPASS:** Do NOT skip the initial stages (Brainstorming/Planning) to go straight to code implementation or file editing. Start every new feature, bug fix, or task with the `01-brainstorm` skill.
+- **🐴 PONYTALL DISCIPLINE:** Before planning or writing any code, apply the 6-rung YAGNI ladder below. The system prompt injects this discipline into `02-plan`, `03-work`, and `04-review` — but you must internalize it yourself.
+
+## 🐴 Ponytail Discipline (YAGNI / Lazy Senior Dev Mode)
+
+The best code is the code never written. Before writing or planning any code, stop at the first rung that holds:
+
+| # | Question | Action |
+|---|----------|--------|
+| 1 | Does this need to be built at all? | YAGNI — drop the requirement if possible |
+| 2 | Does the standard library already do this? | Use it |
+| 3 | Does a native platform feature cover it? | Use it |
+| 4 | Does an already-installed dependency solve it? | Use it |
+| 5 | Can this be one line? | Make it one line |
+| 6 | Only then | Write the minimum code that works |
+
+### Enforcement rules
+
+- **No unrequested abstractions** — interfaces, factories, or base classes not in the requirements are noise. Delete them.
+- **No new dependencies if avoidable** — prefer `node:fs` over `fs-extra`, `fetch` over `axios`, built-in test runner over Jest.
+- **Deletion over addition** — remove lines over adding them. Every line shipped is a line maintained.
+- **Boring over clever** — simple loops > functional pipelines, switch > reflection, plain objects > metaprogramming.
+- **Mark with `ponytail:` comments** — annotate intentional simplifications so reviewers know the shortcut was deliberate.
+- **Do NOT compromise on security, input validation, or error handling** — Ponytail targets code volume, not correctness.
+
+### Handoff blockers
+
+Only set a blocker in `context_handoff save` when an actual problem blocks progress. Leave the `blocker` field empty/undefined when nothing blocks advancement — never write "N/A", "None", or any placeholder. An absent blocker lets `/ped-next` advance to the next stage.
 
 ## Architecture
 

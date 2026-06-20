@@ -390,7 +390,9 @@ async function save(input: ContextHandoffInput): Promise<ContextHandoffResult> {
 		}
 	}
 	const activeFiles = input.activeFiles ?? [];
-	const blocker = input.blocker;
+	// Normalize: treat placeholder/N/A-ish blockers as absent so they don't block /ped-next
+	const blocker =
+		input.blocker && !isPlaceholder(input.blocker) ? input.blocker : undefined;
 	const verification = input.verification;
 	const artifacts = input.artifacts ?? {};
 	const currentTruth = input.currentTruth ?? [];
@@ -571,6 +573,10 @@ function isPlaceholder(text: string): boolean {
 	if (PLACEHOLDER_VALUES.has(trimmed)) return true;
 	for (const prefix of PLACEHOLDER_PREFIXES) {
 		if (trimmed === prefix) return true;
+	}
+	// Catch strings that start with a placeholder like "N/A — all premises confirmed"
+	for (const val of PLACEHOLDER_VALUES) {
+		if (val.length > 0 && trimmed.startsWith(val)) return true;
 	}
 	return false;
 }

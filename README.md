@@ -22,6 +22,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Evidence-first review** — auto-assigned reviewers across five axes, autofix loop
 - **Knowledge compounding** — solved problems become searchable solution artifacts
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
+- **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, and review stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
 - **Token-efficient** — ~3,490 tokens new-conversation overhead; progressive loading
 
 ---
@@ -210,6 +211,36 @@ When implementation depends on a framework/library API, version-specific behavio
 ### Review five axes
 
 All reviewers evaluate changes across: **correctness, readability, architecture, security, performance.**
+
+---
+
+## 🐴 Ponytail Discipline (YAGNI / Lazy Senior Dev Mode)
+
+The Ponytail strategy keeps the codebase lean by forcing every implementation choice through a 6-rung ladder before any code is written. It is dynamically injected into the system prompt during `02-plan`, `03-work`, and `04-review` stages.
+
+### The 6 Rungs (in order)
+
+| # | Question | Action |
+|---|----------|--------|
+| 1 | Does this need to be built at all? | YAGNI — delete the requirement if possible |
+| 2 | Does the standard library already do this? | Use it |
+| 3 | Does a native platform feature cover it? | Use it |
+| 4 | Does an already-installed dependency solve it? | Use it |
+| 5 | Can this be one line? | Make it one line |
+| 6 | Only now | Write the minimum code that works |
+
+### Rules
+
+- **No unrequested abstractions** — interfaces, factories, or base classes that weren't explicitly in the requirements are noise. Delete them.
+- **No new dependencies if avoidable** — prefer `node:fs` over `fs-extra`, `fetch` over `axios`, built-in test runner over Jest.
+- **Deletion over addition** — when in doubt, remove lines. Every line that ships is a line that must be maintained.
+- **Boring over clever** — simple loops beat functional pipelines, switch statements beat reflection, plain objects beat metaprogramming.
+- **Mark with `ponytail:` comments** — annotate intentional simplifications so reviewers know the shortcut was deliberate.
+- **Do NOT compromise on security, input validation, or error handling** — Ponytail is about code volume, not correctness.
+
+### Handoff blockers
+
+Only add a blocker in `context_handoff save` when an actual problem blocks progress. An empty/absent `blocker` field lets `/ped-next` advance the pipeline. Placeholder blockers like "N/A" or "No blockers" are stripped automatically.
 
 ---
 

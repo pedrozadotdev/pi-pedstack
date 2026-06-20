@@ -119,6 +119,27 @@ export function buildSystemPromptAppend(
 		);
 	}
 
+	// 1.5 Ponytail Discipline (YAGNI / Lazy Senior Dev Mode)
+	if (
+		stageKey === "02-plan" ||
+		stageKey === "03-work" ||
+		stageKey === "04-review"
+	) {
+		blocks.push(
+			`\n\n---\n## 🐴 Ponytail Discipline (Lazy Senior Dev Mode)\n\n` +
+				`You must apply the Ponytail strategy to all planning and implementation. The best code is the code never written.\n` +
+				`Before writing or planning any code, stop at the first rung that holds:\n` +
+				`1. Does this need to be built at all? (YAGNI)\n` +
+				`2. Does the standard library already do this? Use it.\n` +
+				`3. Does a native platform feature cover it? Use it.\n` +
+				`4. Does an already-installed dependency solve it? Use it.\n` +
+				`5. Can this be one line? Make it one line.\n` +
+				`6. Only then: write the minimum code that works.\n\n` +
+				`**Rules:** No abstractions that weren't explicitly requested. No new dependencies if avoidable. Deletion over addition. Boring over clever. Mark intentional simplifications with a \`ponytail:\` comment. Do NOT compromise on security, input validation, or error handling.` +
+				`\n\n**Handoff blockers:** Only set a blocker in \`context_handoff save\` when an actual problem blocks progress. If there is no blocker, leave the \`blocker\` field empty/undefined — never write a placeholder like "N/A" or "None" or "No blockers". An absent blocker field lets \`/ped-next\` advance to the next stage.`,
+		);
+	}
+
 	// 2. Per-stage APPEND.md instructions (user-provided)
 	const appendContent = getAndClearPendingAppendContent();
 	if (appendContent) {
