@@ -1051,6 +1051,135 @@ describe("cmdPedReload", () => {
 		// Cleanup
 		await rm(testRepo, { recursive: true, force: true }).catch(() => {});
 	});
+
+	test("with prompt argument passes it through to the model", async () => {
+		const appendCalls: Array<{ type: string; data: any }> = [];
+		const sentMessages: Array<{ content: any; opts?: any }> = [];
+
+		const pi = {
+			appendEntry(type: string, data?: any) {
+				appendCalls.push({ type, data });
+			},
+			sendUserMessage(content: any, opts?: any) {
+				sentMessages.push({ content, opts });
+			},
+			setModel: async () => true,
+			setThinkingLevel: () => {},
+			getThinkingLevel: () => "medium",
+		} as any;
+
+		const testRepo = path.join(
+			import.meta.dirname ?? __dirname,
+			"..",
+			".tmp-test-reload-with-prompt",
+		);
+		const ceDir = path.join(testRepo, ".context", "compound-engineering");
+		await mkdir(ceDir, { recursive: true });
+		await writeFile(
+			path.join(ceDir, "context-state.json"),
+			JSON.stringify({
+				currentStage: "04-review",
+				contextHealth: "good",
+				activeFiles: [],
+				currentTruth: [],
+				invalidatedAssumptions: [],
+				openDecisions: [],
+				compressionRisk: [],
+				updatedAt: new Date().toISOString(),
+			}),
+		);
+
+		const ctx = {
+			hasUI: false,
+			cwd: testRepo,
+			sessionManager: {
+				getLeafId: () => "leaf-1",
+				getBranch: () => [
+					{
+						type: "message",
+						id: "msg-1",
+						parentId: "root-1",
+					} as SessionEntry,
+				],
+			},
+			model: { provider: "anthropic", id: "sonnet" },
+			modelRegistry: { find: () => undefined },
+			ui: { notify: () => {} },
+			navigateTree: async () => ({ cancelled: false }),
+			waitForIdle: async () => {},
+		} as any;
+
+		const cmd = cmdPedReload(pi);
+		await cmd.handler("continue reviewing the auth module", ctx);
+
+		expect(appendCalls.length).toBe(1);
+		expect(appendCalls[0].type).toBe("ped-stage-reload");
+		expect(appendCalls[0].data.stage).toBe("04-review");
+		expect(appendCalls[0].data.prompt).toBe(
+			"continue reviewing the auth module",
+		);
+
+		expect(sentMessages.length).toBe(1);
+		expect(sentMessages[0].content).toBe("continue reviewing the auth module");
+
+		// Cleanup
+		await rm(testRepo, { recursive: true, force: true }).catch(() => {});
+	});
+
+	test("with only whitespace prompt falls back to default message", async () => {
+		const sentMessages: Array<{ content: any; opts?: any }> = [];
+
+		const pi = {
+			appendEntry: () => {},
+			sendUserMessage(content: any, opts?: any) {
+				sentMessages.push({ content, opts });
+			},
+			setModel: async () => true,
+			setThinkingLevel: () => {},
+			getThinkingLevel: () => "medium",
+		} as any;
+
+		const testRepo = path.join(
+			import.meta.dirname ?? __dirname,
+			"..",
+			".tmp-test-reload-whitespace-prompt",
+		);
+		const ceDir = path.join(testRepo, ".context", "compound-engineering");
+		await mkdir(ceDir, { recursive: true });
+		await writeFile(
+			path.join(ceDir, "context-state.json"),
+			JSON.stringify({
+				currentStage: "03-work",
+				contextHealth: "good",
+				updatedAt: new Date().toISOString(),
+			}),
+		);
+
+		const ctx = {
+			hasUI: false,
+			cwd: testRepo,
+			sessionManager: {
+				getLeafId: () => "leaf-1",
+				getBranch: () => [
+					{ type: "message", id: "msg-1", parentId: "root-1" } as SessionEntry,
+				],
+			},
+			model: { provider: "anthropic", id: "sonnet" },
+			modelRegistry: { find: () => undefined },
+			ui: { notify: () => {} },
+			navigateTree: async () => ({ cancelled: false }),
+			waitForIdle: async () => {},
+		} as any;
+
+		const cmd = cmdPedReload(pi);
+		await cmd.handler("   ", ctx);
+
+		expect(sentMessages.length).toBe(1);
+		expect(sentMessages[0].content).toContain("Reloading stage: 03-work");
+
+		// Cleanup
+		await rm(testRepo, { recursive: true, force: true }).catch(() => {});
+	});
 });
 
 // ── Unit 1: Pending fix-issues state ──

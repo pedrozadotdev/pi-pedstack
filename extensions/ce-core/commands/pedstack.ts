@@ -754,8 +754,10 @@ export function cmdPedReload(
 	return {
 		description:
 			"Restart the current pipeline stage cleanly. Usage: /ped-reload",
-		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			await ctx.waitForIdle();
+
+			const optionalPrompt = args.trim() || undefined;
 
 			// Determine the current stage from workflow state
 			let stageKey: PipelineStageKey;
@@ -793,6 +795,7 @@ export function cmdPedReload(
 			pi.appendEntry("ped-stage-reload", {
 				returnTo: nav.departureLeafId,
 				stage: stageKey,
+				prompt: optionalPrompt,
 			});
 
 			await switchStageConfig(pi, ctx, stageKey);
@@ -800,7 +803,8 @@ export function cmdPedReload(
 			// Store the skill path for the model to read itself
 			setPendingSkillPath(computeSkillPath(stageKey));
 			pi.sendUserMessage(
-				`Reloading stage: ${stageKey}. Restart this stage clean — follow the skill instructions from scratch.`,
+				optionalPrompt ||
+					`Reloading stage: ${stageKey}. Restart this stage clean — follow the skill instructions from scratch.`,
 			);
 		},
 	};
