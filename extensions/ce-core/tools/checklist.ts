@@ -103,35 +103,39 @@ export function createChecklistDelTool() {
 		name: "checklist_del",
 		async execute(input: { indexes: number[] }): Promise<{
 			removed: number[];
-			skipped: number[];
 			count: number;
 		}> {
 			const data = await readChecklist();
 			const removed: number[] = [];
-			const skipped: number[] = [];
 
-			// Deduplicate and sort descending (to maintain index stability during removal)
-			const uniqueDesc = [...new Set(input.indexes)]
-				.filter((n) => Number.isInteger(n))
-				.sort((a, b) => b - a);
+			// Validate: every index must be a valid 1-based integer index in the current list
+			const invalid = input.indexes.filter(
+				(n) => !Number.isInteger(n) || n < 1 || n > data.items.length,
+			);
 
-			for (const idx of uniqueDesc) {
-				if (idx >= 1 && idx <= data.items.length) {
-					data.items.splice(idx - 1, 1);
-					removed.push(idx);
-				} else {
-					skipped.push(idx);
-				}
+			if (invalid.length > 0) {
+				throw new Error(
+					`Invalid checklist index(es): ${invalid.join(", ")}. ` +
+						`Checklist has ${data.items.length} item(s). ` +
+						"Use checklist_show to see valid indexes.",
+				);
 			}
 
-			// Restore ascending order for removed
+			// Sort descending to maintain index stability during removal
+			const uniqueDesc = [...new Set(input.indexes)].sort((a, b) => b - a);
+
+			for (const idx of uniqueDesc) {
+				data.items.splice(idx - 1, 1);
+				removed.push(idx);
+			}
+
+			// Restore ascending order
 			removed.sort((a, b) => a - b);
 
 			await writeChecklist(data);
 
 			return {
 				removed,
-				skipped,
 				count: data.items.length,
 			};
 		},

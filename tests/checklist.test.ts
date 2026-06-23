@@ -145,7 +145,6 @@ describe("checklist tools", () => {
 
 			expect(result).toEqual({
 				removed: [2],
-				skipped: [],
 				count: 2,
 			});
 
@@ -160,26 +159,39 @@ describe("checklist tools", () => {
 
 			const result = await delTool.execute({ indexes: [1, 1, 2] });
 
-			expect(result.removed).toEqual([1, 2]);
-			expect(result.count).toBe(0);
+			expect(result).toEqual({
+				removed: [1, 2],
+				count: 0,
+			});
 		});
 
-		test("skips invalid indexes", async () => {
+		test("throws on invalid indexes", async () => {
 			await addTool.execute({ descriptions: ["Task A"] });
 
-			const result = await delTool.execute({ indexes: [1, 99, -1] });
+			expect(delTool.execute({ indexes: [99, -1] })).rejects.toThrow(
+				/Invalid checklist index/,
+			);
 
-			expect(result.removed).toEqual([1]);
-			expect(result.skipped).toEqual([99, -1]);
-			expect(result.count).toBe(0);
+			// Valid index alone should succeed
+			const result = await delTool.execute({ indexes: [1] });
+			expect(result).toEqual({
+				removed: [1],
+				count: 0,
+			});
 		});
 
-		test("handles delete from empty checklist", async () => {
-			const result = await delTool.execute({ indexes: [1] });
+		test("throws on delete from empty checklist", async () => {
+			expect(delTool.execute({ indexes: [1] })).rejects.toThrow(
+				/Invalid checklist index/,
+			);
+		});
 
-			expect(result.removed).toEqual([]);
-			expect(result.skipped).toEqual([1]);
-			expect(result.count).toBe(0);
+		test("throws on non-integer indexes", async () => {
+			await addTool.execute({ descriptions: ["Task A"] });
+
+			expect(delTool.execute({ indexes: [1.5] })).rejects.toThrow(
+				/Invalid checklist index/,
+			);
 		});
 	});
 });
