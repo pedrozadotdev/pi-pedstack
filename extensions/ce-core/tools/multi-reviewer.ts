@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process"
 import * as fs from "node:fs"
+import { mkdir, writeFile } from "node:fs/promises"
 import * as path from "node:path"
 import { readPiPedstackConfig, getConfigKeyForSkill } from "../utils/config-types"
+import { normalizeSlug } from "../utils/name-utils"
 
 export interface ReviewerConfig {
   model: string
@@ -30,6 +32,59 @@ export interface ReviewFinding {
 export interface MultiReviewerResult {
   findings: ReviewFinding[]
   compiledSummary: string
+  /**
+   * Absolute path to the persisted findings JSON file inside
+   * `.context/compound-engineering/review-findings/`. Present only when
+   * findings were produced.
+   */
+  findingsPath?: string
+  /**
+   * Repo-relative path to the persisted findings JSON file. Stable across
+   * machines and safe to embed in handoffs.
+   */
+  findingsRelativePath?: string
+}
+
+const REVIEW_FINDINGS_DIR = "review-findings"
+
+function reviewFindingsDir(repoRoot: string): string {
+  return path.join(repoRoot, ".context", "compound-engineering", REVIEW_FINDINGS_DIR)
+}
+
+function buildReviewFindingsFileName(stepName: string, timestamp: string): string {
+  const slug = normalizeSlug(stepName) || "review"
+  // Example: 2026-06-28T21-47-30-007Z-04-review.json
+  const safeTs = timestamp.replace(/[:.]/g, "-")
+  return `${safeTs}-${slug}.json`
+}
+
+async function persistFindings(
+  repoRoot: string,
+  stepName: string,
+  findings: ReviewFinding[],
+  compiledSummary: string,
+): Promise<{ absolute: string; relative: string } | null> {
+  if (findings.length === 0) return null
+
+  const dir = reviewFindingsDir(repoRoot)
+  await mkdir(dir, { recursive: true })
+
+  const timestamp = new Date().toISOString()
+  const fileName = buildReviewFindingsFileName(stepName, timestamp)
+  const absolute = path.join(dir, fileName)
+  const relative = path.join(".context", "compound-engineering", REVIEW_FINDINGS_DIR, fileName)
+
+  const payload = {
+    stepName,
+    generatedAt: timestamp,
+    count: findings.length,
+    findings,
+    compiledSummary,
+  }
+
+  await writeFile(absolute, JSON.stringify(payload, null, 2), "utf8")
+
+  return { absolute, relative }
 }
 
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
@@ -293,9 +348,23 @@ export function createMultiReviewerTool() {
         summary += `### ✅ No issues identified.\n`
       }
 
+      const trimmedSummary = summary.trim()
+
+      // Persist findings JSON inside .context/ so it is gitignored automatically.
+      // The previous behavior was to let the agent write a stray review-findings.json
+      // to the repo root, which leaked into git history.
+      const persisted = await persistFindings(
+        input.repoRoot,
+        input.stepName,
+        findings,
+        trimmedSummary,
+      )
+
       return {
         findings,
-        compiledSummary: summary.trim(),
+        compiledSummary: trimmedSummary,
+        findingsPath: persisted?.absolute,
+        findingsRelativePath: persisted?.relative,
       }
     },
   }

@@ -56,7 +56,7 @@ Code review is **technical evaluation**, not social performance:
 6. Apply each reviewer persona from `review_router` yourself. You must perform the evaluation for each persona yourself rather than delegating the task to `multi_reviewer` or other subagents at this stage.
 7. Merge all reviewer findings into a compiled review findings report (save to `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<topic>.md`) following the structure in `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/review-findings-template.md`
 8. Verify each finding against codebase and update the report
-9. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "04-review"` to review the compiled review findings report, passing the report content as the `primaryOutput` parameter, and use the sub-reviewer feedback to refine the report or find missing issues
+9. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "04-review"` to review the compiled review findings report, passing the report content as the `primaryOutput` parameter, and use the sub-reviewer feedback to refine the report or find missing issues. The tool auto-persists the structured findings JSON to `.context/compound-engineering/review-findings/<timestamp>-<stepName>.json` (gitignored) and returns `findingsRelativePath` — use this path in the handoff's `artifacts.review` field. **Do NOT write your own `review-findings.json` to the repo root** — the tool already handles persistence inside `.context/`.
 10. Apply autofixes, re-run tests, re-review if needed
 
 ## Optional: QA Test Mode
