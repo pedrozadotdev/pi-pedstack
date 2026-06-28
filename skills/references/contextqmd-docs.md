@@ -5,10 +5,25 @@ Use the `contextqmd` CLI to install, search, and read library documentation loca
 ## When to Use
 
 **`contextqmd` CLI is the primary documentation tool.** Use it to:
+
 - Verify framework/library-specific APIs, patterns, and version-specific behavior before planning or implementing.
 - Perform local-first searches with version pinning and semantic/hybrid search capability.
 
 ## Workflow
+
+### 0. Verify the `contextqmd` CLI is installed
+
+```bash
+command -v contextqmd && contextqmd -v
+```
+
+If the check fails (CLI missing), **stop and ask the user for permission to install it.** Never run an install command without explicit approval. The install command is:
+
+```bash
+npm install -g contextqmd
+```
+
+Let the user run it themselves, or run it only after they explicitly say go. Re-run the check above before continuing to step 1.
 
 ### 1. Check what's already installed
 
