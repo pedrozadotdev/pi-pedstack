@@ -26,7 +26,11 @@ describe("skill package contracts", () => {
 	});
 
 	test("every skill has a references or assets directory", () => {
-		for (const skillName of skillNames) {
+		// 04-5-debug is a self-contained skill with no shared templates or assets
+		const skillsWithSharedDirs = skillNames.filter(
+			(name) => name !== "04-5-debug",
+		);
+		for (const skillName of skillsWithSharedDirs) {
 			const skillDir = path.join(repoRoot, "skills", skillName);
 			const hasReferences = existsSync(path.join(skillDir, "references"));
 			const hasAssets = existsSync(path.join(skillDir, "assets"));
@@ -304,7 +308,7 @@ describe("skill package contracts", () => {
 		expect(reviewerSelection).toContain("review_router");
 		expect(reviewerSelection).toContain("correctness-reviewer");
 		expect(reviewerSelection).toContain("security-reviewer");
-		expect(handoff).toContain("04-5-debug");
+		expect(handoff).toContain("/ped-debug");
 		expect(handoff).toContain("autofix");
 	});
 

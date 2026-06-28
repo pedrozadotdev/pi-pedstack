@@ -1181,5 +1181,3 @@ describe("cmdPedReload", () => {
 		await rm(testRepo, { recursive: true, force: true }).catch(() => {});
 	});
 });
-
-// ── Unit 1: Pending fix-issues state ──

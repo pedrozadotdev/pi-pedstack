@@ -23,12 +23,13 @@ bun test              # Run all tests
 | `/ped-next [prompt]` | Auto-resolve and advance to the next pipeline stage |
 | `/ped-reload` | Restart the current stage from a fresh context, re-applying skill config |
 | `/ped-fix-issues <#1,#2,...>` | Prompt-inject GitHub issue context into 01-brainstorm |
+| `/ped-debug <prompt>` | Enter 04-5-debug on demand with gating (warns if before 04-review). Prompt is required. |
 
 ## Workflow Discipline
 
-- **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
+- **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
 - **NO DIRECT-TO-IMPLEMENTATION BYPASS:** Do NOT skip the initial stages (Brainstorming/Planning) to go straight to code implementation or file editing. Start every new feature, bug fix, or task with the `01-brainstorm` skill.
-- **🐴 PONYTALL DISCIPLINE:** Before planning or writing any code, apply the 6-rung YAGNI ladder below. The system prompt injects this discipline into `02-plan`, `03-work`, and `04-review` — but you must internalize it yourself.
+- **🐴 PONYTALL DISCIPLINE:** Before planning or writing any code, apply the 6-rung YAGNI ladder below. The system prompt injects this discipline into `02-plan`, `03-work`, `04-review`, and `04-5-debug` — but you must internalize it yourself.
 
 ## 🐴 Ponytail Discipline (YAGNI / Lazy Senior Dev Mode)
 
@@ -60,6 +61,7 @@ Only set a blocker in `context_handoff save` when an actual problem blocks progr
 
 ```
 skills/          # 7 pipeline skills (01-brainstorm, 02-plan, 03-work, 04-review, 04-5-debug, 05-learn, 06-docsync)
+                 # Default: 01→02→03→04→05→06 (04-5-debug entered via /ped-debug)
   references/    # Shared templates and schemas
   rules/         # Coding standards (common + language-specific)
 extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt injection)

@@ -12,7 +12,7 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 
 ## Core rules
 
-- **Workflow Enforcement:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`) is strictly required. The model must never skip this workflow, bypass individual steps, or go direct to implementation.
+- **Workflow Enforcement:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `05-learn` → `06-docsync`) is strictly required. The model must never skip this workflow, bypass individual steps, or go direct to implementation. Use `/ped-debug` to enter the debug stage on demand if bugs are found.
 - **No Direct-to-Implementation Bypass:** Never jump straight to writing or editing codebase files, and never bypass brainstorming or planning to write/modify code. Keep the initial focus entirely on requirement discovery and design dialog.
 - Use **`brainstorm_dialog`** to manage multi-round conversations (`start` → `refine` → `summarize`).
 - Ask **one question at a time**.

@@ -1,23 +1,52 @@
 ---
 name: 04-5-debug
-description: "Route based on user testing: if bugs found, return to 03-work; if clean, continue to 05-learn."
+description: "Debug and fix issues with a 5-phase workflow: Information Gathering, Root Cause Analysis, Implementation, Verification, Report."
 disable-model-invocation: true
 ---
 
-# Debug Route
+# Debug and Fix
 
-Use this skill after `04-review` has completed. This is a routing-only step to evaluate user testing.
+Your goal is to find the root cause of a bug and fix it. You are stepping into an active investigation context where something is broken.
 
-See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/pipeline-config.md) for model routing and pipeline behavior.
+## 1. Information Gathering
 
-## Core rules
+Before making any code changes, completely understand the state of the problem:
 
-1. **Load context**: Check latest handoff from `04-review`.
-2. **Present summary**: Show a concise list of implemented features and review findings to the user.
-3. **Prompt the user**: Ask the user directly if they found any bugs during manual verification or testing.
-   - **Bugs found**: Stop execution, prompt the user for bug reports, and recommend running `/ped-next` to return to `03-work`.
-   - **Clean / No bugs**: Recommend running `/ped-next` to proceed to `05-learn`.
+- Check logs, test outputs, or error traces. Use tools to reproduce the error if necessary.
+- If the issue refers to a specific file or URL, read the source to understand the context.
+- Identify what the expected behavior is vs. the actual broken behavior.
 
-## Exit Criteria
+## 2. Root Cause Analysis
 
-- Next step recommended clearly based on user response.
+Do not guess. Use a systematic approach to isolate the cause:
+
+- **Trace the execution:** Follow the data or logic flow backwards from the error output.
+- **Hypothesize and Test:** Formulate a clear hypothesis of why the bug occurs. Use tools (like `grep` or file reads) to confirm the hypothesis in the codebase before changing logic.
+- Avoid treating symptoms. Make sure your fix addresses the underlying structural issue.
+
+## 3. Implementation
+
+Once you have confirmed the root cause:
+
+- Implement the simplest, most robust fix.
+- Ensure the fix doesn't introduce side effects or break existing patterns.
+- Follow the project's coding style and conventions.
+
+## 4. Verification
+
+- After applying the fix, verify that the bug is resolved.
+- If it was a failing test, run the test again. If it was a runtime error, verify the logs no longer produce the error.
+- If the fix fails, rollback your assumptions and start the diagnosis loop again.
+
+## 5. Report
+
+Once the bug is fixed and verified, provide a concise summary to the user detailing:
+
+1. The root cause of the bug.
+2. The exact files and logic changed to fix it.
+3. How it was verified.
+
+## Additional Rules
+
+- After completing the report, save a context handoff targeting 05-learn.
+- Follow Ponytail discipline: fix the root cause, not the symptom. Don't scope creep.

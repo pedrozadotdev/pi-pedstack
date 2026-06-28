@@ -739,6 +739,121 @@ export function cmdPedFixIssues(
 	};
 }
 
+/** Read workflow state, returning null on failure with notification. */
+async function readWorkflowState(
+	ctx: ExtensionCommandContext,
+): Promise<WorkflowStateResult | null> {
+	try {
+		return await createWorkflowStateTool().execute({ repoRoot: ctx.cwd });
+	} catch (err) {
+		if (ctx.hasUI)
+			ctx.ui.notify(
+				`Failed to read workflow state: ${formatError(err)}`,
+				"error",
+			);
+		return null;
+	}
+}
+
+/**
+ * Check debug gating: only allows /ped-debug after 04-review handoff
+ * to 05-learn (currentStage === "04-review" && nextStage === "05-learn").
+ * All other states are blocked with a notification.
+ */
+function checkDebugGate(
+	ctx: ExtensionCommandContext,
+	currentStage: string | undefined,
+	nextStage: string | undefined,
+): boolean {
+	if (!currentStage) {
+		if (ctx.hasUI) {
+			ctx.ui.notify(
+				"No active workflow found. Start a workflow with /ped-start first.",
+				"warning",
+			);
+		}
+		return false;
+	}
+
+	if (currentStage === "04-review" && nextStage === "05-learn") {
+		return true;
+	}
+
+	if (ctx.hasUI) {
+		ctx.ui.notify(
+			"/ped-debug is only available after 04-review completes and before 05-learn begins. " +
+				`Current workflow is at ${currentStage}` +
+				(nextStage ? ` (next: ${nextStage})` : "") +
+				".",
+			"warning",
+			);
+	}
+	return false;
+}
+
+// ── /ped-debug command ──────────────────────────────────────────────
+
+/**
+ * Command factory for `/ped-debug <prompt>`.
+ *
+ * Enters the 04-5-debug stage on demand with gating logic:
+ * - Blocks if no workflow state exists.
+ * - Blocks unless at exactly 04-review with nextStage 05-learn.
+ * - Blocks if no prompt argument is provided.
+ * Navigates to fresh context, applies debug stage config, and invokes the skill.
+ */
+export function cmdPedDebug(
+	pi: ExtensionAPI,
+): Omit<RegisteredCommand, "name" | "sourceInfo"> {
+	return {
+		description: "Enter the debug stage on demand. Usage: /ped-debug <prompt>",
+		// ponytail: handler duplicated from cmdPedFixIssues pattern to avoid
+		// premature abstraction — same nav/config/message shape, different gating.
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			await ctx.waitForIdle();
+
+			const prompt = _args.trim();
+			if (!prompt) {
+				if (ctx.hasUI) {
+					ctx.ui.notify(
+						"A prompt is required. Usage: /ped-debug <prompt>",
+						"warning",
+					);
+				}
+				return;
+			}
+
+			const state = await readWorkflowState(ctx);
+			if (!state) return;
+
+			const { currentStage, nextStage } = state.context;
+			if (!checkDebugGate(ctx, currentStage, nextStage)) return;
+
+			const stageKey: PipelineStageKey = "04-5-debug";
+
+			const nav = await prepareStageNavigation(ctx);
+			if (!nav) return;
+
+			pi.appendEntry("ped-stage-start", {
+				returnTo: nav.departureLeafId,
+				stage: stageKey,
+				prompt,
+			});
+
+			try {
+				await switchStageConfig(pi, ctx, stageKey);
+			} catch (err) {
+				if (ctx.hasUI)
+					ctx.ui.notify(`Config switch failed: ${formatError(err)}`, "error");
+				return;
+			}
+
+			setPendingSkillPath(computeSkillPath(stageKey));
+			pi.sendUserMessage(prompt);
+		},
+	};
+}
+
 // ── /ped-reload command ────────────────────────────────────────────
 
 /**

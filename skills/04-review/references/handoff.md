@@ -6,7 +6,7 @@ When the review is complete:
 2. State whether fixes or re-review are needed.
 3. If findings are **autofixable**, apply the fixes and re-review the changes.
 4. After autofix, report what was changed and whether re-review confirms the fix.
-5. Recommend running `/ped-next` to route based on user verification (bug detection) via `04-5-debug`.
+5. Recommend running `/ped-next` to proceed to `05-learn`, or use `/ped-debug` if bugs were found.
 6. Mention any relevant plan or solution artifacts referenced during review.
 7. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).
 8. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`.

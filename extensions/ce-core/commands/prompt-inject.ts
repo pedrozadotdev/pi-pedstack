@@ -53,13 +53,13 @@ const STAGE_DISCIPLINES: Record<PipelineStageKey, StageDiscipline> = {
 			"Review every changed file for correctness, style, type safety, test coverage, and adherence to project standards.",
 		forbidden:
 			"Do NOT modify code, do NOT re-implement anything, do NOT add features, and do NOT fix issues yourself — only identify and document them.",
-		nextStage: "04-5-debug",
+		nextStage: "05-learn",
 	},
 	"04-5-debug": {
 		mandate:
-			"Fix only the bugs and issues identified during review. Make targeted, minimal changes to resolve each issue.",
+			"Find the root cause of bugs or issues and fix them. Make targeted, minimal changes to resolve each verified issue.",
 		forbidden:
-			"Do NOT add new features, do NOT change scope, do NOT refactor unrelated code — fix only what was flagged.",
+			"Do NOT add new features, do NOT change scope, do NOT refactor unrelated code — fix only what is broken.",
 		nextStage: "05-learn",
 	},
 	"05-learn": {
@@ -123,7 +123,8 @@ export function buildSystemPromptAppend(
 	if (
 		stageKey === "02-plan" ||
 		stageKey === "03-work" ||
-		stageKey === "04-review"
+		stageKey === "04-review" ||
+		stageKey === "04-5-debug"
 	) {
 		blocks.push(
 			`\n\n---\n## 🐴 Ponytail Discipline (Lazy Senior Dev Mode)\n\n` +

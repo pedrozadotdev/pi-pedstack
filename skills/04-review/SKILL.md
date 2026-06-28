@@ -74,6 +74,6 @@ After QA: include findings in handoff, note fix commits/test files.
 
 ## Handoff
 
-Handoff to `04-5-debug` (using the template in `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/handoff.md`) for user verification and routing.
+Handoff to `05-learn` (using the template in `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/handoff.md`). If bugs were found during review, the user can enter `04-5-debug` on demand via `/ped-debug`.
 
 Before finishing this skill, apply the completion checklist in [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/pipeline-config.md).

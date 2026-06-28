@@ -16,13 +16,13 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 
 ## Highlights
 
-- **REST-like pipeline loop** — brainstorm → plan → work → review → debug → learn → docsync, with automatic skill routing
+- **REST-like pipeline loop** — brainstorm → plan → work → review → learn → docsync, with automatic skill routing. Enter debug on demand via `/ped-debug`.
 - **Checkpoint resume** — interrupted? Resume from the exact unit you left off
 - **TDD enforcement** — every unit follows RED → GREEN → REFACTOR with hard gates
 - **Evidence-first review** — auto-assigned reviewers across five axes, autofix loop
 - **Knowledge compounding** — solved problems become searchable solution artifacts
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
-- **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, and review stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
+- **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
 - **Token-efficient** — ~3,490 tokens new-conversation overhead; progressive loading
 
 ---
@@ -42,9 +42,10 @@ You: I want to build a CLI tool that helps indie devs find early users
 → 02-plan: TDD-gated implementation units → plan artifact
 → 03-work: inline execution, checkpoint resume
 → 04-review: five-axis findings, autofix loop
-→ 04-5-debug: routing based on user testing
 → 05-learn: knowledge compounding
 → 06-docsync: synchronize documentation
+
+**On-demand:** `/ped-debug` enters the debug stage when bugs are found during review
 
 You: continue
 → Auto-resolves next stage via /ped-next
@@ -71,9 +72,11 @@ Skill invocation, reload, and model/thinking level switching are handled automat
 ## The REST-like Pipeline Loop
 
 ```
-01-brainstorm → 02-plan → 03-work → 04-review → 04-5-debug → 05-learn → 06-docsync
-    think         plan      build      review       debug       learn      docsync
+01-brainstorm → 02-plan → 03-work → 04-review → 05-learn → 06-docsync
+    think         plan      build      review       learn      docsync
 ```
+
+> **On-demand:** Enter `04-5-debug` (debug stage) via `/ped-debug` when bugs are found during review.
 
 | Skill | What it does | Core tool |
 |-------|-------------|-----------|
@@ -81,7 +84,7 @@ Skill invocation, reload, and model/thinking level switching are handled automat
 | **02-plan** | TDD-gated implementation units, optional CEO Review | `plan_diff`, `context_handoff`, `artifact_helper` |
 | **03-work** | Execution with checkpoint resume, strict TDD | `session_checkpoint`, `task_splitter`, `context_handoff` |
 | **04-review** | Auto-assigned reviewers, five-axis findings, autofix loop | `review_router`, `multi_reviewer`, `context_handoff` |
-| **04-5-debug** | Routing based on user testing (return to work or continue to learn) | `context_handoff` |
+| **04-5-debug** *(on-demand)* | Debug and fix issues with a 5-phase workflow: Information Gathering, Root Cause Analysis, Implementation, Verification, Report. Enter via `/ped-debug`. | `context_handoff` |
 | **05-learn** | Pattern extraction → searchable solution artifacts | `pattern_extractor`, `context_handoff`, `artifact_helper` |
 | **06-docsync** | Synchronize project documentation after completion | `context_handoff` |
 
@@ -216,7 +219,7 @@ All reviewers evaluate changes across: **correctness, readability, architecture,
 
 ## 🐴 Ponytail Discipline (YAGNI / Lazy Senior Dev Mode)
 
-The Ponytail strategy keeps the codebase lean by forcing every implementation choice through a 6-rung ladder before any code is written. It is dynamically injected into the system prompt during `02-plan`, `03-work`, and `04-review` stages.
+The Ponytail strategy keeps the codebase lean by forcing every implementation choice through a 6-rung ladder before any code is written. It is dynamically injected into the system prompt during `02-plan`, `03-work`, `04-review`, and `04-5-debug` stages.
 
 ### The 6 Rungs (in order)
 
@@ -287,8 +290,8 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 14 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~4,985 |
-| Tests | 292 (1,051 assertions) |
+| TypeScript lines | ~5,170 |
+| Tests | 306 (1,083 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -303,6 +306,7 @@ Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, R
 | `/ped-next [prompt]` | Auto-resolve and advance to the next pipeline stage |
 | `/ped-reload` | Restart the current pipeline stage from a fresh context, re-applying skill config |
 | `/ped-fix-issues <#1,#2,...>` | Prompt-inject GitHub issue context into 01-brainstorm |
+| `/ped-debug <prompt>` | Enter 04-5-debug on demand with gating (warns if before 04-review). Prompt is required. |
 
 ---
 
