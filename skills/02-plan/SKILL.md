@@ -51,20 +51,9 @@ Every unit follows **RED → GREEN → REFACTOR**:
 7. If no plan: write new plan under `docs/plans/` using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/02-plan/references/plan-template.md`
 8. Structure work using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/02-plan/references/implementation-unit-template.md`
 9. Verify every unit follows TDD gates
-10. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "02-plan"` to review the plan artifact.
-
-## Optional: CEO Review
-
-After invoking the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "02-plan"` to review the plan artifact, offer strategic review:
-
-> Plan ready. How to review?
->
-> - **A) Just go** — trust the plan
-> - **B) CEO Review** — challenge premises, dream-state mapping
-> - **C) Strict Review** — CEO + error maps, failure modes, test diagrams
-
-If B or C: read `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/02-plan/references/ceo-review-mode.md` and execute review flow.
-After review: update plan artifact, then handoff to `03-work`.
+10. **Strict Review (required)** — always execute. Read `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/02-plan/references/ceo-review-mode.md` and run the full Strict Review flow (Premise Challenge, Dream State Mapping, Implementation Alternatives, Temporal Interrogation, Error and Rescue Map, Failure Modes Registry, Test Diagram). Update the plan artifact with any changes identified.
+11. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "02-plan"` to review the plan artifact. This runs **after** the Strict Review so multi_reviewer inspects an already-reviewed plan.
+12. Handoff to `03-work` via the standard pipeline handoff.
 
 ## Artifact output
 

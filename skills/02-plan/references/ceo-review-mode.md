@@ -1,31 +1,34 @@
-# CEO Review Mode
+# Strict Review Mode (required for 02-plan)
 
-After the plan is produced, offer the user an optional CEO-style review. This adds strategic depth without changing the core planning flow.
+`02-plan` **always** runs a Strict Review of the plan artifact before handing off to `03-work`. There is no "Just go" / "CEO Review" / "Strict Review" choice — the full Strict Review is a mandatory step in the planning flow. It runs **before** the `multi_reviewer` tool so that the multi-reviewer pass inspects an already stress-tested plan.
 
-## When to offer
+The review has two layers:
 
-After the plan artifact is written to `docs/plans/`, ask the user:
+1. **CEO Review** (steps 1–4 below) — challenge the premise, map the dream state, propose alternatives, interrogate the implementation timeline.
+2. **Strict Review additions** (steps 5–7 below) — extend the CEO Review with an error/rescue map, a failure-modes registry, and a test diagram.
 
-> Plan ready. How do you want to review it?
->
-> - **Just go** — trust the plan, skip review (existing behavior)
-> - **CEO Review** — challenge premises, check for better alternatives, dream-state mapping
-> - **Strict Review** — full CEO Review plus error maps, failure modes, test diagrams
+All seven steps run on every plan. Do not skip any.
 
-If the user picks "Just go", proceed directly to the `03-work` handoff.
+## When to run
 
-## CEO Review steps
+After the plan artifact is written to `docs/plans/`, before invoking the `multi_reviewer` tool. The full flow is:
 
-### 1. Premise Challenge
+1. Run steps 1–7 below against the current plan artifact.
+2. Update the plan artifact with any changes identified.
+3. Note the review mode (Strict Review) and key decisions in the plan.
+4. Proceed to the `multi_reviewer` tool with `stepName: "02-plan"`.
+
+## 1. Premise Challenge
 
 Re-examine the plan's assumptions:
+
 - Is this the right problem to solve? Could a different framing yield a simpler solution?
 - What is the actual user/business outcome? Is the plan the most direct path?
 - What happens if we do nothing? Real pain or hypothetical?
 
 Present findings as premises the user must agree with. Ask for confirmation directly in your response.
 
-### 2. Dream State Mapping
+## 2. Dream State Mapping
 
 Describe the ideal end state 12 months from now. Does this plan move toward it?
 
@@ -34,11 +37,12 @@ CURRENT STATE          THIS PLAN           12-MONTH IDEAL
 [describe]    --->     [describe delta]    --->    [describe target]
 ```
 
-### 3. Implementation Alternatives (MANDATORY)
+## 3. Implementation Alternatives (MANDATORY)
 
 Produce 2-3 distinct approaches. This is NOT optional.
 
 For each approach:
+
 ```
 APPROACH A: [Name]
   Summary: [1-2 sentences]
@@ -50,12 +54,13 @@ APPROACH A: [Name]
 ```
 
 Rules:
+
 - At least 2 approaches required.
 - One must be "minimal viable" (fewest files, smallest diff).
 - One must be "ideal architecture" (best long-term trajectory).
 - Recommend one and explain why.
 
-### 4. Temporal Interrogation
+## 4. Temporal Interrogation
 
 Think ahead to implementation. What decisions should be resolved NOW?
 
@@ -68,11 +73,7 @@ HOUR 6+ (polish/tests):  What will they wish they'd planned for?
 
 Surface these as questions NOW, not "figure it out later."
 
-## Strict Review additions
-
-If the user chose "Strict Review", add these on top of CEO Review:
-
-### 5. Error and Rescue Map
+## 5. Error and Rescue Map
 
 For every new method/codepath that can fail:
 
@@ -88,7 +89,7 @@ TimeoutError       | Y        | Retry 2x, then raise | "Temporarily unavailable"
 JSONParseError     | N (GAP)  | -                    | 500 error (BAD)
 ```
 
-### 6. Failure Modes Registry
+## 6. Failure Modes Registry
 
 ```
 CODEPATH | FAILURE MODE   | RESCUED? | TEST? | USER SEES?  | LOGGED?
@@ -97,9 +98,10 @@ CODEPATH | FAILURE MODE   | RESCUED? | TEST? | USER SEES?  | LOGGED?
 
 Any row with RESCUED=N, TEST=N, USER SEES=Silent is a **CRITICAL GAP**.
 
-### 7. Test Diagram
+## 7. Test Diagram
 
 Map every new thing the plan introduces:
+
 - New UX flows
 - New data flows
 - New codepaths
@@ -124,7 +126,9 @@ These shape your perspective throughout the review. Don't enumerate them; intern
 
 ## Handoff
 
-After CEO/Strict Review:
-1. Update the plan artifact with any changes the user approved.
-2. Note the review mode and key decisions in the plan.
-3. Proceed to the `03-work` handoff via `references/handoff.md`.
+After Strict Review:
+
+1. Update the plan artifact with any changes identified during the review.
+2. Note the review mode (`Strict Review`) and the key decisions/changes in the plan.
+3. Proceed to the `multi_reviewer` tool with `stepName: "02-plan"` (this is the **next** step in `02-plan` SKILL.md).
+4. After `multi_reviewer` completes, proceed to the `03-work` handoff via `references/handoff.md`.

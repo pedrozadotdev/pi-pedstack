@@ -81,7 +81,7 @@ Skill invocation, reload, and model/thinking level switching are handled automat
 | Skill | What it does | Core tool |
 |-------|-------------|-----------|
 | **01-brainstorm** | Structured multi-round discovery, domain vocabulary persistence | `brainstorm_dialog`, `artifact_helper` |
-| **02-plan** | TDD-gated implementation units, optional CEO Review | `plan_diff`, `context_handoff`, `artifact_helper` |
+| **02-plan** | TDD-gated implementation units, mandatory Strict Review before `multi_reviewer` | `plan_diff`, `context_handoff`, `artifact_helper`, `multi_reviewer` |
 | **03-work** | Execution with checkpoint resume, strict TDD | `session_checkpoint`, `task_splitter`, `context_handoff` |
 | **04-review** | Auto-assigned reviewers, five-axis findings, autofix loop | `review_router`, `multi_reviewer`, `context_handoff` |
 | **04-5-debug** *(on-demand)* | Debug and fix issues with a 5-phase workflow: Information Gathering, Root Cause Analysis, Implementation, Verification, Report. Enter via `/ped-debug`. | `context_handoff` |
