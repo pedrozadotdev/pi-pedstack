@@ -271,6 +271,7 @@ your-project/
 │   ├── reviews/           # Review findings reports
 │   ├── adr/               # Architecture decisions (lazy)
 │   └── solutions/         # Knowledge cards
+├── prompts/              # Workflow prompt templates (ped-commit, ped-create-issue, ped-open-pr)
 └── .context/
     └── compound-engineering/
         ├── checkpoints/   # Breakpoint files
@@ -290,8 +291,8 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 14 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~5,170 |
-| Tests | 306 (1,083 assertions) |
+| TypeScript lines | ~14,025 |
+| Tests | 359 (1,178 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -307,6 +308,8 @@ Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, R
 | `/ped-reload` | Restart the current pipeline stage from a fresh context, re-applying skill config |
 | `/ped-fix-issues <#1,#2,...>` | Prompt-inject GitHub issue context into 01-brainstorm |
 | `/ped-debug <prompt>` | Enter 04-5-debug on demand with gating (warns if before 04-review). Prompt is required. |
+
+Auto-advance: `/ped-next` is automatically queued after every successful handoff save, except for two gated transitions (`02-plan→03-work` and `04-review→05-learn`) which prompt for confirmation. The authorization persists per-session.
 
 ---
 

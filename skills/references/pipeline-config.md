@@ -79,6 +79,30 @@ Next step mapping:
 - `05-learn` → `/ped-next`
 - `06-docsync` → `Completed`
 
+## Auto-advance behavior
+
+The **ce-core extension** registers a `tool_result` handler that intercepts successful `context_handoff save` events and automatically queues `/ped-next` as a follow-up message, except for two gated transitions that require user authorization.
+
+**Auto-advance transitions (4):**
+
+- `01-brainstorm` → `02-plan`
+- `03-work` → `04-review`
+- `04-5-debug` → `05-learn`
+- `05-learn` → `06-docsync`
+
+**Gated transitions (2) — prompt user with confirm dialog:**
+
+- `02-plan` → `03-work` (user should read the plan first)
+- `04-review` → `05-learn` (user may want `/ped-debug` instead)
+
+**Mechanism:** The `tool_result` handler in `extensions/ce-core/index.ts` calls the pure `evaluateAutoAdvance()` function from `extensions/ce-core/utils/auto-advance.ts`. The handler is additive — it runs in parallel with existing bash/read filters and never throws (all errors are caught and surfaced as notifications).
+
+**Authorization cache:** Once the user approves a gated transition via the confirm dialog, the stage pair is cached in an in-memory `Set` for the remainder of the session. The dialog will not appear again for the same pair.
+
+**Print mode (`-p` flag):** Gated transitions auto-advance silently when there is no UI (`ctx.hasUI` is `false`).
+
+**Manual escape hatch:** `/ped-next` and `/ped-reload` work exactly as before — auto-advance never prevents manual control.
+
 ### Handoff-lite template
 
 When a stage produces or updates handoff-lite, use this evidence-first structure and keep it concise (target <= 1500 tokens):

@@ -4,7 +4,7 @@ When the plan is ready:
 
 1. Report the plan path under `docs/plans/`.
 2. Summarize the main implementation units.
-3. Instruct the user to run `/ped-next` to advance to `03-work`.
+3. The extension will prompt the user for authorization (gated transition: read the plan first) and then advance to `03-work`. `/ped-next` is the manual escape hatch.
 4. Call out any remaining assumptions or open risks.
 5. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).
 6. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`.

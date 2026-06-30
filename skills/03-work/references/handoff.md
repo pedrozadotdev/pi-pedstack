@@ -4,7 +4,7 @@ When execution reaches a meaningful checkpoint:
 
 1. Summarize what was completed.
 2. Report the latest verification results.
-3. Instruct the user to run `/ped-next` to advance to `04-review`.
+3. The extension auto-advances to `04-review` after handoff save; `/ped-next` remains the manual escape hatch.
 4. Mention any remaining implementation risk.
 5. Include checkpoint fields: `activeFiles`, `currentUnit`, `blocker`, `verification`, `contextTiers`, `handoffPath`.
 6. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).

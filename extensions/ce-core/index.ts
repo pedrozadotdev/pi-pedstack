@@ -33,6 +33,11 @@ import {
 	createChecklistShowTool,
 	createChecklistDelTool,
 } from "./tools/checklist";
+import {
+	evaluateAutoAdvance,
+	isAuthorized,
+	markAuthorized,
+} from "./utils/auto-advance";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -746,6 +751,105 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				},
 			},
 		};
+	});
+
+	// ponytail: Auto-advance handler — intercepts context_handoff save and queues
+	// /ped-next for non-gated transitions. Additive to existing bash/read filters.
+	//
+	// Helpers extracted below to keep the handler callback under the 50-line limit.
+
+	/** Extract the text content and stage-pair key from a tool_result event. */
+	function extractSaveContent(
+		event: any,
+	): { contentText: string; stagePair: string | null } | null {
+		const input = event.input as { operation?: string } | null;
+		if (input?.operation !== "save") return null;
+
+		const textBlocks =
+			(event.content as Array<any>)?.filter((b: any) => b.type === "text") ??
+			[];
+		if (textBlocks.length === 0) return null;
+		const contentText = textBlocks.map((b: any) => b.text).join("");
+
+		let parsed: Record<string, unknown> | null = null;
+		try {
+			parsed = JSON.parse(contentText);
+		} catch {
+			return null;
+		}
+
+		const stagePair =
+			parsed?.currentStage && parsed?.nextStage
+				? `${String(parsed.currentStage)}->${String(parsed.nextStage)}`
+				: null;
+
+		return { contentText, stagePair };
+	}
+
+	/** Dispatch an auto-advance verdict: send a message or show a confirm dialog. */
+	async function dispatchAutoAdvanceVerdict(
+		verdict: AutoAdvanceAction,
+		stagePair: string | null,
+		hasUI: boolean,
+		confirmFn: (title: string, message: string) => Promise<boolean>,
+	): Promise<void> {
+		if (verdict.action === "send") {
+			pi.sendUserMessage(verdict.message, { deliverAs: "followUp" });
+			if (stagePair) markAuthorized(stagePair);
+			return;
+		}
+
+		if (verdict.action === "confirm") {
+			if (hasUI) {
+				const ok = await confirmFn(verdict.title, verdict.message);
+				if (ok) {
+					pi.sendUserMessage("/ped-next", {
+						deliverAs: "followUp",
+					});
+					if (stagePair) markAuthorized(stagePair);
+				}
+			} else {
+				// ponytail: Print mode — no dialog, auto-advance silently
+				pi.sendUserMessage("/ped-next", { deliverAs: "followUp" });
+				if (stagePair) markAuthorized(stagePair);
+			}
+		}
+	}
+
+	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName !== "context_handoff") return undefined;
+
+		try {
+			const saveContent = extractSaveContent(event);
+			if (!saveContent) return undefined;
+
+			const verdict = evaluateAutoAdvance({
+				toolName: event.toolName,
+				input: event.input as { operation?: string } | null,
+				contentText: saveContent.contentText,
+				isError: event.isError ?? false,
+				hasUI: ctx.hasUI,
+				isAuthorized: saveContent.stagePair
+					? isAuthorized(saveContent.stagePair)
+					: false,
+			});
+
+			await dispatchAutoAdvanceVerdict(
+				verdict,
+				saveContent.stagePair,
+				ctx.hasUI,
+				(t, m) => ctx.ui.confirm(t, m),
+			);
+		} catch (err) {
+			// ponytail: never let auto-advance bugs break the handoff save
+			if (ctx.hasUI) {
+				ctx.ui.notify(
+					`Auto-advance failed: ${err instanceof Error ? err.message : String(err)}`,
+					"error",
+				);
+			}
+		}
+		return undefined;
 	});
 
 	// Tree summary prompt optimizer — keeps branch summaries focused

@@ -4,7 +4,7 @@ When the requirements artifact is ready:
 
 1. Report the artifact path under `docs/brainstorms/`.
 2. Summarize the recommended direction in 2-3 bullets.
-3. Instruct the user to run `/ped-next` to advance to `02-plan`.
+3. The extension auto-advances to `02-plan` after handoff save; mention `/ped-next` only as a manual escape hatch.
 4. If key ambiguity remains, say so before handing off.
 5. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).
 6. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`.

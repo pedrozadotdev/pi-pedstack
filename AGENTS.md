@@ -20,15 +20,18 @@ bun test              # Run all tests
 | Command | Description |
 |---------|-------------|
 | `/ped-start <prompt>` | Start a new Pedstack workflow, launching 01-brainstorm |
-| `/ped-next [prompt]` | Auto-resolve and advance to the next pipeline stage |
+| `/ped-next [prompt]` | Auto-resolve and advance to the next pipeline stage¹ |
 | `/ped-reload` | Restart the current stage from a fresh context, re-applying skill config |
 | `/ped-fix-issues <#1,#2,...>` | Prompt-inject GitHub issue context into 01-brainstorm |
 | `/ped-debug <prompt>` | Enter 04-5-debug on demand with gating (warns if before 04-review). Prompt is required. |
+
+> ¹ **Auto-advance:** `/ped-next` is automatically queued by the extension after every successful `context_handoff save`, except for the two gated transitions (`02-plan→03-work` and `04-review→05-learn`) which prompt for confirmation. The authorization cache is per-session — once approved, the dialog is skipped for the remainder of the session. In print mode (`-p`), gated transitions auto-advance silently.
 
 ## Workflow Discipline
 
 - **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
 - **NO DIRECT-TO-IMPLEMENTATION BYPASS:** Do NOT skip the initial stages (Brainstorming/Planning) to go straight to code implementation or file editing. Start every new feature, bug fix, or task with the `01-brainstorm` skill.
+- **AUTO-ADVANCE ON SAVE:** 4 of 6 transitions auto-advance; 2 require user authorization (see footnote ¹).
 - **🐴 PONYTALL DISCIPLINE:** Before planning or writing any code, apply the 6-rung YAGNI ladder below. The system prompt injects this discipline into `02-plan`, `03-work`, `04-review`, and `04-5-debug` — but you must internalize it yourself.
 
 ## 🐴 Ponytail Discipline (YAGNI / Lazy Senior Dev Mode)
