@@ -24,6 +24,7 @@ const authorizedPairs = new Set<string>();
  */
 const GATED_TRANSITIONS = new Set<string>([
 	"02-plan->03-work",
+	"04-5-debug->05-learn",
 	"04-review->05-learn",
 ]);
 
@@ -33,6 +34,12 @@ const CONFIRM_DIALOGS: Record<string, { title: string; message: string }> = {
 		message:
 			"The plan is complete. Proceed to implementation (03-work), " +
 			"or use /ped-reload to re-plan?",
+	},
+	"04-5-debug->05-learn": {
+		title: "Continue to 05-learn?",
+		message:
+			"Debug complete. Proceed to learn (05-learn), " +
+			"or /ped-debug again if more bugs were found?",
 	},
 	"04-review->05-learn": {
 		title: "Continue to 05-learn?",

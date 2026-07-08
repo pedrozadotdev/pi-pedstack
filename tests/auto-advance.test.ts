@@ -214,13 +214,28 @@ describe("evaluateAutoAdvance — auto transitions (non-gated)", () => {
 		expect(result.action).toBe("send");
 	});
 
-	test("returns send for 04-5-debug→05-learn, hasUI=true", () => {
+	test("returns confirm for 04-5-debug→05-learn, hasUI=true, isAuthorized=false", () => {
 		const result = evaluateAutoAdvance(
 			makeInput({
 				contentText: JSON.stringify({
 					currentStage: "04-5-debug",
 					nextStage: "05-learn",
 				}),
+				hasUI: true,
+				isAuthorized: false,
+			}),
+		);
+		expect(result.action).toBe("confirm");
+	});
+
+	test("returns send for 04-5-debug→05-learn, hasUI=false (print mode)", () => {
+		const result = evaluateAutoAdvance(
+			makeInput({
+				contentText: JSON.stringify({
+					currentStage: "04-5-debug",
+					nextStage: "05-learn",
+				}),
+				hasUI: false,
 			}),
 		);
 		expect(result.action).toBe("send");
@@ -283,6 +298,25 @@ describe("evaluateAutoAdvance — gated transitions", () => {
 			makeInput({
 				contentText: JSON.stringify({
 					currentStage: "04-review",
+					nextStage: "05-learn",
+				}),
+				hasUI: true,
+				isAuthorized: false,
+			}),
+		);
+		expect(result.action).toBe("confirm");
+		if (result.action === "confirm") {
+			expect(result.title).toBeTruthy();
+			expect(result.message).toBeTruthy();
+			expect(result.title).toContain("05-learn");
+		}
+	});
+
+	test("returns confirm for 04-5-debug→05-learn, hasUI=true, isAuthorized=false, with correct title/message", () => {
+		const result = evaluateAutoAdvance(
+			makeInput({
+				contentText: JSON.stringify({
+					currentStage: "04-5-debug",
 					nextStage: "05-learn",
 				}),
 				hasUI: true,
