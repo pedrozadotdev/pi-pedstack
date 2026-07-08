@@ -867,7 +867,11 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
 			async function tryStart(): Promise<void> {
 				// Gated transitions: show confirm after the summary is on screen
-				if (queued.isGated && queued.stagePair && !isAuthorized(queued.stagePair)) {
+				if (
+					queued.isGated &&
+					queued.stagePair &&
+					!isAuthorized(queued.stagePair)
+				) {
 					const dialog = getConfirmDialog(queued.stagePair);
 					if (dialog) {
 						let ok = false;

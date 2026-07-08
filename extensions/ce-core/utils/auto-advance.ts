@@ -83,7 +83,9 @@ export function isGatedTransition(stagePair: string): boolean {
  * Get the confirm dialog config for a gated stage pair.
  * Returns `null` when the pair is not gated.
  */
-export function getConfirmDialog(stagePair: string): { title: string; message: string } | null {
+export function getConfirmDialog(
+	stagePair: string,
+): { title: string; message: string } | null {
 	return CONFIRM_DIALOGS[stagePair] ?? null;
 }
 
