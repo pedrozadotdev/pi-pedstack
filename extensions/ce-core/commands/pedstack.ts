@@ -4,7 +4,7 @@ import type {
 	RegisteredCommand,
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import path from "node:path";
+import * as path from "node:path";
 
 import {
 	readPiPedstackConfig,
@@ -48,6 +48,14 @@ let pendingFixIssues: string[] = [];
 
 /** Per-stage APPEND.md content to inject into the next system prompt. */
 let pendingAppendContent: string | null = null;
+
+/**
+ * Most recent command context that started or resumed the workflow.
+ *
+ * ponytail: auto-advance reuses this same-session command ctx after agent_end
+ * because tool/event contexts cannot navigate the session tree themselves.
+ */
+let rememberedCommandContext: ExtensionCommandContext | null = null;
 
 /** Store append content for the next before_agent_start invocation. */
 export function setPendingAppendContent(content: string | null): void {
@@ -96,6 +104,17 @@ export function resetPedstackState(): void {
 	pendingSkillPath = null;
 	pendingFixIssues = [];
 	pendingAppendContent = null;
+	rememberedCommandContext = null;
+}
+
+/** Remember the latest live command context for same-session auto-advance. */
+export function rememberCommandContext(ctx: ExtensionCommandContext): void {
+	rememberedCommandContext = ctx;
+}
+
+/** Clear the cached command context after session replacement or shutdown. */
+export function clearRememberedCommandContext(): void {
+	rememberedCommandContext = null;
 }
 
 /**
@@ -490,6 +509,48 @@ async function prepareStageNavigation(
 	return { departureLeafId, freshTargetId };
 }
 
+async function beginStageTransition(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	stageKey: PipelineStageKey,
+	message: string,
+	entryType: "ped-stage-start" | "ped-stage-reload" = "ped-stage-start",
+	entryPrompt?: string,
+): Promise<boolean> {
+	rememberCommandContext(ctx);
+
+	const nav = await prepareStageNavigation(ctx);
+	if (!nav) return false;
+
+	pi.appendEntry(entryType, {
+		returnTo: nav.departureLeafId,
+		stage: stageKey,
+		...(entryPrompt ? { prompt: entryPrompt } : {}),
+	});
+
+	await switchStageConfig(pi, ctx, stageKey);
+	setPendingSkillPath(computeSkillPath(stageKey));
+	pi.sendUserMessage(message);
+	return true;
+}
+
+export async function startStageFromRememberedContext(
+	pi: ExtensionAPI,
+	stageKey: PipelineStageKey,
+	optionalPrompt?: string,
+): Promise<boolean> {
+	const ctx = rememberedCommandContext;
+	if (!ctx) return false;
+	return beginStageTransition(
+		pi,
+		ctx,
+		stageKey,
+		optionalPrompt || "Stage: " + stageKey,
+		"ped-stage-start",
+		optionalPrompt,
+	);
+}
+
 // ── Abort handler (shared between commands) ────────────────────────
 
 /** Format err for user-facing messages without leaking stack traces. */
@@ -584,6 +645,7 @@ export function cmdPedStart(
 				return;
 			}
 
+			rememberCommandContext(ctx);
 			const nav = await prepareStageNavigation(ctx);
 			if (!nav) return;
 
@@ -623,6 +685,7 @@ export function cmdPedNext(
 			"Advance to the next pipeline stage. Usage: /ped-next [optional prompt]",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			await ctx.waitForIdle();
+			rememberCommandContext(ctx);
 
 			let state: WorkflowStateResult;
 			try {
@@ -646,20 +709,14 @@ export function cmdPedNext(
 			const stageKey = resolution.stage;
 			const optionalPrompt = _args.trim() || undefined;
 
-			const nav = await prepareStageNavigation(ctx);
-			if (!nav) return;
-
-			pi.appendEntry("ped-stage-start", {
-				returnTo: nav.departureLeafId,
-				stage: stageKey,
-				prompt: optionalPrompt,
-			});
-
-			await switchStageConfig(pi, ctx, stageKey);
-
-			// Store the skill path for the model to read itself — clean UX, no content injection
-			setPendingSkillPath(computeSkillPath(stageKey));
-			pi.sendUserMessage(optionalPrompt || "Stage: " + stageKey);
+			await beginStageTransition(
+				pi,
+				ctx,
+				stageKey,
+				optionalPrompt || "Stage: " + stageKey,
+				"ped-stage-start",
+				optionalPrompt,
+			);
 		},
 	};
 }
@@ -681,6 +738,7 @@ export function cmdPedFixIssues(
 			"Start a brainstorm with GitHub issues as context. " +
 			"Usage: /ped-fix-issues <numbers>",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			rememberCommandContext(ctx);
 			const parsedNumbers = parseIssueNumbers(_args);
 			if (parsedNumbers.length === 0) {
 				if (ctx.hasUI) {
@@ -786,7 +844,7 @@ function checkDebugGate(
 				(nextStage ? ` (next: ${nextStage})` : "") +
 				".",
 			"warning",
-			);
+		);
 	}
 	return false;
 }
@@ -811,6 +869,7 @@ export function cmdPedDebug(
 		// premature abstraction — same nav/config/message shape, different gating.
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			await ctx.waitForIdle();
+			rememberCommandContext(ctx);
 
 			const prompt = _args.trim();
 			if (!prompt) {
@@ -831,25 +890,19 @@ export function cmdPedDebug(
 
 			const stageKey: PipelineStageKey = "04-5-debug";
 
-			const nav = await prepareStageNavigation(ctx);
-			if (!nav) return;
-
-			pi.appendEntry("ped-stage-start", {
-				returnTo: nav.departureLeafId,
-				stage: stageKey,
-				prompt,
-			});
-
 			try {
-				await switchStageConfig(pi, ctx, stageKey);
+				await beginStageTransition(
+					pi,
+					ctx,
+					stageKey,
+					prompt,
+					"ped-stage-start",
+					prompt,
+				);
 			} catch (err) {
 				if (ctx.hasUI)
 					ctx.ui.notify(`Config switch failed: ${formatError(err)}`, "error");
-				return;
 			}
-
-			setPendingSkillPath(computeSkillPath(stageKey));
-			pi.sendUserMessage(prompt);
 		},
 	};
 }
@@ -871,6 +924,7 @@ export function cmdPedReload(
 			"Restart the current pipeline stage cleanly. Usage: /ped-reload",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			await ctx.waitForIdle();
+			rememberCommandContext(ctx);
 
 			const optionalPrompt = args.trim() || undefined;
 
@@ -904,22 +958,14 @@ export function cmdPedReload(
 				}
 			}
 
-			const nav = await prepareStageNavigation(ctx);
-			if (!nav) return;
-
-			pi.appendEntry("ped-stage-reload", {
-				returnTo: nav.departureLeafId,
-				stage: stageKey,
-				prompt: optionalPrompt,
-			});
-
-			await switchStageConfig(pi, ctx, stageKey);
-
-			// Store the skill path for the model to read itself
-			setPendingSkillPath(computeSkillPath(stageKey));
-			pi.sendUserMessage(
+			await beginStageTransition(
+				pi,
+				ctx,
+				stageKey,
 				optionalPrompt ||
 					`Reloading stage: ${stageKey}. Restart this stage clean — follow the skill instructions from scratch.`,
+				"ped-stage-reload",
+				optionalPrompt,
 			);
 		},
 	};

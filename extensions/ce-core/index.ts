@@ -13,6 +13,10 @@ import {
 	initSkillRegistry,
 	getAndClearPendingSkillPath,
 	getAndClearPendingFixIssues,
+	isValidStageKey,
+	startStageFromRememberedContext,
+	clearRememberedCommandContext,
+	type PipelineStageKey,
 } from "./commands/pedstack";
 import { buildSystemPromptAppend } from "./commands/prompt-inject";
 import { createReviewRouterTool } from "./tools/review-router";
@@ -344,6 +348,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const checklistAdd = createChecklistAddTool();
 	const checklistShow = createChecklistShowTool();
 	const checklistDel = createChecklistDelTool();
+	let pendingAutoAdvance: {
+		stageKey: PipelineStageKey;
+		stagePair: string | null;
+	} | null = null;
 
 	pi.registerTool({
 		name: artifactHelper.name,
@@ -758,10 +766,12 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	//
 	// Helpers extracted below to keep the handler callback under the 50-line limit.
 
-	/** Extract the text content and stage-pair key from a tool_result event. */
-	function extractSaveContent(
-		event: any,
-	): { contentText: string; stagePair: string | null } | null {
+	/** Extract the text content, next stage, and stage-pair key from a handoff save. */
+	function extractSaveContent(event: any): {
+		contentText: string;
+		stagePair: string | null;
+		nextStage: PipelineStageKey | null;
+	} | null {
 		const input = event.input as { operation?: string } | null;
 		if (input?.operation !== "save") return null;
 
@@ -778,40 +788,49 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			return null;
 		}
 
-		const stagePair =
-			parsed?.currentStage && parsed?.nextStage
-				? `${String(parsed.currentStage)}->${String(parsed.nextStage)}`
+		const currentStage =
+			typeof parsed?.currentStage === "string" ? parsed.currentStage : null;
+		const nextStage =
+			typeof parsed?.nextStage === "string" && isValidStageKey(parsed.nextStage)
+				? parsed.nextStage
 				: null;
+		const stagePair =
+			currentStage && nextStage ? `${currentStage}->${nextStage}` : null;
 
-		return { contentText, stagePair };
+		return { contentText, stagePair, nextStage };
 	}
 
-	/** Dispatch an auto-advance verdict: send a message or show a confirm dialog. */
-	async function dispatchAutoAdvanceVerdict(
-		verdict: AutoAdvanceAction,
-		stagePair: string | null,
+	/** Queue an auto-advance to be executed from agent_end with a live command ctx. */
+	async function queueAutoAdvanceVerdict(
+		verdict: ReturnType<typeof evaluateAutoAdvance>,
+		saveContent: {
+			stagePair: string | null;
+			nextStage: PipelineStageKey | null;
+		},
 		hasUI: boolean,
 		confirmFn: (title: string, message: string) => Promise<boolean>,
 	): Promise<void> {
+		const queue = () => {
+			if (!saveContent.nextStage) return;
+			pendingAutoAdvance = {
+				stageKey: saveContent.nextStage,
+				stagePair: saveContent.stagePair,
+			};
+			if (saveContent.stagePair) markAuthorized(saveContent.stagePair);
+		};
+
 		if (verdict.action === "send") {
-			pi.sendUserMessage(verdict.message, { deliverAs: "followUp" });
-			if (stagePair) markAuthorized(stagePair);
+			queue();
 			return;
 		}
 
 		if (verdict.action === "confirm") {
 			if (hasUI) {
 				const ok = await confirmFn(verdict.title, verdict.message);
-				if (ok) {
-					pi.sendUserMessage("/ped-next", {
-						deliverAs: "followUp",
-					});
-					if (stagePair) markAuthorized(stagePair);
-				}
+				if (ok) queue();
 			} else {
 				// ponytail: Print mode — no dialog, auto-advance silently
-				pi.sendUserMessage("/ped-next", { deliverAs: "followUp" });
-				if (stagePair) markAuthorized(stagePair);
+				queue();
 			}
 		}
 	}
@@ -834,11 +853,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 					: false,
 			});
 
-			await dispatchAutoAdvanceVerdict(
-				verdict,
-				saveContent.stagePair,
-				ctx.hasUI,
-				(t, m) => ctx.ui.confirm(t, m),
+			await queueAutoAdvanceVerdict(verdict, saveContent, ctx.hasUI, (t, m) =>
+				ctx.ui.confirm(t, m),
 			);
 		} catch (err) {
 			// ponytail: never let auto-advance bugs break the handoff save
@@ -849,6 +865,39 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				);
 			}
 		}
+		return undefined;
+	});
+
+	pi.on("agent_end", async (_event, ctx) => {
+		const queued = pendingAutoAdvance;
+		if (!queued) return undefined;
+		pendingAutoAdvance = null;
+
+		try {
+			const started = await startStageFromRememberedContext(
+				pi,
+				queued.stageKey,
+			);
+			if (!started && ctx.hasUI) {
+				ctx.ui.notify(
+					"Auto-advance is queued but no live workflow command context is available. Run /ped-next manually.",
+					"warning",
+				);
+			}
+		} catch (err) {
+			if (ctx.hasUI) {
+				ctx.ui.notify(
+					`Auto-advance failed: ${err instanceof Error ? err.message : String(err)}`,
+					"error",
+				);
+			}
+		}
+		return undefined;
+	});
+
+	pi.on("session_shutdown", async () => {
+		pendingAutoAdvance = null;
+		clearRememberedCommandContext();
 		return undefined;
 	});
 

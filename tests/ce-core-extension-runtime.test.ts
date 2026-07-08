@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, mock } from "bun:test";
-import path from "node:path";
+import * as path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 
 mock.module("@earendil-works/pi-ai", () => {
@@ -71,6 +71,7 @@ mock.module("node:child_process", () => {
 });
 
 import { clearAutoAdvanceCache } from "../extensions/ce-core/utils/auto-advance";
+import { resetPedstackState } from "../extensions/ce-core/commands/pedstack";
 import ceCoreExtension from "../extensions/ce-core/index";
 import { createMultiReviewerTool } from "../extensions/ce-core/tools/multi-reviewer";
 
@@ -441,14 +442,19 @@ describe("multi_reviewer tool", () => {
 describe("auto-advance tool_result wiring", () => {
 	beforeEach(() => {
 		clearAutoAdvanceCache();
+		resetPedstackState();
 	});
 
-	// Helper to create a pi mock with tracked sendUserMessage and handlers
 	function createPiMock() {
 		const sendUserMessageCalls: Array<{ message: string; options: any }> = [];
 		const notifyCalls: Array<{ message: string; level: string }> = [];
+		const appendEntryCalls: Array<{ type: string; data: any }> = [];
+		const setModelCalls: Array<{ provider: string; id: string }> = [];
+		const setThinkingLevelCalls: string[] = [];
 		const registeredNames: string[] = [];
+		const registeredCommands = new Map<string, any>();
 		const eventHandlers = new Map<string, any[]>();
+		let currentThinkingLevel = "medium";
 
 		const pi = {
 			registerTool(definition: { name: string }) {
@@ -459,17 +465,30 @@ describe("auto-advance tool_result wiring", () => {
 				handlers.push(handler);
 				eventHandlers.set(event, handlers);
 			},
-			registerCommand(_name: string, _def: any) {
-				// no-op
+			registerCommand(name: string, def: any) {
+				registeredCommands.set(name, def);
 			},
 			sendUserMessage(message: string, options: any) {
 				sendUserMessageCalls.push({ message, options });
 			},
+			appendEntry(type: string, data: any) {
+				appendEntryCalls.push({ type, data });
+			},
+			async setModel(model: { provider: string; id: string }) {
+				setModelCalls.push(model);
+				return true;
+			},
+			getThinkingLevel() {
+				return currentThinkingLevel;
+			},
+			setThinkingLevel(level: string) {
+				currentThinkingLevel = level;
+				setThinkingLevelCalls.push(level);
+			},
 		};
 
-		function makeCtx(overrides: any = {}) {
+		function makeEventCtx(overrides: any = {}) {
 			let confirmIndex = 0;
-			const { ctxOverrides, confirmResults: _cr, ...rest } = overrides;
 			return {
 				hasUI: true,
 				ui: {
@@ -482,18 +501,60 @@ describe("auto-advance tool_result wiring", () => {
 						notifyCalls.push({ message, level });
 					},
 				},
-				...rest,
-				...ctxOverrides,
+				...overrides,
 			};
+		}
+
+		function makeCommandCtx(repoRoot: string, overrides: any = {}) {
+			const navigateCalls: string[] = [];
+			const ctx = {
+				hasUI: true,
+				cwd: repoRoot,
+				sessionManager: {
+					getLeafId: () => "leaf-1",
+					getBranch: () => [
+						{
+							type: "message",
+							id: "msg-1",
+							parentId: "root-1",
+							message: {
+								role: "user",
+								content: [{ type: "text", text: "root" }],
+							},
+						},
+					],
+				},
+				model: { provider: "openai", id: "gpt-4.1-mini" },
+				modelRegistry: {
+					find: (provider: string, id: string) => ({ provider, id }),
+				},
+				ui: {
+					notify: (message: string, level: string) => {
+						notifyCalls.push({ message, level });
+					},
+				},
+				navigateTree: async (targetId: string) => {
+					navigateCalls.push(targetId);
+					return { cancelled: false };
+				},
+				waitForIdle: async () => {},
+				...overrides,
+			};
+			return { ctx, navigateCalls };
 		}
 
 		return {
 			pi,
 			eventHandlers,
+			registeredCommands,
 			registeredNames,
 			sendUserMessageCalls,
 			notifyCalls,
-			makeCtx,
+			appendEntryCalls,
+			setModelCalls,
+			setThinkingLevelCalls,
+			makeEventCtx,
+			makeCommandCtx,
 		};
 	}
 
@@ -515,13 +576,12 @@ describe("auto-advance tool_result wiring", () => {
 		};
 	}
 
-	test("registers 3 tool_result handlers (bash filter, read filter, auto-advance)", () => {
+	test("registers 3 tool_result handlers and an agent_end handler", () => {
 		const { pi, eventHandlers } = createPiMock();
 		ceCoreExtension(pi as never);
 
-		const handlers = eventHandlers.get("tool_result");
-		expect(handlers).toBeDefined();
-		expect(handlers!.length).toBe(3);
+		expect(eventHandlers.get("tool_result")?.length).toBe(3);
+		expect(eventHandlers.get("agent_end")?.length).toBe(1);
 	});
 
 	test("tool count remains 14 (no new tools added)", () => {
@@ -546,250 +606,146 @@ describe("auto-advance tool_result wiring", () => {
 		]);
 	});
 
-	test("does not dispatch for non-context_handoff tool", async () => {
-		const { pi, eventHandlers, sendUserMessageCalls, makeCtx } = createPiMock();
+	test("does not queue for non-context_handoff tool", async () => {
+		const { pi, eventHandlers, sendUserMessageCalls, makeEventCtx } =
+			createPiMock();
 		ceCoreExtension(pi as never);
 
-		const handlers = eventHandlers.get("tool_result")!;
-		// The auto-advance handler is the third one registered
-		const autoAdvanceHandler = handlers[2];
-
-		const event = makeEvent({ toolName: "bash" });
-		const result = await autoAdvanceHandler(event, makeCtx());
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const result = await autoAdvanceHandler(
+			makeEvent({ toolName: "bash" }),
+			makeEventCtx(),
+		);
 
 		expect(result).toBeUndefined();
 		expect(sendUserMessageCalls.length).toBe(0);
 	});
 
-	test("does not dispatch for context_handoff load operation", async () => {
-		const { pi, eventHandlers, sendUserMessageCalls, makeCtx } = createPiMock();
+	test("queues auto-advance on save and runs the real stage transition on agent_end", async () => {
+		const repoRoot = `/tmp/pi-ce-auto-advance-${Date.now()}`;
+		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+			JSON.stringify({
+				plan: {
+					model: "anthropic/claude-3-7-sonnet",
+					thinkingLevel: "high",
+				},
+			}),
+			"utf8",
+		);
+
+		const {
+			pi,
+			eventHandlers,
+			registeredCommands,
+			sendUserMessageCalls,
+			appendEntryCalls,
+			setModelCalls,
+			setThinkingLevelCalls,
+			makeEventCtx,
+			makeCommandCtx,
+		} = createPiMock();
 		ceCoreExtension(pi as never);
 
-		const handlers = eventHandlers.get("tool_result")!;
-		const autoAdvanceHandler = handlers[2];
+		const { ctx, navigateCalls } = makeCommandCtx(repoRoot);
+		await registeredCommands
+			.get("ped-start")
+			.handler("brainstorm the bug", ctx);
+		sendUserMessageCalls.length = 0;
+		appendEntryCalls.length = 0;
+		setModelCalls.length = 0;
+		setThinkingLevelCalls.length = 0;
 
-		const event = makeEvent({ input: { operation: "load" } });
-		const result = await autoAdvanceHandler(event, makeCtx());
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const agentEndHandler = eventHandlers.get("agent_end")![0];
 
-		expect(result).toBeUndefined();
+		await autoAdvanceHandler(makeEvent(), makeEventCtx());
+		expect(sendUserMessageCalls.length).toBe(0);
+
+		await agentEndHandler({ type: "agent_end" }, makeEventCtx());
+
+		expect(sendUserMessageCalls.length).toBe(1);
+		expect(sendUserMessageCalls[0].message).toBe("Stage: 02-plan");
+		expect(navigateCalls.length).toBe(2);
+		expect(appendEntryCalls.at(-1)).toEqual({
+			type: "ped-stage-start",
+			data: { returnTo: "leaf-1", stage: "02-plan" },
+		});
+		expect(setModelCalls).toEqual([
+			{ provider: "anthropic", id: "claude-3-7-sonnet" },
+		]);
+		expect(setThinkingLevelCalls).toEqual(["high"]);
+	});
+
+	test("gated transition does not run when confirm returns false", async () => {
+		const repoRoot = `/tmp/pi-ce-auto-advance-gated-${Date.now()}`;
+		const {
+			pi,
+			eventHandlers,
+			registeredCommands,
+			sendUserMessageCalls,
+			makeEventCtx,
+			makeCommandCtx,
+		} = createPiMock();
+		ceCoreExtension(pi as never);
+
+		const { ctx } = makeCommandCtx(repoRoot);
+		await registeredCommands
+			.get("ped-start")
+			.handler("brainstorm the bug", ctx);
+		sendUserMessageCalls.length = 0;
+
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const agentEndHandler = eventHandlers.get("agent_end")![0];
+		const gatedEvent = makeEvent({
+			content: [
+				{
+					type: "text",
+					text: JSON.stringify({
+						currentStage: "02-plan",
+						nextStage: "03-work",
+					}),
+				},
+			],
+		});
+
+		await autoAdvanceHandler(
+			gatedEvent,
+			makeEventCtx({ hasUI: true, confirmResults: [false] }),
+		);
+		await agentEndHandler({ type: "agent_end" }, makeEventCtx());
+
 		expect(sendUserMessageCalls.length).toBe(0);
 	});
 
-	test("dispatches /ped-next for 01→02 (auto transition) with deliverAs followUp", async () => {
-		const { pi, eventHandlers, sendUserMessageCalls, makeCtx } = createPiMock();
+	test("warns when auto-advance has no remembered command context", async () => {
+		const { pi, eventHandlers, notifyCalls, makeEventCtx } = createPiMock();
 		ceCoreExtension(pi as never);
 
-		const handlers = eventHandlers.get("tool_result")!;
-		const autoAdvanceHandler = handlers[2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const agentEndHandler = eventHandlers.get("agent_end")![0];
 
-		const event = makeEvent();
-		const result = await autoAdvanceHandler(event, makeCtx({ hasUI: true }));
+		await autoAdvanceHandler(makeEvent(), makeEventCtx());
+		await agentEndHandler({ type: "agent_end" }, makeEventCtx({ hasUI: true }));
 
-		expect(result).toBeUndefined();
-		expect(sendUserMessageCalls.length).toBe(1);
-		expect(sendUserMessageCalls[0].message).toBe("/ped-next");
-		expect(sendUserMessageCalls[0].options.deliverAs).toBe("followUp");
-	});
-
-	test("dispatches confirm for 02→03 (gated) then sends on confirm true", async () => {
-		const { pi, eventHandlers, sendUserMessageCalls, makeCtx } = createPiMock();
-		ceCoreExtension(pi as never);
-
-		const handlers = eventHandlers.get("tool_result")!;
-		const autoAdvanceHandler = handlers[2];
-
-		const event = makeEvent({
-			content: [
-				{
-					type: "text",
-					text: JSON.stringify({
-						currentStage: "02-plan",
-						nextStage: "03-work",
-					}),
-				},
-			],
+		expect(notifyCalls.at(-1)).toEqual({
+			message:
+				"Auto-advance is queued but no live workflow command context is available. Run /ped-next manually.",
+			level: "warning",
 		});
-
-		await autoAdvanceHandler(
-			event,
-			makeCtx({
-				hasUI: true,
-				confirmResults: [true],
-			}),
-		);
-
-		expect(sendUserMessageCalls.length).toBe(1);
-		expect(sendUserMessageCalls[0].message).toBe("/ped-next");
-	});
-
-	test("does not send when gated confirm resolves false", async () => {
-		const { pi, eventHandlers, sendUserMessageCalls, makeCtx } = createPiMock();
-		ceCoreExtension(pi as never);
-
-		const handlers = eventHandlers.get("tool_result")!;
-		const autoAdvanceHandler = handlers[2];
-
-		const event = makeEvent({
-			content: [
-				{
-					type: "text",
-					text: JSON.stringify({
-						currentStage: "02-plan",
-						nextStage: "03-work",
-					}),
-				},
-			],
-		});
-
-		await autoAdvanceHandler(
-			event,
-			makeCtx({
-				hasUI: true,
-				confirmResults: [false],
-			}),
-		);
-
-		expect(sendUserMessageCalls.length).toBe(0);
-	});
-
-	test("skips confirm and sends in print mode (hasUI=false) for gated transition", async () => {
-		const { pi, eventHandlers, sendUserMessageCalls, makeCtx } = createPiMock();
-		ceCoreExtension(pi as never);
-
-		const handlers = eventHandlers.get("tool_result")!;
-		const autoAdvanceHandler = handlers[2];
-
-		const event = makeEvent({
-			content: [
-				{
-					type: "text",
-					text: JSON.stringify({
-						currentStage: "02-plan",
-						nextStage: "03-work",
-					}),
-				},
-			],
-		});
-
-		await autoAdvanceHandler(event, makeCtx({ hasUI: false }));
-
-		expect(sendUserMessageCalls.length).toBe(1);
-		expect(sendUserMessageCalls[0].message).toBe("/ped-next");
-	});
-
-	test("gated confirm skipped on second save (cache hit)", async () => {
-		const { pi, eventHandlers, sendUserMessageCalls, makeCtx } = createPiMock();
-		ceCoreExtension(pi as never);
-
-		const handlers = eventHandlers.get("tool_result")!;
-		const autoAdvanceHandler = handlers[2];
-
-		const event = makeEvent({
-			content: [
-				{
-					type: "text",
-					text: JSON.stringify({
-						currentStage: "02-plan",
-						nextStage: "03-work",
-					}),
-				},
-			],
-		});
-
-		// First save: confirm returns true
-		await autoAdvanceHandler(
-			event,
-			makeCtx({
-				hasUI: true,
-				confirmResults: [true],
-			}),
-		);
-		expect(sendUserMessageCalls.length).toBe(1);
-
-		// Second save: should use cache, no confirm dialog
-		await autoAdvanceHandler(
-			event,
-			makeCtx({
-				hasUI: true,
-				// No confirm results needed — cache should skip dialog
-			}),
-		);
-
-		// Cache persists across calls within the same session (module-level Set)
-		// — second save skips the confirm dialog because markAuthorized was called.
-		expect(sendUserMessageCalls.length).toBe(2);
-	});
-
-	test("catches sendUserMessage errors and calls notify", async () => {
-		const { pi, eventHandlers, notifyCalls, makeCtx } = createPiMock();
-
-		// Make sendUserMessage throw
-		(pi as any).sendUserMessage = () => {
-			throw new Error("Network error");
-		};
-
-		ceCoreExtension(pi as never);
-
-		const handlers = eventHandlers.get("tool_result")!;
-		const autoAdvanceHandler = handlers[2];
-
-		const event = makeEvent();
-
-		// Should not throw
-		await expect(
-			autoAdvanceHandler(event, makeCtx({ hasUI: true })),
-		).resolves.toBeUndefined();
-
-		expect(notifyCalls.length).toBeGreaterThan(0);
-		expect(notifyCalls[0].level).toBe("error");
-	});
-
-	test("catches sendUserMessage errors silently in print mode", async () => {
-		const { pi, eventHandlers, notifyCalls, makeCtx } = createPiMock();
-
-		// Make sendUserMessage throw
-		(pi as any).sendUserMessage = () => {
-			throw new Error("Network error");
-		};
-
-		ceCoreExtension(pi as never);
-
-		const handlers = eventHandlers.get("tool_result")!;
-		const autoAdvanceHandler = handlers[2];
-
-		const event = makeEvent();
-
-		await expect(
-			autoAdvanceHandler(event, makeCtx({ hasUI: false })),
-		).resolves.toBeUndefined();
-
-		// No notify since hasUI is false
-		expect(notifyCalls.length).toBe(0);
 	});
 
 	test("handles event with null content gracefully", async () => {
-		const { pi, eventHandlers, sendUserMessageCalls, makeCtx } = createPiMock();
+		const { pi, eventHandlers, sendUserMessageCalls, makeEventCtx } =
+			createPiMock();
 		ceCoreExtension(pi as never);
 
-		const handlers = eventHandlers.get("tool_result")!;
-		const autoAdvanceHandler = handlers[2];
-
-		const event = makeEvent({ content: null });
-		const result = await autoAdvanceHandler(event, makeCtx());
-
-		expect(result).toBeUndefined();
-		expect(sendUserMessageCalls.length).toBe(0);
-	});
-
-	test("handles event with empty content array gracefully", async () => {
-		const { pi, eventHandlers, sendUserMessageCalls, makeCtx } = createPiMock();
-		ceCoreExtension(pi as never);
-
-		const handlers = eventHandlers.get("tool_result")!;
-		const autoAdvanceHandler = handlers[2];
-
-		const event = makeEvent({ content: [] });
-		const result = await autoAdvanceHandler(event, makeCtx());
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const result = await autoAdvanceHandler(
+			makeEvent({ content: null }),
+			makeEventCtx(),
+		);
 
 		expect(result).toBeUndefined();
 		expect(sendUserMessageCalls.length).toBe(0);
