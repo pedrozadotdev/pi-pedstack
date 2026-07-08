@@ -1,4 +1,7 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
 	createArtifactHelperTool,
@@ -835,6 +838,56 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		}
 	}
 
+	function startAutoAdvanceWhenIdle(
+		ctx: ExtensionContext,
+		stageKey: PipelineStageKey,
+		retries = 20,
+	): void {
+		const attempt = () => {
+			let idle = false;
+			try {
+				idle = ctx.isIdle();
+			} catch {
+				return;
+			}
+
+			if (!idle) {
+				if (retries <= 0) {
+					if (ctx.hasUI) {
+						ctx.ui.notify(
+							"Auto-advance is still waiting for the previous turn to finish. Run /ped-next manually if it does not continue.",
+							"warning",
+						);
+					}
+					return;
+				}
+				retries -= 1;
+				setTimeout(attempt, 0);
+				return;
+			}
+
+			void startStageFromRememberedContext(pi, stageKey)
+				.then((started) => {
+					if (!started && ctx.hasUI) {
+						ctx.ui.notify(
+							"Auto-advance is queued but no live workflow command context is available. Run /ped-next manually.",
+							"warning",
+						);
+					}
+				})
+				.catch((err) => {
+					if (ctx.hasUI) {
+						ctx.ui.notify(
+							`Auto-advance failed: ${err instanceof Error ? err.message : String(err)}`,
+							"error",
+						);
+					}
+				});
+		};
+
+		setTimeout(attempt, 0);
+	}
+
 	pi.on("tool_result", async (event, ctx) => {
 		if (event.toolName !== "context_handoff") return undefined;
 
@@ -872,26 +925,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		const queued = pendingAutoAdvance;
 		if (!queued) return undefined;
 		pendingAutoAdvance = null;
-
-		try {
-			const started = await startStageFromRememberedContext(
-				pi,
-				queued.stageKey,
-			);
-			if (!started && ctx.hasUI) {
-				ctx.ui.notify(
-					"Auto-advance is queued but no live workflow command context is available. Run /ped-next manually.",
-					"warning",
-				);
-			}
-		} catch (err) {
-			if (ctx.hasUI) {
-				ctx.ui.notify(
-					`Auto-advance failed: ${err instanceof Error ? err.message : String(err)}`,
-					"error",
-				);
-			}
-		}
+		startAutoAdvanceWhenIdle(ctx, queued.stageKey);
 		return undefined;
 	});
 

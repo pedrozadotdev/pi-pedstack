@@ -491,6 +491,7 @@ describe("auto-advance tool_result wiring", () => {
 			let confirmIndex = 0;
 			return {
 				hasUI: true,
+				isIdle: () => true,
 				ui: {
 					confirm: async (_title: string, _message: string) => {
 						const result = overrides.confirmResults?.[confirmIndex] ?? true;
@@ -574,6 +575,10 @@ describe("auto-advance tool_result wiring", () => {
 			isError: false,
 			...overrides,
 		};
+	}
+
+	async function settleAutoAdvance(): Promise<void> {
+		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
 
 	test("registers 3 tool_result handlers and an agent_end handler", () => {
@@ -664,9 +669,11 @@ describe("auto-advance tool_result wiring", () => {
 		expect(sendUserMessageCalls.length).toBe(0);
 
 		await agentEndHandler({ type: "agent_end" }, makeEventCtx());
+		await settleAutoAdvance();
 
 		expect(sendUserMessageCalls.length).toBe(1);
 		expect(sendUserMessageCalls[0].message).toBe("Stage: 02-plan");
+		expect(sendUserMessageCalls[0].options).toBeUndefined();
 		expect(navigateCalls.length).toBe(2);
 		expect(appendEntryCalls.at(-1)).toEqual({
 			type: "ped-stage-start",
@@ -715,8 +722,45 @@ describe("auto-advance tool_result wiring", () => {
 			makeEventCtx({ hasUI: true, confirmResults: [false] }),
 		);
 		await agentEndHandler({ type: "agent_end" }, makeEventCtx());
+		await settleAutoAdvance();
 
 		expect(sendUserMessageCalls.length).toBe(0);
+	});
+
+	test("waits for idle before starting queued auto-advance", async () => {
+		const repoRoot = `/tmp/pi-ce-auto-advance-idle-${Date.now()}`;
+		const {
+			pi,
+			eventHandlers,
+			registeredCommands,
+			sendUserMessageCalls,
+			makeEventCtx,
+			makeCommandCtx,
+		} = createPiMock();
+		ceCoreExtension(pi as never);
+
+		const { ctx } = makeCommandCtx(repoRoot);
+		await registeredCommands
+			.get("ped-start")
+			.handler("brainstorm the bug", ctx);
+		sendUserMessageCalls.length = 0;
+
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const agentEndHandler = eventHandlers.get("agent_end")![0];
+		let idle = false;
+		setTimeout(() => {
+			idle = true;
+		}, 0);
+
+		await autoAdvanceHandler(makeEvent(), makeEventCtx());
+		await agentEndHandler(
+			{ type: "agent_end" },
+			makeEventCtx({ isIdle: () => idle }),
+		);
+		expect(sendUserMessageCalls.length).toBe(0);
+
+		await settleAutoAdvance();
+		expect(sendUserMessageCalls.length).toBe(1);
 	});
 
 	test("warns when auto-advance has no remembered command context", async () => {
@@ -728,6 +772,7 @@ describe("auto-advance tool_result wiring", () => {
 
 		await autoAdvanceHandler(makeEvent(), makeEventCtx());
 		await agentEndHandler({ type: "agent_end" }, makeEventCtx({ hasUI: true }));
+		await settleAutoAdvance();
 
 		expect(notifyCalls.at(-1)).toEqual({
 			message:

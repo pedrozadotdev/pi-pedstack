@@ -530,7 +530,7 @@ async function beginStageTransition(
 
 	await switchStageConfig(pi, ctx, stageKey);
 	setPendingSkillPath(computeSkillPath(stageKey));
-	pi.sendUserMessage(message, { deliverAs: "followUp" });
+	pi.sendUserMessage(message);
 	return true;
 }
 
