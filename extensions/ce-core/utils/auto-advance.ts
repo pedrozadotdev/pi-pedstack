@@ -75,8 +75,16 @@ export interface AutoAdvanceInput {
 }
 
 /** Check whether a stage pair is in the gated transitions set. */
-function isGatedTransition(stagePair: string): boolean {
+export function isGatedTransition(stagePair: string): boolean {
 	return GATED_TRANSITIONS.has(stagePair);
+}
+
+/**
+ * Get the confirm dialog config for a gated stage pair.
+ * Returns `null` when the pair is not gated.
+ */
+export function getConfirmDialog(stagePair: string): { title: string; message: string } | null {
+	return CONFIRM_DIALOGS[stagePair] ?? null;
 }
 
 /**

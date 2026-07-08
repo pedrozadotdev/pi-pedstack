@@ -44,6 +44,8 @@ import {
 	evaluateAutoAdvance,
 	isAuthorized,
 	markAuthorized,
+	isGatedTransition,
+	getConfirmDialog,
 } from "./utils/auto-advance";
 
 const artifactHelperParams = Type.Object({
@@ -354,6 +356,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	let pendingAutoAdvance: {
 		stageKey: PipelineStageKey;
 		stagePair: string | null;
+		isGated: boolean;
 	} | null = null;
 
 	pi.registerTool({
@@ -803,44 +806,40 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return { contentText, stagePair, nextStage };
 	}
 
-	/** Queue an auto-advance to be executed from agent_end with a live command ctx. */
-	async function queueAutoAdvanceVerdict(
+	/**
+	 * Queue an auto-advance for execution after agent_end.
+	 *
+	 * Unlike the original design, we do NOT show the confirm dialog here.
+	 * The user should read the handoff summary first before being prompted,
+	 * so the confirm dialog fires at agent_end time (via startAutoAdvanceWhenIdle)
+	 * once the session is idle and the final response is visible.
+	 */
+	function queueAutoAdvanceVerdict(
 		verdict: ReturnType<typeof evaluateAutoAdvance>,
 		saveContent: {
 			stagePair: string | null;
 			nextStage: PipelineStageKey | null;
 		},
-		hasUI: boolean,
-		confirmFn: (title: string, message: string) => Promise<boolean>,
-	): Promise<void> {
-		const queue = () => {
-			if (!saveContent.nextStage) return;
-			pendingAutoAdvance = {
-				stageKey: saveContent.nextStage,
-				stagePair: saveContent.stagePair,
-			};
-			if (saveContent.stagePair) markAuthorized(saveContent.stagePair);
+	): void {
+		if (!saveContent.nextStage) return;
+
+		const stagePair = saveContent.stagePair;
+		pendingAutoAdvance = {
+			stageKey: saveContent.nextStage,
+			stagePair,
+			isGated: stagePair ? isGatedTransition(stagePair) : false,
 		};
 
-		if (verdict.action === "send") {
-			queue();
-			return;
-		}
-
-		if (verdict.action === "confirm") {
-			if (hasUI) {
-				const ok = await confirmFn(verdict.title, verdict.message);
-				if (ok) queue();
-			} else {
-				// ponytail: Print mode — no dialog, auto-advance silently
-				queue();
-			}
-		}
+		// No markAuthorized here — authorization happens only after the user confirms
+		// the dialog that appears when the session becomes idle.
 	}
-
 	function startAutoAdvanceWhenIdle(
 		ctx: ExtensionContext,
-		stageKey: PipelineStageKey,
+		queued: {
+			stageKey: PipelineStageKey;
+			stagePair: string | null;
+			isGated: boolean;
+		},
 		retries = 20,
 	): void {
 		const attempt = () => {
@@ -866,23 +865,44 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			void startStageFromRememberedContext(pi, stageKey)
-				.then((started) => {
+			async function tryStart(): Promise<void> {
+				// Gated transitions: show confirm after the summary is on screen
+				if (queued.isGated && queued.stagePair && !isAuthorized(queued.stagePair)) {
+					const dialog = getConfirmDialog(queued.stagePair);
+					if (dialog) {
+						let ok = false;
+						try {
+							ok = await ctx.ui.confirm(dialog.title, dialog.message);
+						} catch {
+							return;
+						}
+						if (!ok) return;
+						markAuthorized(queued.stagePair);
+					}
+				}
+
+				try {
+					const started = await startStageFromRememberedContext(
+						pi,
+						queued.stageKey,
+					);
 					if (!started && ctx.hasUI) {
 						ctx.ui.notify(
 							"Auto-advance is queued but no live workflow command context is available. Run /ped-next manually.",
 							"warning",
 						);
 					}
-				})
-				.catch((err) => {
+				} catch (err) {
 					if (ctx.hasUI) {
 						ctx.ui.notify(
 							`Auto-advance failed: ${err instanceof Error ? err.message : String(err)}`,
 							"error",
 						);
 					}
-				});
+				}
+			}
+
+			void tryStart();
 		};
 
 		setTimeout(attempt, 0);
@@ -906,9 +926,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 					: false,
 			});
 
-			await queueAutoAdvanceVerdict(verdict, saveContent, ctx.hasUI, (t, m) =>
-				ctx.ui.confirm(t, m),
-			);
+			queueAutoAdvanceVerdict(verdict, saveContent);
 		} catch (err) {
 			// ponytail: never let auto-advance bugs break the handoff save
 			if (ctx.hasUI) {
@@ -925,7 +943,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		const queued = pendingAutoAdvance;
 		if (!queued) return undefined;
 		pendingAutoAdvance = null;
-		startAutoAdvanceWhenIdle(ctx, queued.stageKey);
+		startAutoAdvanceWhenIdle(ctx, queued);
 		return undefined;
 	});
 

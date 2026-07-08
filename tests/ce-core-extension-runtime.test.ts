@@ -717,11 +717,11 @@ describe("auto-advance tool_result wiring", () => {
 			],
 		});
 
-		await autoAdvanceHandler(
-			gatedEvent,
+		await autoAdvanceHandler(gatedEvent, makeEventCtx());
+		await agentEndHandler(
+			{ type: "agent_end" },
 			makeEventCtx({ hasUI: true, confirmResults: [false] }),
 		);
-		await agentEndHandler({ type: "agent_end" }, makeEventCtx());
 		await settleAutoAdvance();
 
 		expect(sendUserMessageCalls.length).toBe(0);
