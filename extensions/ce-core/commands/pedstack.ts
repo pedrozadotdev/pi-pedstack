@@ -833,7 +833,10 @@ function checkDebugGate(
 		return false;
 	}
 
-	if (currentStage === "04-review" && nextStage === "05-learn") {
+	if (
+		(currentStage === "04-review" && nextStage === "05-learn") ||
+		currentStage === "04-5-debug"
+	) {
 		return true;
 	}
 
