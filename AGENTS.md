@@ -70,8 +70,8 @@ skills/          # 7 pipeline skills (01-brainstorm, 02-plan, 03-work, 04-review
   rules/         # Coding standards (common + language-specific)
 extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt injection)
   ce-core/utils/ # Pure helpers: auto-advance, active-stage store, capability matrix
-  ce-core/tools/ # Registerable Pi tools
-  ce-core/jev/   # Inert typed transport for CommandCode headless decisions (no Pi surface, no wiring)
+  ce-core/tools/ # Pi tools + pure helper modules (output filters, failure triage)
+  ce-core/jev/   # Typed transport for CommandCode headless decisions (wired into failure triage)
 tests/           # Test files
 docs/            # Documentation, brainstorms, plans, reviews, solutions
 ```
@@ -96,6 +96,8 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 **Handoff gating:** `context_handoff save` blocks cross-stage saves when the checklist is non-empty. The model must complete or delete all pending tasks before advancing to the next stage. Use `checklist_add` (accepts `descriptions: string[]`) when discovering tasks from SKILL.md, rules, or references to avoid dropped tasks.
 
 **Stage guard:** `extensions/ce-core/utils/capability-matrix.ts` is a pure module that classifies a repo-relative path into one of 11 `PathClass` values and decides whether the active stage may write it. `extensions/ce-core/utils/active-stage.ts` tracks the live stage in memory and persists it to `.context/compound-engineering/active-stage.json` (gated on an existing `context-state.json`). The `pi.on("tool_call")` handler in `extensions/ce-core/index.ts` blocks forbidden `write`/`edit` calls before execution and fails open on any error.
+
+**Failure triage:** a fourth `pi.on("tool_result")` handler (`failure-triage` + `failure-triage-runner` + `triage-store`) annotates a failed `test`/`typecheck`/`lint`/`build` bash result during `03-work` or `04-5-debug` with a bounded advisory TRIAGE block and persists a record under `.context/compound-engineering/triage/`. It is additive only: never returns `isError`, never mutates code, never changes exit status, and never bypasses stop-the-line. Jev outages degrade to a keyword heuristic, and any internal error fails open (the result is left unchanged).
 
 ## Code Style
 

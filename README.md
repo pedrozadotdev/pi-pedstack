@@ -23,6 +23,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Knowledge compounding** — solved problems become searchable solution artifacts
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
+- **Failure triage** — a failed `test`/`typecheck`/`lint`/`build` command during `03-work` or `04-5-debug` gains an inline, bounded advisory TRIAGE block (category, relation to recent change, root-cause clarity) and a record under `.context/compound-engineering/triage/`; Jev degrades to a deterministic heuristic on outage, and triage never auto-fixes or changes the exit status
 - **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
 - **Token-efficient** — ~3,490 tokens new-conversation overhead; progressive loading
 
@@ -289,6 +290,7 @@ your-project/
         ├── checkpoints/       # Breakpoint files
         ├── handoffs/          # Cross-stage context
         ├── history/           # Execution history
+        ├── triage/            # Failure triage records (latest.json + history.jsonl)
         ├── checklist.json     # Persistent task list
         ├── context-state.json # Current workflow stage
         └── active-stage.json  # Guard's persisted active stage
@@ -305,8 +307,8 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 14 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~19,077 |
-| Tests | 547 (+1 opt-in skip) (1,909 assertions) |
+| TypeScript lines | ~20,848 |
+| Tests | 625 (624 pass + 1 opt-in skip) (2,032 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -314,11 +316,20 @@ Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, R
 
 ## Internal Subsystems
 
-`extensions/ce-core/jev/` is an inert, typed transport for CommandCode's headless
-`typesafe/jev` decision model (Noul / Choice / Score questions over stdin). It registers
-**no Pi tool**, is **not wired into any pipeline stage**, and adds **no dependency** — it
-exists so future Jev features share one validated spawn/parse/error path instead of
-drifting (see issue [#2](https://github.com/pedrozadotdev/pi-pedstack/issues/2)).
+`extensions/ce-core/jev/` is a typed transport for CommandCode's headless `typesafe/jev`
+decision model (Noul / Choice / Score questions over stdin). It registers **no Pi tool**
+and adds **no dependency**; it is now wired into the failure-triage `tool_result` handler
+(issue [#12](https://github.com/pedrozadotdev/pi-pedstack/issues/12)) while staying a
+reusable, validated spawn/parse/error path (see issue
+[#2](https://github.com/pedrozadotdev/pi-pedstack/issues/2)).
+
+The failure-triage subsystem (`extensions/ce-core/tools/failure-triage.ts`,
+`failure-triage-runner.ts`, `triage-store.ts`) registers no Pi tool either. It runs as a
+fourth `tool_result` handler: on a failed verification command it bounds the failure
+excerpt, classifies it with Jev (2.5 s cap), degrades to a keyword heuristic on outage or
+abstention, annotates the result in place, and persists the record. It is advisory only —
+it never returns `isError`, mutates code, or changes the command's exit status, and it
+fails open on any internal error.
 
 ## Commands
 

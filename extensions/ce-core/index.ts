@@ -32,6 +32,9 @@ import { createPatternExtractorTool } from "./tools/pattern-extractor";
 import { createContextHandoffTool } from "./tools/context-handoff";
 import { filterBashOutput } from "./tools/bash-output-filter";
 import { filterReadOutput } from "./tools/read-output-filter";
+import { runFailureTriage } from "./tools/failure-triage-runner";
+import type { PersistedTriage } from "./tools/triage-store";
+import { createJevRuntime } from "./jev/index";
 import { COMPACTION_FOCUS_INSTRUCTIONS } from "./tools/compaction-optimizer";
 import { createMultiReviewerTool } from "./tools/multi-reviewer";
 import { createWorkflowStateTool } from "./tools/workflow-state";
@@ -371,6 +374,13 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	let persistedStageResolved = false;
 	let persistedStage: string | null = null;
 	let guardNotified = false;
+
+	// ponytail: Jev runtime created once, lazily; no process spawns until decide().
+	let jevRuntime: ReturnType<typeof createJevRuntime> | null = null;
+	function getJevRuntime() {
+		jevRuntime ??= createJevRuntime();
+		return jevRuntime;
+	}
 
 	pi.registerTool({
 		name: artifactHelper.name,
@@ -1011,6 +1021,102 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			}
 		}
 		return undefined;
+	});
+
+	// ponytail: failure triage handler — annotates failed verification commands
+	// with an advisory TRIAGE block. Additive, fail-open, never returns isError.
+	function extractTextContent(content: unknown): string | null {
+		const blocks =
+			(content as Array<{ type?: string; text?: string }> | undefined)?.filter(
+				(block) => block.type === "text",
+			) ?? [];
+		const text = blocks.map((block) => block.text ?? "").join("");
+		return text.length === 0 ? null : text;
+	}
+
+	function buildTriageDetails(
+		base: unknown,
+		captured: { record: PersistedTriage | null; persistError?: string },
+	): Record<string, unknown> {
+		return {
+			...(base && typeof base === "object" ? base : {}),
+			triage: {
+				...(captured.record ?? {}),
+				...(captured.persistError
+					? { persistError: captured.persistError }
+					: {}),
+			},
+		};
+	}
+
+	async function runTriageForEvent(
+		event: {
+			toolName: string;
+			input: unknown;
+			content: unknown;
+			isError?: boolean;
+			details?: unknown;
+		},
+		ctx: ExtensionContext,
+	): Promise<{ annotated: string; details: Record<string, unknown> } | null> {
+		const command = (event.input as { command?: unknown } | null)?.command;
+		if (typeof command !== "string" || command.length === 0) return null;
+
+		const content = extractTextContent(event.content);
+		if (content === null) return null;
+
+		const stage = await resolveGuardStage(ctx);
+		const captured: { record: PersistedTriage | null; persistError?: string } = {
+			record: null,
+		};
+
+		const annotated = await runFailureTriage(
+			{
+				toolName: event.toolName,
+				isError: event.isError ?? false,
+				command,
+				stage,
+				content,
+			},
+			{
+				runtime: getJevRuntime(),
+				repoRoot: ctx.cwd,
+				cwd: ctx.cwd,
+				onRecord: (record) => {
+					captured.record = record;
+				},
+				onPersistError: (error) => {
+					captured.persistError =
+						error instanceof Error ? error.message : String(error);
+				},
+			},
+		);
+		if (annotated === null) return null;
+
+		return { annotated, details: buildTriageDetails(event.details, captured) };
+	}
+
+	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName !== "bash") return undefined;
+
+		try {
+			const result = await runTriageForEvent(event, ctx);
+			if (!result) return undefined;
+
+			return {
+				content: [{ type: "text", text: result.annotated }],
+				details: result.details,
+			};
+		} catch (err) {
+			// ponytail: a triage bug never blocks or corrupts the bash result.
+			if (ctx.hasUI) {
+				ctx.ui.notify(
+					`Failure triage failed open: ${err instanceof Error ? err.message : String(err)}`,
+					"warning",
+				);
+			}
+			return undefined;
+		}
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {

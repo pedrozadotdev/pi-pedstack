@@ -737,12 +737,15 @@ describe("jev barrel + isolation (Unit 6)", () => {
 		expect(violations).toEqual([]);
 	});
 
-	test("does not reference jev from the extension entrypoint", () => {
+	test("wires jev into the extension entrypoint through the triage runner", () => {
 		const entry = readFileSync(
 			path.resolve(import.meta.dir, "..", "extensions", "ce-core", "index.ts"),
 			"utf8",
 		);
-		expect(entry).not.toContain("jev");
+		// Wiring jev into a real feature is the point of this change; the barrel
+		// is no longer inert.
+		expect(entry).toContain("./jev/index");
+		expect(entry).toContain("failure-triage-runner");
 	});
 
 	test.skipIf(!process.env.JEV_LIVE)(
