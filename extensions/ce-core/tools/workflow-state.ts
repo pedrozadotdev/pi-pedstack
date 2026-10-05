@@ -100,7 +100,7 @@ function toStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
 }
 
-function readContextState(repoRoot: string): WorkflowContextState {
+export function readContextState(repoRoot: string): WorkflowContextState {
   const statePath = path.join(repoRoot, ".context", "compound-engineering", "context-state.json")
   if (!existsSync(statePath)) return emptyContext()
 

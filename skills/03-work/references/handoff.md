@@ -10,3 +10,4 @@ When execution reaches a meaningful checkpoint:
 6. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).
 7. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`.
 8. Recommend new session only when cross-phase + health is heavy/critical, and include a copyable prompt.
+9. Before the handoff save, run `stage_gate` for `03-work` with the stage report at `stage-reports/03-work.md`; deterministic failures block the save in both `shadow` and `enforce`.

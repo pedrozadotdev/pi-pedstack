@@ -32,7 +32,8 @@ bun test              # Run all tests
 - **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
 - **NO DIRECT-TO-IMPLEMENTATION BYPASS:** Do NOT skip the initial stages (Brainstorming/Planning) to go straight to code implementation or file editing. Start every new feature, bug fix, or task with the `01-brainstorm` skill.
 - **AUTO-ADVANCE ON SAVE:** 4 of 6 transitions auto-advance; 2 require user authorization (see footnote ¹).
-- **STAGE CAPABILITY GUARD:** The ce-core extension blocks `write`/`edit` calls whose target path falls outside the active stage's capability matrix. `unknown` paths and absent stages fail open; `.context/` workflow state is never writable via `write`/`edit`. Set `PEDSTACK_DISABLE_GUARD=1` to bypass.
+- **STAGE CAPABILITY GUARD:** The ce-core extension blocks `write`/`edit` calls whose target path falls outside the active stage's capability matrix. `unknown` paths and absent stages fail open; `.context/` workflow state is never writable via `write`/`edit`. `bash` calls are additionally classified by a deterministic shell-effect classifier, with unresolvable commands routed to the local Jev semantic layer (shadow by default). Set `PEDSTACK_DISABLE_GUARD=1` to bypass both guards.
+- **STAGE COMPLETION GATE:** `context_handoff save` re-runs the stage's deterministic artifact predicates on every cross-stage completion save (blocking in both `shadow` and `enforce`), and in `enforce` also requires a fresh, enforcing `accept` record from the `stage_gate` tool. `PEDSTACK_STAGE_GATE=off|shadow|enforce` (default `shadow`) is read once at init.
 - **🐴 PONYTALL DISCIPLINE:** Before planning or writing any code, apply the 6-rung YAGNI ladder below. The system prompt injects this discipline into `02-plan`, `03-work`, `04-review`, and `04-5-debug` — but you must internalize it yourself.
 
 ## 🐴 Ponytail Discipline (YAGNI / Lazy Senior Dev Mode)
@@ -69,9 +70,10 @@ skills/          # 7 pipeline skills (01-brainstorm, 02-plan, 03-work, 04-review
   references/    # Shared templates and schemas
   rules/         # Coding standards (common + language-specific)
 extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt injection)
-  ce-core/utils/ # Pure helpers: auto-advance, active-stage store, capability matrix
+  ce-core/utils/ # Pure helpers: auto-advance, active-stage store, capability matrix, bash command-effect guard, solution ranking
   ce-core/tools/ # Pi tools + pure helper modules (output filters, failure triage)
-  ce-core/jev/   # Typed transport for CommandCode headless decisions (wired into failure triage)
+  ce-core/stage-gate/ # Stage artifact rubrics, evidence, record store, save-side completion guard
+  ce-core/jev/   # Typed transport + runtime for CommandCode headless decisions (consumed by solution ranking, the stage gate, the bash stage guard, and failure triage; no direct Pi tool surface)
 tests/           # Test files
 docs/            # Documentation, brainstorms, plans, reviews, solutions
 ```
@@ -90,14 +92,22 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 | `session_history` | Record and query skill execution history |
 | `pattern_extractor` | Extract recurring patterns from artifacts |
 | `context_handoff` | Save/load/validate cross-stage handoffs |
+| `stage_gate` | Score a stage artifact: deterministic checks + bounded Jev scoring → one verdict |
 | `multi_reviewer` | Orchestrate parallel reviewer subagents |
 | `checklist_add` / `checklist_show` / `checklist_del` | Persistent task tracking with handoff gating (bulk add via `descriptions[]`) |
+| `solution_search` | Rank `docs/solutions/**` cards for a query via Jev semantic ranking with a deterministic fallback (`mode: recall` / `overlap`) |
 
 **Handoff gating:** `context_handoff save` blocks cross-stage saves when the checklist is non-empty. The model must complete or delete all pending tasks before advancing to the next stage. Use `checklist_add` (accepts `descriptions: string[]`) when discovering tasks from SKILL.md, rules, or references to avoid dropped tasks.
 
 **Stage guard:** `extensions/ce-core/utils/capability-matrix.ts` is a pure module that classifies a repo-relative path into one of 11 `PathClass` values and decides whether the active stage may write it. `extensions/ce-core/utils/active-stage.ts` tracks the live stage in memory and persists it to `.context/compound-engineering/active-stage.json` (gated on an existing `context-state.json`). The `pi.on("tool_call")` handler in `extensions/ce-core/index.ts` blocks forbidden `write`/`edit` calls before execution and fails open on any error.
 
+**Bash stage guard:** `extensions/ce-core/utils/command-effect.ts` is a pure quote-aware shell-effect classifier that extracts literal targets and reuses `evaluateWrite`. `semantic-stage-guard.ts` owns policy/verdict mapping and builds the bounded Jev questions; `stage-guard-runtime.ts` orchestrates dedupe/serialization with all I/O injected; `guard-log.ts` appends redacted shadow verdicts to `.context/compound-engineering/jev-stage-guard.jsonl`. Modes are read once from `PEDSTACK_JEV_STAGE_GUARD` (`off | shadow | enforce`, invalid fails safe to `shadow`); `PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED=1` opts into blocking on a degraded semantic layer. The deterministic verdict short-circuits before any Jev call.
+
 **Failure triage:** a fourth `pi.on("tool_result")` handler (`failure-triage` + `failure-triage-runner` + `triage-store`) annotates a failed `test`/`typecheck`/`lint`/`build` bash result during `03-work` or `04-5-debug` with a bounded advisory TRIAGE block and persists a record under `.context/compound-engineering/triage/`. It is additive only: never returns `isError`, never mutates code, never changes exit status, and never bypasses stop-the-line. Jev outages degrade to a keyword heuristic, and any internal error fails open (the result is left unchanged).
+
+**Stage completion gate:** `extensions/ce-core/stage-gate/` scores a stage's produced artifact (via the `stage_gate` tool) and persists content-hashed records under `.context/compound-engineering/stage-gates/`. `context_handoff save` re-runs the deterministic floor on every cross-stage completion save and consults the record for the semantic verdict. Deterministic failures block in both `shadow` and `enforce`; `PEDSTACK_STAGE_GATE` (default `shadow`) is resolved once at init in `extensions/ce-core/stage-gate/store.ts`.
+
+**Solution ranking:** `extensions/ce-core/utils/solution-ranking.ts` exposes `rankSolutions()`, the single entry point used by the `solution_search` tool, by stage auto-injection (`02-plan`, `04-review`, `04-5-debug`, `05-learn`) and by `05-learn` overlap detection. It ships shadow-first: `solutionRanking.shadow` defaults to `true`, so auto-injection computes and logs but stays inert until enforcement is enabled. A Jev outage returns the deterministic `prior` ranking (`status: "degraded"`), never an empty list. Auto-injection is composed inside the single existing `before_agent_start` handler (`extensions/ce-core/utils/solution-wiring.ts`).
 
 ## Code Style
 

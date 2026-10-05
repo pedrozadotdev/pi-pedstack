@@ -462,7 +462,7 @@ async function loadStageAppend(
 
 	let combined: string | null = null;
 	if (allContent && stageContent) {
-		combined = allContent + "\n\n" + stageContent;
+		combined = `${allContent}\n\n${stageContent}`;
 	} else if (allContent) {
 		combined = allContent;
 	} else if (stageContent) {
@@ -472,7 +472,7 @@ async function loadStageAppend(
 	if (combined) {
 		setPendingAppendContent(combined);
 		if (ctx.hasUI) {
-			const label = `${stageKey}` + (allContent ? " + ALL" : "");
+			const label = allContent ? `${stageKey} + ALL` : stageKey;
 			ctx.ui.notify(`Loaded APPEND.md context for ${label}`, "info");
 		}
 	}
@@ -567,7 +567,7 @@ export async function startStageFromRememberedContext(
 		pi,
 		ctx,
 		stageKey,
-		optionalPrompt || "Stage: " + stageKey,
+		optionalPrompt || `Stage: ${stageKey}`,
 		"ped-stage-start",
 		optionalPrompt,
 	);
@@ -595,6 +595,8 @@ async function handleResolutionAbort(
 				operation: "save",
 				repoRoot: ctx.cwd,
 				currentStage: resolution.details.currentStage,
+				// Critical-health abort is a same-stage checkpoint, never gated.
+				nextStage: resolution.details.currentStage,
 			});
 		} catch (err) {
 			if (ctx.hasUI)
@@ -736,7 +738,7 @@ export function cmdPedNext(
 				pi,
 				ctx,
 				stageKey,
-				optionalPrompt || "Stage: " + stageKey,
+				optionalPrompt || `Stage: ${stageKey}`,
 				"ped-stage-start",
 				optionalPrompt,
 			);
@@ -807,7 +809,7 @@ export function cmdPedFixIssues(
 			}
 			setPendingSkillPath(computeSkillPath(stageKey));
 			setPendingFixIssues(parsedNumbers);
-			const formattedList = parsedNumbers.map((n) => "#" + n).join(", ");
+			const formattedList = parsedNumbers.map((n) => `#${n}`).join(", ");
 			try {
 				pi.sendUserMessage(
 					`Fetch GitHub issues ${formattedList} and brainstorm solutions.`,

@@ -22,6 +22,11 @@ import {
 	type PipelineStageKey,
 } from "./commands/pedstack";
 import { buildSystemPromptAppend } from "./commands/prompt-inject";
+import {
+	buildSolutionsAppend,
+	composeSolutionSystemPrompt,
+	registerSolutionSearch,
+} from "./utils/solution-wiring";
 import { createReviewRouterTool } from "./tools/review-router";
 import { createSessionCheckpointTool } from "./tools/session-checkpoint";
 import { createTaskSplitterTool } from "./tools/task-splitter";
@@ -30,11 +35,12 @@ import { createPlanDiffTool } from "./tools/plan-diff";
 import { createSessionHistoryTool } from "./tools/session-history";
 import { createPatternExtractorTool } from "./tools/pattern-extractor";
 import { createContextHandoffTool } from "./tools/context-handoff";
+import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
+import { resolveStageGateMode } from "./stage-gate/store";
 import { filterBashOutput } from "./tools/bash-output-filter";
 import { filterReadOutput } from "./tools/read-output-filter";
 import { runFailureTriage } from "./tools/failure-triage-runner";
 import type { PersistedTriage } from "./tools/triage-store";
-import { createJevRuntime } from "./jev/index";
 import { COMPACTION_FOCUS_INSTRUCTIONS } from "./tools/compaction-optimizer";
 import { createMultiReviewerTool } from "./tools/multi-reviewer";
 import { createWorkflowStateTool } from "./tools/workflow-state";
@@ -56,6 +62,13 @@ import {
 	readPersistedActiveStage,
 } from "./utils/active-stage";
 import { evaluateWrite } from "./utils/capability-matrix";
+import { parseGuardMode } from "./utils/semantic-stage-guard";
+import {
+	createStageGuard,
+	type StageGuard,
+} from "./utils/stage-guard-runtime";
+import { createJevRuntime } from "./jev/runtime";
+import type { JevRuntime } from "./jev/types";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -347,6 +360,16 @@ const patternExtractorParams = Type.Object({
 	),
 });
 
+// Test seam: allows tests to inject a fake Jev runtime without spawning `cmd`.
+let stageGuardJevFactory: (() => JevRuntime) | null = null;
+
+/** @internal Test-only injection seam for the Jev runtime. */
+export function __setStageGuardJevFactory(
+	factory: (() => JevRuntime) | null,
+): void {
+	stageGuardJevFactory = factory;
+}
+
 export default function ceCoreExtension(pi: ExtensionAPI) {
 	const artifactHelper = createArtifactHelperTool();
 	const workflowState = createWorkflowStateTool();
@@ -357,7 +380,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const planDiff = createPlanDiffTool();
 	const sessionHistory = createSessionHistoryTool();
 	const patternExtractor = createPatternExtractorTool();
-	const contextHandoff = createContextHandoffTool();
+	// ponytail: operator-only gate mode, resolved once at init like the guard.
+	const gateMode = resolveStageGateMode(process.env);
+	const contextHandoff = createContextHandoffTool({ gateMode });
+	const stageGate = createStageGateTool({ mode: gateMode });
 	const multiReviewer = createMultiReviewerTool();
 	const checklistAdd = createChecklistAddTool();
 	const checklistShow = createChecklistShowTool();
@@ -381,6 +407,20 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		jevRuntime ??= createJevRuntime();
 		return jevRuntime;
 	}
+
+	// ponytail: Jev stage guard config, read once at init. Invalid values fail
+	// safe to shadow; the warning is deferred to the first tool call (no ctx yet).
+	const guardModeRaw = process.env.PEDSTACK_JEV_STAGE_GUARD;
+	const guardMode = parseGuardMode(guardModeRaw);
+	const guardModeInvalid =
+		guardModeRaw !== undefined &&
+		guardModeRaw !== "off" &&
+		guardModeRaw !== "shadow" &&
+		guardModeRaw !== "enforce";
+	const guardFailClosed =
+		process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED === "1";
+	let guardModeNotified = false;
+	let stageGuard: StageGuard | null = null;
 
 	pi.registerTool({
 		name: artifactHelper.name,
@@ -609,6 +649,26 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		name: stageGate.name,
+		label: "Stage Gate",
+		description:
+			"Score the artifact a stage produced: deterministic evidence checks first, bounded semantic scoring second, and one combined verdict (accept | revise | review | escalate).",
+		parameters: stageGateParams,
+		async execute(_toolCallId, params) {
+			const result = await stageGate.execute({
+				repoRoot: params.repoRoot,
+				stage: params.stage,
+				artifactPaths: params.artifactPaths,
+			});
+
+			return {
+				content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+				details: result,
+			};
+		},
+	});
+
+	pi.registerTool({
 		name: checklistAdd.name,
 		label: "Checklist Add",
 		description:
@@ -700,10 +760,54 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return persistedStage;
 	}
 
+	/** Lazily build the bash guard, memoizing the Jev runtime on first use. */
+	function getStageGuard(): StageGuard {
+		stageGuard ??= createStageGuard({
+			mode: guardMode,
+			failClosed: guardFailClosed,
+			createJev: () =>
+				stageGuardJevFactory ? stageGuardJevFactory() : createJevRuntime(),
+		});
+		return stageGuard;
+	}
+
+	/** Warn once when `PEDSTACK_JEV_STAGE_GUARD` is not a known mode. */
+	function notifyInvalidGuardModeOnce(ctx: ExtensionContext): void {
+		if (!guardModeInvalid || guardModeNotified) return;
+		guardModeNotified = true;
+		if (ctx.hasUI) {
+			ctx.ui.notify(
+				`Pedstack stage guard: invalid PEDSTACK_JEV_STAGE_GUARD value ` +
+					`"${guardModeRaw}"; using shadow mode.`,
+				"warning",
+			);
+		}
+	}
+
 	pi.on("tool_call", async (event, ctx) => {
 		if (guardDisabled) return undefined;
 
 		try {
+			notifyInvalidGuardModeOnce(ctx);
+
+			if (event.toolName === "bash") {
+				if (guardMode === "off") return undefined;
+				const command = (event.input as { command?: unknown }).command;
+				if (typeof command !== "string" || command.length === 0) {
+					return undefined;
+				}
+				const bashStage = await resolveGuardStage(ctx);
+				return await getStageGuard().evaluate({
+					repoRoot: ctx.cwd,
+					stage: bashStage,
+					cwd: ctx.cwd,
+					command,
+					notify: (message: string) => {
+						if (ctx.hasUI) ctx.ui.notify(message, "warning");
+					},
+				});
+			}
+
 			if (event.toolName !== "write" && event.toolName !== "edit") {
 				return undefined;
 			}
@@ -726,7 +830,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	// Capture skills and inject pending skill path into system prompt
-	pi.on("before_agent_start", async (event) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		if (event.systemPromptOptions?.skills?.length) {
 			initSkillRegistry(event.systemPromptOptions.skills);
 		}
@@ -735,11 +839,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		const fixIssues = getAndClearPendingFixIssues();
 
 		const append = buildSystemPromptAppend(skillPath, fixIssues);
-		if (!append) return undefined;
-
-		return {
-			systemPrompt: event.systemPrompt + append,
-		};
+		const solutionsBlock = ctx?.cwd
+			? await buildSolutionsAppend({ repoRoot: ctx.cwd, skillPath })
+			: undefined;
+		return composeSolutionSystemPrompt(event.systemPrompt, append, solutionsBlock);
 	});
 
 	pi.registerTool({
@@ -761,6 +864,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			};
 		},
 	});
+
+	// Semantic solution ranking: model-facing tool + auto-injection (one handler above).
+	registerSolutionSearch(pi);
 
 	// Bash output smart filter — reduces context waste from verbose command output
 	pi.on("tool_result", async (event, _ctx) => {
@@ -1153,6 +1259,7 @@ export { createPlanDiffTool } from "./tools/plan-diff";
 export { createSessionHistoryTool } from "./tools/session-history";
 export { createPatternExtractorTool } from "./tools/pattern-extractor";
 export { createContextHandoffTool } from "./tools/context-handoff";
+export { createStageGateTool } from "./tools/stage-gate";
 export { createMultiReviewerTool } from "./tools/multi-reviewer";
 export {
 	createChecklistAddTool,

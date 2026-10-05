@@ -26,12 +26,13 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 1. Identify the recently solved problem or learning.
 2. Use `pattern_extractor` `extract` to scan existing artifacts for recurring patterns.
 3. Use `pattern_extractor` `categorize` to group patterns by type.
-4. Search `docs/solutions/` for related artifacts and perform an overlap check.
+4. Check `docs/solutions/` for overlap by calling **`solution_search`** with `mode: "overlap"` and the new card's text as the query (see `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/05-learn/references/solution-search-strategy.md`).
 5. Choose the correct category using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/05-learn/references/category-map.md`.
 6. Write or update the solution artifact under `docs/solutions/<category>/`.
 7. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "05-learn"` to review the newly written or updated solution card (the solution artifact).
 8. Mention how future `02-plan` and `04-review` runs should benefit from the new learning.
 9. Include `🧠 Context Status` (health, handoff path, active files, recommendation for `06-docsync`) for workflow progression.
 10. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`. Recommend running `/ped-next` to advance to `06-docsync`.
+11. Before the handoff save, run `stage_gate` for `05-learn`; deterministic failures block the save in both `shadow` and `enforce`.
 
 Before finishing this skill, apply the completion checklist in [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/pipeline-config.md).

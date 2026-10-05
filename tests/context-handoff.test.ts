@@ -40,6 +40,21 @@ describe("context_handoff", () => {
 		expect(statusResult.recommendNewSession).toBe(false);
 	});
 
+	test("default construction (no gateMode) never gates a cross-stage save", async () => {
+		const repoRoot = `/tmp/pi-ce-handoff-default-gate-${Date.now()}`;
+		const tool = createContextHandoffTool();
+
+		const result = await tool.execute({
+			operation: "save",
+			repoRoot,
+			currentStage: "02-plan",
+			nextStage: "03-work",
+		});
+
+		expect(result.blocker).toBeUndefined();
+		expect(result.gateWarning).toBeUndefined();
+	});
+
 	test("save writes latest handoff markdown and dated handoff file", async () => {
 		const repoRoot = `/tmp/pi-ce-handoff-save-${Date.now()}`;
 		const tool = createContextHandoffTool();

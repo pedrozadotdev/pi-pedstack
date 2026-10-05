@@ -715,7 +715,7 @@ describe("before_agent_start handler", () => {
 });
 
 describe("public exports", () => {
-	test("only exports the extension default and public utility functions", async () => {
+	test("only exports the extension default, public utilities, and the test seam", async () => {
 		const mod = await import("../extensions/ce-core/index");
 		const exportNames = Object.keys(mod).filter((k) => k !== "default");
 
@@ -730,6 +730,7 @@ describe("public exports", () => {
 			"createSessionHistoryTool",
 			"createPatternExtractorTool",
 			"createContextHandoffTool",
+			"createStageGateTool",
 			"createMultiReviewerTool",
 			"createChecklistAddTool",
 			"createChecklistShowTool",
@@ -742,6 +743,7 @@ describe("public exports", () => {
 			"filterBashOutput",
 			"filterReadOutput",
 			"COMPACTION_FOCUS_INSTRUCTIONS",
+			"__setStageGuardJevFactory",
 		];
 
 		expect(exportNames.sort()).toEqual(expectedExports.sort());

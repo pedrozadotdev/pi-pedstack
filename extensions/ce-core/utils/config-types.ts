@@ -1,6 +1,11 @@
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import * as os from "node:os"
+import {
+  DEFAULT_SOLUTION_RANKING,
+  type RankingThresholds,
+  type SolutionRankingConfig,
+} from "./solution-ranking"
 
 // ---------------------------------------------------------------------------
 // Config types
@@ -28,13 +33,16 @@ export interface PiPedstackConfig {
   debug?: StepConfig
   learn?: ReviewableStepConfig
   docsync?: StepConfig
+  solutionRanking?: SolutionRankingConfig
 }
 
 // ---------------------------------------------------------------------------
 // Step name mapping
 // ---------------------------------------------------------------------------
 
-const SKILL_TO_CONFIG_KEY: Record<string, keyof PiPedstackConfig> = {
+export type StepConfigKey = Exclude<keyof PiPedstackConfig, "solutionRanking">
+
+const SKILL_TO_CONFIG_KEY: Record<string, StepConfigKey> = {
   "01-brainstorm": "brainstorm",
   "02-plan": "plan",
   "03-work": "work",
@@ -46,7 +54,7 @@ const SKILL_TO_CONFIG_KEY: Record<string, keyof PiPedstackConfig> = {
 
 const VALID_STEP_NAMES = new Set<string>(Object.values(SKILL_TO_CONFIG_KEY))
 
-export function getConfigKeyForSkill(skillName: string): keyof PiPedstackConfig | null {
+export function getConfigKeyForSkill(skillName: string): StepConfigKey | null {
   return SKILL_TO_CONFIG_KEY[skillName] ?? null
 }
 
@@ -68,10 +76,146 @@ function isReviewerConfig(value: unknown): value is ReviewerConfig {
 
 function isReviewableStepConfig(value: unknown): value is ReviewableStepConfig {
   if (!isStepConfig(value)) return false
+  // SAFETY: isStepConfig narrowed value to StepConfig; StepConfig has no index
+  // signature, so a double assertion is needed to read its optional keys.
   const obj = value as unknown as Record<string, unknown>
   if (obj.reviewers === undefined) return true
   if (!Array.isArray(obj.reviewers)) return false
   return obj.reviewers.every(isReviewerConfig)
+}
+
+const SOLUTION_RANKING_KEYS = new Set([
+  "minRank",
+  "minConfidence",
+  "concurrency",
+  "candidates",
+  "limit",
+  "shadow",
+])
+
+function readUnitInterval(
+  obj: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = obj[key]
+  if (value === undefined) return undefined
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(
+      `pi-pedstack config: "solutionRanking.${key}" must be a finite number in [0, 1]`,
+    )
+  }
+  return value
+}
+
+function readPositiveInteger(
+  obj: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = obj[key]
+  if (value === undefined) return undefined
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new Error(
+      `pi-pedstack config: "solutionRanking.${key}" must be an integer >= 1`,
+    )
+  }
+  return value
+}
+
+function readBooleanField(
+  obj: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  const value = obj[key]
+  if (value === undefined) return undefined
+  if (typeof value !== "boolean") {
+    throw new Error(`pi-pedstack config: "solutionRanking.${key}" must be a boolean`)
+  }
+  return value
+}
+
+function warnUnknownSolutionRankingKeys(obj: Record<string, unknown>): void {
+  for (const key of Object.keys(obj)) {
+    if (!SOLUTION_RANKING_KEYS.has(key)) {
+      console.warn(`[pi-pedstack] Unknown solutionRanking key: "${key}"`)
+    }
+  }
+}
+
+function validateSolutionRanking(raw: unknown): SolutionRankingConfig {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error('pi-pedstack config: "solutionRanking" must be an object')
+  }
+
+  const obj = raw as Record<string, unknown>
+  const result: SolutionRankingConfig = {}
+
+  for (const key of ["minRank", "minConfidence"] as const) {
+    const value = readUnitInterval(obj, key)
+    if (value !== undefined) result[key] = value
+  }
+  for (const key of ["concurrency", "candidates", "limit"] as const) {
+    const value = readPositiveInteger(obj, key)
+    if (value !== undefined) result[key] = value
+  }
+  const shadow = readBooleanField(obj, "shadow")
+  if (shadow !== undefined) result.shadow = shadow
+
+  warnUnknownSolutionRankingKeys(obj)
+
+  return result
+}
+
+/** Merge a validated (possibly partial) config with the documented defaults. */
+export function resolveSolutionRankingConfig(
+  config: PiPedstackConfig | null,
+): RankingThresholds & { shadow: boolean } {
+  const raw = config?.solutionRanking ?? {}
+  return {
+    minRank: raw.minRank ?? DEFAULT_SOLUTION_RANKING.minRank,
+    minConfidence: raw.minConfidence ?? DEFAULT_SOLUTION_RANKING.minConfidence,
+    concurrency: raw.concurrency ?? DEFAULT_SOLUTION_RANKING.concurrency,
+    candidates: raw.candidates ?? DEFAULT_SOLUTION_RANKING.candidates,
+    limit: raw.limit ?? DEFAULT_SOLUTION_RANKING.limit,
+    shadow: raw.shadow ?? DEFAULT_SOLUTION_RANKING.shadow,
+  }
+}
+
+function applySimpleStepConfigs(
+  obj: Record<string, unknown>,
+  config: PiPedstackConfig,
+): void {
+  for (const key of ["work", "debug", "docsync"] as const) {
+    if (obj[key] === undefined) continue
+    if (!isStepConfig(obj[key])) {
+      throw new Error(
+        `pi-pedstack config: "${key}" must have "model" (string) and optional "thinkingLevel" (string)`,
+      )
+    }
+    config[key] = obj[key] as StepConfig
+  }
+}
+
+function applyReviewableStepConfigs(
+  obj: Record<string, unknown>,
+  config: PiPedstackConfig,
+): void {
+  for (const key of ["brainstorm", "plan", "review", "learn"] as const) {
+    if (obj[key] === undefined) continue
+    if (!isReviewableStepConfig(obj[key])) {
+      throw new Error(
+        `pi-pedstack config: "${key}" must have "model" (string), optional "thinkingLevel" (string), and optional "reviewers" array of {model, thinkingLevel}`,
+      )
+    }
+    config[key] = obj[key] as ReviewableStepConfig
+  }
+}
+
+function warnUnknownConfigKeys(obj: Record<string, unknown>): void {
+  for (const key of Object.keys(obj)) {
+    if (!VALID_STEP_NAMES.has(key) && key !== "solutionRanking") {
+      console.warn(`[pi-pedstack] Unknown config key: "${key}". Valid keys: ${[...VALID_STEP_NAMES].join(", ")}`)
+    }
+  }
 }
 
 export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
@@ -82,37 +226,14 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
   const obj = raw as Record<string, unknown>
   const config: PiPedstackConfig = {}
 
-  // Simple step configs (no reviewers)
-  for (const key of ["work", "debug", "docsync"] as const) {
-    if (obj[key] !== undefined) {
-      if (!isStepConfig(obj[key])) {
-        throw new Error(
-          `pi-pedstack config: "${key}" must have "model" (string) and optional "thinkingLevel" (string)`,
-        )
-      }
-      config[key] = obj[key] as StepConfig
-    }
+  applySimpleStepConfigs(obj, config)
+  applyReviewableStepConfigs(obj, config)
+
+  if (obj.solutionRanking !== undefined) {
+    config.solutionRanking = validateSolutionRanking(obj.solutionRanking)
   }
 
-  // Reviewable step configs
-  for (const key of ["brainstorm", "plan", "review", "learn"] as const) {
-    if (obj[key] !== undefined) {
-      if (!isReviewableStepConfig(obj[key])) {
-        throw new Error(
-          `pi-pedstack config: "${key}" must have "model" (string), optional "thinkingLevel" (string), and optional "reviewers" array of {model, thinkingLevel}`,
-        )
-      }
-      config[key] = obj[key] as ReviewableStepConfig
-    }
-  }
-
-  // Warn about unknown keys
-  for (const key of Object.keys(obj)) {
-    if (!VALID_STEP_NAMES.has(key)) {
-      console.warn(`[pi-pedstack] Unknown config key: "${key}". Valid keys: ${[...VALID_STEP_NAMES].join(", ")}`)
-    }
-  }
-
+  warnUnknownConfigKeys(obj)
   return config
 }
 
