@@ -730,6 +730,7 @@ describe("public exports", () => {
 			"createSessionHistoryTool",
 			"createPatternExtractorTool",
 			"createContextHandoffTool",
+			"createStageGateTool",
 			"createMultiReviewerTool",
 			"createChecklistAddTool",
 			"createChecklistShowTool",

@@ -1,14 +1,7 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { JevRuntimeError } from "./errors";
-import type {
-	JevAnswer,
-	JevChoiceQuestion,
-	JevContent,
-	JevQuestion,
-	JevRequest,
-	JevUsage,
-} from "./types";
+import type { JevAnswer, JevContent, JevQuestion, JevRequest, JevUsage } from "./types";
 
 export interface JevValidateRequestOptions {
 	timeoutMs?: number;

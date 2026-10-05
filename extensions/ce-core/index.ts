@@ -22,6 +22,11 @@ import {
 	type PipelineStageKey,
 } from "./commands/pedstack";
 import { buildSystemPromptAppend } from "./commands/prompt-inject";
+import {
+	buildSolutionsAppend,
+	composeSolutionSystemPrompt,
+	registerSolutionSearch,
+} from "./utils/solution-wiring";
 import { createReviewRouterTool } from "./tools/review-router";
 import { createSessionCheckpointTool } from "./tools/session-checkpoint";
 import { createTaskSplitterTool } from "./tools/task-splitter";
@@ -30,6 +35,8 @@ import { createPlanDiffTool } from "./tools/plan-diff";
 import { createSessionHistoryTool } from "./tools/session-history";
 import { createPatternExtractorTool } from "./tools/pattern-extractor";
 import { createContextHandoffTool } from "./tools/context-handoff";
+import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
+import { resolveStageGateMode } from "./stage-gate/store";
 import { filterBashOutput } from "./tools/bash-output-filter";
 import { filterReadOutput } from "./tools/read-output-filter";
 import { COMPACTION_FOCUS_INSTRUCTIONS } from "./tools/compaction-optimizer";
@@ -371,7 +378,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const planDiff = createPlanDiffTool();
 	const sessionHistory = createSessionHistoryTool();
 	const patternExtractor = createPatternExtractorTool();
-	const contextHandoff = createContextHandoffTool();
+	// ponytail: operator-only gate mode, resolved once at init like the guard.
+	const gateMode = resolveStageGateMode(process.env);
+	const contextHandoff = createContextHandoffTool({ gateMode });
+	const stageGate = createStageGateTool({ mode: gateMode });
 	const multiReviewer = createMultiReviewerTool();
 	const checklistAdd = createChecklistAddTool();
 	const checklistShow = createChecklistShowTool();
@@ -630,6 +640,26 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		name: stageGate.name,
+		label: "Stage Gate",
+		description:
+			"Score the artifact a stage produced: deterministic evidence checks first, bounded semantic scoring second, and one combined verdict (accept | revise | review | escalate).",
+		parameters: stageGateParams,
+		async execute(_toolCallId, params) {
+			const result = await stageGate.execute({
+				repoRoot: params.repoRoot,
+				stage: params.stage,
+				artifactPaths: params.artifactPaths,
+			});
+
+			return {
+				content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+				details: result,
+			};
+		},
+	});
+
+	pi.registerTool({
 		name: checklistAdd.name,
 		label: "Checklist Add",
 		description:
@@ -791,7 +821,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	// Capture skills and inject pending skill path into system prompt
-	pi.on("before_agent_start", async (event) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		if (event.systemPromptOptions?.skills?.length) {
 			initSkillRegistry(event.systemPromptOptions.skills);
 		}
@@ -800,11 +830,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		const fixIssues = getAndClearPendingFixIssues();
 
 		const append = buildSystemPromptAppend(skillPath, fixIssues);
-		if (!append) return undefined;
-
-		return {
-			systemPrompt: event.systemPrompt + append,
-		};
+		const solutionsBlock = ctx?.cwd
+			? await buildSolutionsAppend({ repoRoot: ctx.cwd, skillPath })
+			: undefined;
+		return composeSolutionSystemPrompt(event.systemPrompt, append, solutionsBlock);
 	});
 
 	pi.registerTool({
@@ -826,6 +855,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			};
 		},
 	});
+
+	// Semantic solution ranking: model-facing tool + auto-injection (one handler above).
+	registerSolutionSearch(pi);
 
 	// Bash output smart filter — reduces context waste from verbose command output
 	pi.on("tool_result", async (event, _ctx) => {
@@ -1122,6 +1154,7 @@ export { createPlanDiffTool } from "./tools/plan-diff";
 export { createSessionHistoryTool } from "./tools/session-history";
 export { createPatternExtractorTool } from "./tools/pattern-extractor";
 export { createContextHandoffTool } from "./tools/context-handoff";
+export { createStageGateTool } from "./tools/stage-gate";
 export { createMultiReviewerTool } from "./tools/multi-reviewer";
 export {
 	createChecklistAddTool,

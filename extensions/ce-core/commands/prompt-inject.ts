@@ -3,6 +3,8 @@ import {
 	type PipelineStageKey,
 	getAndClearPendingAppendContent,
 } from "./pedstack";
+import type { SolutionRankingResult } from "../utils/solution-ranking";
+import { formatSolutionMetaLines } from "../utils/solution-ranking";
 
 /**
  * Extract the stage key (e.g. "01-brainstorm") from a SKILL.md path.
@@ -77,6 +79,35 @@ const STAGE_DISCIPLINES: Record<PipelineStageKey, StageDiscipline> = {
 		nextStage: null,
 	},
 };
+
+/**
+ * Pure formatter for the auto-injected solutions block. Returns `undefined`
+ * (never an empty string) when there is nothing worth injecting, so the
+ * `before_agent_start` handler can preserve handler chaining.
+ */
+export function formatSolutionsBlock(
+	result: SolutionRankingResult,
+): string | undefined {
+	if (result.status === "none" || result.results.length === 0) return undefined;
+
+	const lines: string[] = ["\n\n---\n## 📚 Prior Solutions\n"];
+	if (result.status === "degraded") {
+		lines.push(
+			"_Jev ranking unavailable — showing deterministic prior-ranked solutions (degraded)._\n",
+		);
+	}
+	if (result.conflicts.length > 0) {
+		lines.push(`⚠️ Potential conflicts: ${result.conflicts.join(", ")}\n`);
+	}
+	result.results.forEach((solution, index) => {
+		lines.push(`### ${index + 1}. ${solution.title || solution.path}`);
+		lines.push(...formatSolutionMetaLines(solution));
+		lines.push("");
+		lines.push(solution.content);
+		lines.push("");
+	});
+	return lines.join("\n");
+}
 
 /**
  * Build the system prompt append block for a pending skill path, fix-issues,

@@ -2,6 +2,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { normalizeSlug } from "../utils/name-utils";
+import { evaluateCompletionGate } from "../stage-gate/guard";
+import type { StageGateMode } from "../stage-gate/types";
 import { readChecklist } from "./checklist";
 
 type ContextHealth = "good" | "watch" | "heavy" | "critical";
@@ -85,6 +87,7 @@ export interface ContextHandoffResult {
 	compressionRisk?: string[];
 	activeRules?: string[];
 	updatedAt?: string;
+	gateWarning?: string;
 	// Validation fields
 	ok?: boolean;
 	probes?: ContextHandoffValidationProbes;
@@ -333,13 +336,16 @@ async function writeState(
 	await writeFile(filePath, JSON.stringify(state, null, 2), "utf8");
 }
 
-export function createContextHandoffTool() {
+export function createContextHandoffTool(
+	options: { gateMode?: StageGateMode } = {},
+) {
+	const gateMode = options.gateMode ?? "off";
 	return {
 		name: "context_handoff",
 		async execute(input: ContextHandoffInput): Promise<ContextHandoffResult> {
 			switch (input.operation) {
 				case "save":
-					return save(input);
+					return save(input, gateMode);
 				case "load":
 					return load(input);
 				case "latest":
@@ -355,7 +361,33 @@ export function createContextHandoffTool() {
 	};
 }
 
-async function save(input: ContextHandoffInput): Promise<ContextHandoffResult> {
+/** Runs the stage gate for a save and returns a blocker or a warning only. */
+async function runCompletionGate(
+	input: ContextHandoffInput,
+	currentStage: string,
+	nextStage: string | undefined,
+	gateMode: StageGateMode,
+): Promise<{ blocker?: string; warning?: string }> {
+	try {
+		const gate = await evaluateCompletionGate(
+			input.repoRoot,
+			currentStage,
+			nextStage,
+			gateMode,
+		);
+		if (gate.gated && !gate.allowed) return { blocker: gate.blocker };
+		if (gate.warning) return { warning: gate.warning };
+		return {};
+	} catch {
+		// evaluateCompletionGate fails open internally; belt-and-braces.
+		return {};
+	}
+}
+
+async function save(
+	input: ContextHandoffInput,
+	gateMode: StageGateMode,
+): Promise<ContextHandoffResult> {
 	const currentStage = input.currentStage ?? "unknown";
 	const nextStage = input.nextStage;
 	const contextHealth = input.contextHealth ?? "watch";
@@ -389,6 +421,19 @@ async function save(input: ContextHandoffInput): Promise<ContextHandoffResult> {
 			// If readChecklist throws unexpectedly, allow save to proceed safely
 		}
 	}
+	// Stage gate: deterministic floor in both modes, record check in enforce (AD-2).
+	const gate = await runCompletionGate(input, currentStage, nextStage, gateMode);
+	if (gate.blocker) {
+		return {
+			operation: "save",
+			found: true,
+			currentStage,
+			nextStage,
+			contextHealth,
+			blocker: gate.blocker,
+		};
+	}
+	const gateWarning = gate.warning;
 	const activeFiles = input.activeFiles ?? [];
 	// Normalize: treat placeholder/N/A-ish blockers as absent so they don't block /ped-next
 	const blocker =
@@ -481,6 +526,7 @@ async function save(input: ContextHandoffInput): Promise<ContextHandoffResult> {
 		activeRules,
 		recommendNewSession,
 		updatedAt: state.updatedAt,
+		gateWarning,
 	};
 }
 
@@ -895,7 +941,7 @@ async function validate(
 					summary,
 			);
 		}
-	} catch (err) {
+	} catch {
 		// If readChecklist throws, skip the probe
 	}
 

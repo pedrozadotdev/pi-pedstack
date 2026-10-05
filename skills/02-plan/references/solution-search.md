@@ -1,43 +1,31 @@
 # Solution Search Strategy
 
-Grep-first strategy for finding relevant solutions before planning or reviewing.
+Use the `solution_search` engine to find relevant solutions before planning or reviewing. Do **not** hand-rank candidates with grep — deterministic recall and semantic ranking happen in TypeScript.
 
 ## Steps
 
-1. **Extract keywords** from the task description
-2. **Grep frontmatter** fields (tags, title) in project solution directory:
-   ```bash
-   grep -rl "tags:.*keyword" docs/solutions/
+1. **Summarize the task** in a few sentences: technical terms, error symptoms, component types.
+2. **Call the tool:**
+   ```text
+   solution_search({ query: "<task summary>", repoRoot: "<project root>" })
    ```
-3. **Read frontmatter only** (first 15 lines) of matching files
-4. **Score by:**
-   - Severity match (higher severity = higher priority)
-   - Tag relevance (exact matches rank higher)
-5. **Fully read top 3** candidates
-6. If no matches: report "No relevant solutions found" and proceed
+3. **Read only what the tool returns** — at most 3 fully-read cards.
+4. **Honor the returned `status`:**
+   - `ok` — 1–3 cards crossed the relevance bar; apply their guidance.
+   - `none` — nothing crossed the bar. This is valuable information: the area has no prior learnings, so proceed normally.
+   - `degraded` — semantic ranking was unavailable; the cards are deterministically `prior`-ranked. Treat them as candidates, not verified matches.
 
 ## Search locations
 
-| Level | Path | Use for |
-|---|---|---|
-| Project | `docs/solutions/` | Project-specific learnings |
+- **Project-level**: `{project-root}/docs/solutions/` — project-specific solutions
 
-## Scoring rubric
-
-| Score | Criteria |
-|---|---|
-| 5 | Exact tag match + high severity + same language |
-| 4 | Tag match + same category |
-| 3 | Partial tag match |
-| 2 | Same category, no tag match |
-| 1 | Worth reading for context |
-| 0 | No relevance |
+The engine scans `docs/solutions/**` recursively (frontmatter first, bounded body fallback) and matches on `tags`, `title`, `category`, and `applies_when`.
 
 ## Output
 
-- List of relevant solutions with paths and relevance scores
-- Key takeaways from top solutions
-- How they apply to current task
+- The tool's `status` and result list (path, title, category, severity, tags, rank, confidence, source)
+- Key takeaways from the returned solutions
+- How they apply to the current task
 
 ## When to use
 
