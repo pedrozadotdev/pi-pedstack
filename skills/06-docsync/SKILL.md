@@ -37,3 +37,8 @@ Determine if changes alter AI behavior or constraints. Update Intent → Skill M
 - Both `README.md` and `AGENTS.md` reflect the current state of the repository accurately.
 - No conflicting guidelines are introduced.
 - The files are cleanly formatted and saved.
+
+## Handoff
+
+- Write the docsync stage report to `.context/compound-engineering/stage-reports/06-docsync.md`.
+- Before the handoff save, run `stage_gate` for `06-docsync`; deterministic failures block the save in both `shadow` and `enforce`.

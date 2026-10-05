@@ -9,3 +9,4 @@ When the requirements artifact is ready:
 5. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).
 6. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`.
 7. Recommend new session only when cross-phase + health is heavy/critical, and include a copyable prompt.
+8. Before the handoff save, run `stage_gate` for `01-brainstorm`; deterministic failures block the save in both `shadow` and `enforce`.

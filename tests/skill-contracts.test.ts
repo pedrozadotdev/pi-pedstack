@@ -347,3 +347,44 @@ describe("skill package contracts", () => {
 		expect(content).toContain("docs get");
 	});
 });
+
+describe("stage gate skill wiring (Unit 8)", () => {
+	const stageDocs: Record<string, string> = {
+		"01-brainstorm": "skills/01-brainstorm/references/handoff.md",
+		"02-plan": "skills/02-plan/references/handoff.md",
+		"03-work": "skills/03-work/references/handoff.md",
+		"04-review": "skills/04-review/references/handoff.md",
+		"04-5-debug": "skills/04-5-debug/SKILL.md",
+		"05-learn": "skills/05-learn/SKILL.md",
+		"06-docsync": "skills/06-docsync/SKILL.md",
+	};
+
+	test("pipeline-config documents stage_gate and PEDSTACK_STAGE_GATE", () => {
+		const content = readFileSync(
+			path.join(repoRoot, "skills", "references", "pipeline-config.md"),
+			"utf8",
+		);
+		expect(content).toContain("stage_gate");
+		expect(content).toContain("PEDSTACK_STAGE_GATE");
+	});
+
+	test("every stage doc runs stage_gate before its completion save", () => {
+		for (const [stage, rel] of Object.entries(stageDocs)) {
+			const content = readFileSync(path.join(repoRoot, rel), "utf8");
+			expect({ stage, hasStageGate: content.includes("stage_gate") }).toEqual({
+				stage,
+				hasStageGate: true,
+			});
+		}
+	});
+
+	test("work/debug/docsync docs reference their stage report path", () => {
+		for (const stage of ["03-work", "04-5-debug", "06-docsync"]) {
+			const content = readFileSync(path.join(repoRoot, stageDocs[stage]), "utf8");
+			expect({ stage, hasReports: content.includes("stage-reports/") }).toEqual({
+				stage,
+				hasReports: true,
+			});
+		}
+	});
+});

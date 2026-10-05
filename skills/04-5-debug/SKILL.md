@@ -49,4 +49,6 @@ Once the bug is fixed and verified, provide a concise summary to the user detail
 ## Additional Rules
 
 - After completing the report, save a context handoff targeting 05-learn.
+- Write the debug stage report to `.context/compound-engineering/stage-reports/04-5-debug.md`.
+- Before the handoff save, run `stage_gate` for `04-5-debug`; deterministic failures block the save in both `shadow` and `enforce`.
 - Follow Ponytail discipline: fix the root cause, not the symptom. Don't scope creep.

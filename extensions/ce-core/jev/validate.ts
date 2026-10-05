@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { JevRuntimeError } from "./errors";
-import type { JevAnswer, JevQuestion, JevRequest, JevUsage } from "./types";
+import type { JevAnswer, JevContent, JevQuestion, JevRequest, JevUsage } from "./types";
 
 export interface JevValidateRequestOptions {
 	timeoutMs?: number;
@@ -35,8 +35,8 @@ const JevQuestionSchema = Type.Union([
 			criteria: Type.Optional(
 				Type.Object(
 					{
-						true: Type.Optional(Type.String()),
-						false: Type.Optional(Type.String()),
+						true: Type.Optional(JevContentSchema),
+						false: Type.Optional(JevContentSchema),
 					},
 					{ additionalProperties: false },
 				),
@@ -48,7 +48,7 @@ const JevQuestionSchema = Type.Union([
 		{
 			type: Type.Literal("choice"),
 			instructions: JevContentSchema,
-			criteria: Type.Record(Type.String(), Type.String()),
+			criteria: Type.Record(Type.String(), JevContentSchema),
 		},
 		{ additionalProperties: false },
 	),
@@ -56,7 +56,7 @@ const JevQuestionSchema = Type.Union([
 		{
 			type: Type.Literal("score"),
 			instructions: JevContentSchema,
-			criteria: Type.Array(Type.String()),
+			criteria: Type.Array(JevContentSchema),
 		},
 		{ additionalProperties: false },
 	),
@@ -408,7 +408,7 @@ function validateNoulAnswer(
 
 function validateChoiceAnswer(
 	path: string,
-	criteria: Record<string, string>,
+	criteria: Record<string, JevContent>,
 	value: Record<string, unknown>,
 	warnings: string[],
 ): JevAnswer {
