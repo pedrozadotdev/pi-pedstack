@@ -37,6 +37,21 @@ Applies to all skills when preparing context or saving handoff.
 
 Every pipeline skill (02-plan through 06-docsync) must save context handoff at completion:
 
+Before saving, run the stage gate on the artifact this stage produced:
+
+```text
+stage_gate
+  repoRoot: <repo root>
+  stage: <stageKey>
+```
+
+`PEDSTACK_STAGE_GATE` controls the gate: `off` disables it, `shadow` (default)
+records the verdict and blocks only deterministic failures, and `enforce` also
+requires a fresh `accept` record. Deterministic failures block in **both**
+`shadow` and `enforce`; semantic verdicts warn in `shadow` and block in
+`enforce`. A `revise`/`review`/`escalate` verdict means: fix the artifact and
+re-run `stage_gate` before saving.
+
 ```
 context_handoff save
   currentStage: <stageKey>
