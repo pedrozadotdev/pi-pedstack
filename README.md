@@ -291,12 +291,20 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 14 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~14,025 |
-| Tests | 359 (1,178 assertions) |
+| TypeScript lines | ~17,745 |
+| Tests | 423 (+1 opt-in skip) (1,538 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
 ---
+
+## Internal Subsystems
+
+`extensions/ce-core/jev/` is an inert, typed transport for CommandCode's headless
+`typesafe/jev` decision model (Noul / Choice / Score questions over stdin). It registers
+**no Pi tool**, is **not wired into any pipeline stage**, and adds **no dependency** — it
+exists so future Jev features share one validated spawn/parse/error path instead of
+drifting (see issue [#2](https://github.com/pedrozadotdev/pi-pedstack/issues/2)).
 
 ## Commands
 
