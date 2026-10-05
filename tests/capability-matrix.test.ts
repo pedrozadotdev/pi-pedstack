@@ -124,6 +124,22 @@ describe("classifyPath", () => {
 		expect(classifyPath(ROOT, null as unknown as string)).toBe("unknown");
 		expect(classifyPath(ROOT, 42 as unknown as string)).toBe("unknown");
 	});
+
+	test("workflow-state invariant wins over conflicting basenames (C1)", () => {
+		const fixtures = [
+			".context/compound-engineering/package.json",
+			".context/compound-engineering/tsconfig.json",
+			".context/compound-engineering/bun.lock",
+			".context/compound-engineering/notes.test.ts",
+			".context/compound-engineering/README.md",
+			".context/compound-engineering/active-stage.json",
+			".context",
+			".context/",
+		];
+		for (const fixture of fixtures) {
+			expect(classifyPath(ROOT, fixture)).toBe("workflow-state");
+		}
+	});
 });
 
 // ── STAGE_CAPABILITIES ─────────────────────────────────────────────
@@ -209,5 +225,22 @@ describe("evaluateWrite matrix", () => {
 		expect(verdict.pathClass).toBe("workflow-state");
 		expect(verdict.reason).toContain("workflow-state");
 		expect(verdict.reason).toContain("PEDSTACK_DISABLE_GUARD=1");
+	});
+
+	test("blocks conflicting-basename .context paths in every stage (C1)", () => {
+		const fixtures = [
+			".context/compound-engineering/package.json",
+			".context/compound-engineering/bun.lock",
+			".context/compound-engineering/notes.test.ts",
+			".context/compound-engineering/README.md",
+			".context",
+		];
+		for (const stage of STAGES) {
+			for (const fixture of fixtures) {
+				const verdict = evaluateWrite(stage, ROOT, fixture);
+				expect(verdict.pathClass).toBe("workflow-state");
+				expect(verdict.allow).toBe(false);
+			}
+		}
 	});
 });

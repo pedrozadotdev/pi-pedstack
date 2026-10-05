@@ -737,12 +737,15 @@ describe("jev barrel + isolation (Unit 6)", () => {
 		expect(violations).toEqual([]);
 	});
 
-	test("does not reference jev from the extension entrypoint", () => {
+	test("wires the jev runtime from the extension entrypoint (issue #4)", () => {
 		const entry = readFileSync(
 			path.resolve(import.meta.dir, "..", "extensions", "ce-core", "index.ts"),
 			"utf8",
 		);
-		expect(entry).not.toContain("jev");
+		// #4 wiring: the entrypoint constructs the Jev runtime for ambiguous bash
+		// and injects it through the stage-guard-runtime escape hatch.
+		expect(entry).toContain('from "./jev/runtime"');
+		expect(entry).toContain("createJevRuntime");
 	});
 
 	test.skipIf(!process.env.JEV_LIVE)(

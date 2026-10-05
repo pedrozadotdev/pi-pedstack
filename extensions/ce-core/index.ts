@@ -60,6 +60,13 @@ import {
 	readPersistedActiveStage,
 } from "./utils/active-stage";
 import { evaluateWrite } from "./utils/capability-matrix";
+import { parseGuardMode } from "./utils/semantic-stage-guard";
+import {
+	createStageGuard,
+	type StageGuard,
+} from "./utils/stage-guard-runtime";
+import { createJevRuntime } from "./jev/runtime";
+import type { JevRuntime } from "./jev/types";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -351,6 +358,16 @@ const patternExtractorParams = Type.Object({
 	),
 });
 
+// Test seam: allows tests to inject a fake Jev runtime without spawning `cmd`.
+let stageGuardJevFactory: (() => JevRuntime) | null = null;
+
+/** @internal Test-only injection seam for the Jev runtime. */
+export function __setStageGuardJevFactory(
+	factory: (() => JevRuntime) | null,
+): void {
+	stageGuardJevFactory = factory;
+}
+
 export default function ceCoreExtension(pi: ExtensionAPI) {
 	const artifactHelper = createArtifactHelperTool();
 	const workflowState = createWorkflowStateTool();
@@ -381,6 +398,20 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	let persistedStageResolved = false;
 	let persistedStage: string | null = null;
 	let guardNotified = false;
+
+	// ponytail: Jev stage guard config, read once at init. Invalid values fail
+	// safe to shadow; the warning is deferred to the first tool call (no ctx yet).
+	const guardModeRaw = process.env.PEDSTACK_JEV_STAGE_GUARD;
+	const guardMode = parseGuardMode(guardModeRaw);
+	const guardModeInvalid =
+		guardModeRaw !== undefined &&
+		guardModeRaw !== "off" &&
+		guardModeRaw !== "shadow" &&
+		guardModeRaw !== "enforce";
+	const guardFailClosed =
+		process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED === "1";
+	let guardModeNotified = false;
+	let stageGuard: StageGuard | null = null;
 
 	pi.registerTool({
 		name: artifactHelper.name,
@@ -720,10 +751,54 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return persistedStage;
 	}
 
+	/** Lazily build the bash guard, memoizing the Jev runtime on first use. */
+	function getStageGuard(): StageGuard {
+		stageGuard ??= createStageGuard({
+			mode: guardMode,
+			failClosed: guardFailClosed,
+			createJev: () =>
+				stageGuardJevFactory ? stageGuardJevFactory() : createJevRuntime(),
+		});
+		return stageGuard;
+	}
+
+	/** Warn once when `PEDSTACK_JEV_STAGE_GUARD` is not a known mode. */
+	function notifyInvalidGuardModeOnce(ctx: ExtensionContext): void {
+		if (!guardModeInvalid || guardModeNotified) return;
+		guardModeNotified = true;
+		if (ctx.hasUI) {
+			ctx.ui.notify(
+				`Pedstack stage guard: invalid PEDSTACK_JEV_STAGE_GUARD value ` +
+					`"${guardModeRaw}"; using shadow mode.`,
+				"warning",
+			);
+		}
+	}
+
 	pi.on("tool_call", async (event, ctx) => {
 		if (guardDisabled) return undefined;
 
 		try {
+			notifyInvalidGuardModeOnce(ctx);
+
+			if (event.toolName === "bash") {
+				if (guardMode === "off") return undefined;
+				const command = (event.input as { command?: unknown }).command;
+				if (typeof command !== "string" || command.length === 0) {
+					return undefined;
+				}
+				const bashStage = await resolveGuardStage(ctx);
+				return await getStageGuard().evaluate({
+					repoRoot: ctx.cwd,
+					stage: bashStage,
+					cwd: ctx.cwd,
+					command,
+					notify: (message: string) => {
+						if (ctx.hasUI) ctx.ui.notify(message, "warning");
+					},
+				});
+			}
+
 			if (event.toolName !== "write" && event.toolName !== "edit") {
 				return undefined;
 			}
