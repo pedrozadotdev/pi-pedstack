@@ -408,6 +408,7 @@ The 23+ test scenarios cover every branch, including edge cases like `JSON.parse
 - **[before-agent-start-pending-state-injection.md](./before-agent-start-pending-state-injection.md)** — documents the parallel pattern for `pi.on("before_agent_start")` with pure-function composition
 - **[tool-based-task-tracking-with-handoff-gating.md](./tool-based-task-tracking-with-handoff-gating.md)** — documents the first `tool_result` handler (read output filter) with identical error-isolation pattern
 - **[extracting-optional-pipeline-stages-with-on-demand-command-gating.md](./extracting-optional-pipeline-stages-with-on-demand-command-gating.md)** — documents the command-gating pattern that inspired the staged gating approach
+- **[deterministic-path-classification-guard-for-stage-scoped-tool-calls.md](./deterministic-path-classification-guard-for-stage-scoped-tool-calls.md)** — applies the same pure-module + thin-handler template to a `tool_call` guard; documents the invariant-first precedence and commit-state-after-fallible-step pitfalls
 
 ## Provenance
 

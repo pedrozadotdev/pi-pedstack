@@ -22,6 +22,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Evidence-first review** — auto-assigned reviewers across five axes, autofix loop
 - **Knowledge compounding** — solved problems become searchable solution artifacts
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
+- **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
 - **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
 - **Token-efficient** — ~3,490 tokens new-conversation overhead; progressive loading
 
@@ -215,6 +216,17 @@ When implementation depends on a framework/library API, version-specific behavio
 
 All reviewers evaluate changes across: **correctness, readability, architecture, security, performance.**
 
+### Deterministic stage guard
+
+Stage discipline is not just prompt text. The ce-core extension hooks the `write`/`edit` tools and classifies each target path against the active stage's capability matrix before the write executes. A call that targets a foreign class is blocked with a deterministic reason — for example, a `02-plan` session cannot edit `extensions/` source, and no stage may write `.context/` workflow state directly (it is managed by extension tools).
+
+- Paths classify into 11 classes (brainstorm, plan, review, solution, docs, tests, source, config, deps, workflow-state, unknown).
+- `unknown` paths always pass (fail-open) so third-party or unclassified files are never trapped.
+- The guard fails open on any internal error and reports at most once per session.
+- Set `PEDSTACK_DISABLE_GUARD=1` to bypass the guard entirely.
+
+**Known limitations:** the guard covers only the path-classifiable `write`/`edit` surface — `bash`, redirection, `git`, `sed -i`, `rm`/`mv`/`cp`, subagents, and symlink aliasing bypass it by design. The `config` class is an exact-basename allowlist (`package.json`, `tsconfig.json`, `bunfig.toml`, `.github/`), so other config files (`.eslintrc.json`, `biome.json`, `tsconfig.build.json`) classify as `unknown` and are writable in every stage. Two confirmed but unfixed issues are recorded in the [guard solution card](docs/solutions/workflow/deterministic-path-classification-guard-for-stage-scoped-tool-calls.md): activation can persist the wrong stage on a cancelled navigation (H1), and `.context/**` paths with conflicting basenames escape the always-blocked `workflow-state` rule (M1).
+
 ---
 
 ## 🐴 Ponytail Discipline (YAGNI / Lazy Senior Dev Mode)
@@ -274,10 +286,12 @@ your-project/
 ├── prompts/              # Workflow prompt templates (ped-commit, ped-create-issue, ped-open-pr)
 └── .context/
     └── compound-engineering/
-        ├── checkpoints/   # Breakpoint files
-        ├── handoffs/      # Cross-stage context
-        ├── history/       # Execution history
-        └── checklist.json # Persistent task list
+        ├── checkpoints/       # Breakpoint files
+        ├── handoffs/          # Cross-stage context
+        ├── history/           # Execution history
+        ├── checklist.json     # Persistent task list
+        ├── context-state.json # Current workflow stage
+        └── active-stage.json  # Guard's persisted active stage
 ```
 
 Commit everything to git — these files are the project's traceable memory.
@@ -291,8 +305,8 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 14 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~14,025 |
-| Tests | 359 (1,178 assertions) |
+| TypeScript lines | ~16,167 |
+| Tests | 480 (1,546 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 

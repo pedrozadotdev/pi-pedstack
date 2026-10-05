@@ -71,6 +71,10 @@ mock.module("node:child_process", () => {
 });
 
 import { clearAutoAdvanceCache } from "../extensions/ce-core/utils/auto-advance";
+import {
+	getActiveStage,
+	setActiveStage,
+} from "../extensions/ce-core/utils/active-stage";
 import { resetPedstackState } from "../extensions/ce-core/commands/pedstack";
 import ceCoreExtension from "../extensions/ce-core/index";
 import { createMultiReviewerTool } from "../extensions/ce-core/tools/multi-reviewer";
@@ -586,7 +590,19 @@ describe("auto-advance tool_result wiring", () => {
 		ceCoreExtension(pi as never);
 
 		expect(eventHandlers.get("tool_result")?.length).toBe(3);
+		expect(eventHandlers.get("tool_call")?.length).toBe(1);
 		expect(eventHandlers.get("agent_end")?.length).toBe(1);
+	});
+
+	test("session_shutdown clears the in-memory active stage", async () => {
+		const { pi, eventHandlers, makeEventCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		setActiveStage("03-work");
+
+		const shutdown = eventHandlers.get("session_shutdown")![0];
+		await shutdown({ type: "session_shutdown" }, makeEventCtx());
+
+		expect(getActiveStage()).toBeNull();
 	});
 
 	test("tool count remains 14 (no new tools added)", () => {
