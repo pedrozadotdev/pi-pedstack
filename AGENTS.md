@@ -68,6 +68,7 @@ skills/          # 7 pipeline skills (01-brainstorm, 02-plan, 03-work, 04-review
   references/    # Shared templates and schemas
   rules/         # Coding standards (common + language-specific)
 extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt injection)
+                 # ce-core/jev: inert typed transport for CommandCode headless decisions (no Pi surface, no wiring)
 tests/           # Test files
 docs/            # Documentation, brainstorms, plans, reviews, solutions
 ```
