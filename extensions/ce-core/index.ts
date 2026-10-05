@@ -47,6 +47,12 @@ import {
 	isGatedTransition,
 	getConfirmDialog,
 } from "./utils/auto-advance";
+import {
+	clearActiveStage,
+	getActiveStage,
+	readPersistedActiveStage,
+} from "./utils/active-stage";
+import { evaluateWrite } from "./utils/capability-matrix";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -359,6 +365,13 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		isGated: boolean;
 	} | null = null;
 
+	// ponytail: Operator escape hatch, read once at init. Any read error keeps
+	// the guard enforced (the `!== "1"` comparison cannot throw).
+	const guardDisabled = process.env.PEDSTACK_DISABLE_GUARD === "1";
+	let persistedStageResolved = false;
+	let persistedStage: string | null = null;
+	let guardNotified = false;
+
 	pi.registerTool({
 		name: artifactHelper.name,
 		label: "Artifact Helper",
@@ -645,6 +658,63 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	pi.registerCommand("ped-reload", cmdPedReload(pi));
 	pi.registerCommand("ped-debug", cmdPedDebug(pi));
 
+	// ponytail: Stage capability guard — blocks deterministic forbidden
+	// `write`/`edit` calls before execution. Fail-open on anything it cannot
+	// prove forbidden; docs are blocked in 03-work by this very matrix.
+
+	/** Report a guard failure at most once per extension instance. */
+	function notifyGuardFailureOnce(ctx: ExtensionContext, err: unknown): void {
+		if (guardNotified) return;
+		guardNotified = true;
+		if (ctx.hasUI) {
+			ctx.ui.notify(
+				`Pedstack stage guard failed open: ${
+					err instanceof Error ? err.message : String(err)
+				}`,
+				"warning",
+			);
+		}
+	}
+
+	/** Resolve the active stage from memory, falling back to the persisted file. */
+	async function resolveGuardStage(
+		ctx: ExtensionContext,
+	): Promise<string | null> {
+		const memoryStage = getActiveStage();
+		if (memoryStage !== null) return memoryStage;
+
+		if (!persistedStageResolved) {
+			persistedStage = await readPersistedActiveStage(ctx.cwd);
+			persistedStageResolved = true;
+		}
+		return persistedStage;
+	}
+
+	pi.on("tool_call", async (event, ctx) => {
+		if (guardDisabled) return undefined;
+
+		try {
+			if (event.toolName !== "write" && event.toolName !== "edit") {
+				return undefined;
+			}
+
+			const target = (event.input as { path?: unknown }).path;
+			if (typeof target !== "string" || target.length === 0) {
+				return undefined;
+			}
+
+			const stage = await resolveGuardStage(ctx);
+			const verdict = evaluateWrite(stage, ctx.cwd, target);
+			if (verdict.allow) return undefined;
+
+			return { block: true, reason: verdict.reason };
+		} catch (err) {
+			// ponytail: never let a guard bug block unrelated tool calls.
+			notifyGuardFailureOnce(ctx, err);
+			return undefined;
+		}
+	});
+
 	// Capture skills and inject pending skill path into system prompt
 	pi.on("before_agent_start", async (event) => {
 		if (event.systemPromptOptions?.skills?.length) {
@@ -815,7 +885,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	 * once the session is idle and the final response is visible.
 	 */
 	function queueAutoAdvanceVerdict(
-		verdict: ReturnType<typeof evaluateAutoAdvance>,
+		_verdict: ReturnType<typeof evaluateAutoAdvance>,
 		saveContent: {
 			stagePair: string | null;
 			nextStage: PipelineStageKey | null;
@@ -954,6 +1024,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	pi.on("session_shutdown", async () => {
 		pendingAutoAdvance = null;
 		clearRememberedCommandContext();
+		clearActiveStage();
 		return undefined;
 	});
 

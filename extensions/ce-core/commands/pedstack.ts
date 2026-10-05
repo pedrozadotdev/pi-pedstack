@@ -20,6 +20,11 @@ import {
 	type WorkflowStateResult,
 } from "../tools/workflow-state";
 import { createContextHandoffTool } from "../tools/context-handoff";
+import {
+	setActiveStage,
+	clearActiveStage,
+	persistActiveStage,
+} from "../utils/active-stage";
 
 // ── Skill registry (populated from before_agent_start) ─────────────
 
@@ -105,6 +110,22 @@ export function resetPedstackState(): void {
 	pendingFixIssues = [];
 	pendingAppendContent = null;
 	rememberedCommandContext = null;
+	clearActiveStage();
+}
+
+/**
+ * Activate a stage in memory and best-effort persist it.
+ *
+ * ponytail: persistence must never abort dispatch; the in-memory value is
+ * enough to guard the live session.
+ */
+async function activateStage(repoRoot: string, stage: string): Promise<void> {
+	setActiveStage(stage);
+	try {
+		await persistActiveStage(repoRoot, stage);
+	} catch {
+		// Persistence is best-effort; the in-memory stage still guards this session.
+	}
 }
 
 /** Remember the latest live command context for same-session auto-advance. */
@@ -518,6 +539,7 @@ async function beginStageTransition(
 	entryPrompt?: string,
 ): Promise<boolean> {
 	rememberCommandContext(ctx);
+	await activateStage(ctx.cwd, stageKey);
 
 	const nav = await prepareStageNavigation(ctx);
 	if (!nav) return false;
@@ -646,6 +668,7 @@ export function cmdPedStart(
 			}
 
 			rememberCommandContext(ctx);
+			await activateStage(ctx.cwd, "01-brainstorm");
 			const nav = await prepareStageNavigation(ctx);
 			if (!nav) return;
 
@@ -765,6 +788,7 @@ export function cmdPedFixIssues(
 
 			const nav = await prepareStageNavigation(ctx);
 			if (!nav) return;
+			await activateStage(ctx.cwd, "01-brainstorm");
 			pi.appendEntry("ped-workflow-start", {
 				anchorLeafId: nav.departureLeafId,
 			});

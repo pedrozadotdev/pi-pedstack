@@ -404,6 +404,7 @@ When reviewing PRs touching state-backed tools or output filters:
 - **Related solution:** `docs/solutions/workflow/before-agent-start-pending-state-injection.md` (system prompt injection mechanism)
 - **Related solution:** `docs/solutions/workflow/replacing-implicit-input-interception-with-explicit-commands.md` (command factory pattern)
 - **Related solution:** `docs/solutions/workflow/bulk-api-design-for-model-facing-tools.md` (checklist_add bulk API refinement)
+- **Related solution:** `docs/solutions/workflow/deterministic-path-classification-guard-for-stage-scoped-tool-calls.md` (reuses corrupt-file resilience, backslash normalization, and the high-cyclomatic→predicate-table refactor precedent)
 - **Related solution:** `docs/solutions/testing/child-process-event-listener-mock-for-pi-extension-tests.md` (child process mock pattern for tests)
 - **Source files:**
   - `extensions/ce-core/tools/checklist.ts` — State-backed tools + shared helpers

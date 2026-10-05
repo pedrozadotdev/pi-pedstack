@@ -32,6 +32,7 @@ bun test              # Run all tests
 - **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
 - **NO DIRECT-TO-IMPLEMENTATION BYPASS:** Do NOT skip the initial stages (Brainstorming/Planning) to go straight to code implementation or file editing. Start every new feature, bug fix, or task with the `01-brainstorm` skill.
 - **AUTO-ADVANCE ON SAVE:** 4 of 6 transitions auto-advance; 2 require user authorization (see footnote ¹).
+- **STAGE CAPABILITY GUARD:** The ce-core extension blocks `write`/`edit` calls whose target path falls outside the active stage's capability matrix. `unknown` paths and absent stages fail open; `.context/` workflow state is never writable via `write`/`edit`. Set `PEDSTACK_DISABLE_GUARD=1` to bypass.
 - **🐴 PONYTALL DISCIPLINE:** Before planning or writing any code, apply the 6-rung YAGNI ladder below. The system prompt injects this discipline into `02-plan`, `03-work`, `04-review`, and `04-5-debug` — but you must internalize it yourself.
 
 ## 🐴 Ponytail Discipline (YAGNI / Lazy Senior Dev Mode)
@@ -68,7 +69,9 @@ skills/          # 7 pipeline skills (01-brainstorm, 02-plan, 03-work, 04-review
   references/    # Shared templates and schemas
   rules/         # Coding standards (common + language-specific)
 extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt injection)
-                 # ce-core/jev: inert typed transport for CommandCode headless decisions (no Pi surface, no wiring)
+  ce-core/utils/ # Pure helpers: auto-advance, active-stage store, capability matrix
+  ce-core/tools/ # Registerable Pi tools
+  ce-core/jev/   # Inert typed transport for CommandCode headless decisions (no Pi surface, no wiring)
 tests/           # Test files
 docs/            # Documentation, brainstorms, plans, reviews, solutions
 ```
@@ -91,6 +94,8 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 | `checklist_add` / `checklist_show` / `checklist_del` | Persistent task tracking with handoff gating (bulk add via `descriptions[]`) |
 
 **Handoff gating:** `context_handoff save` blocks cross-stage saves when the checklist is non-empty. The model must complete or delete all pending tasks before advancing to the next stage. Use `checklist_add` (accepts `descriptions: string[]`) when discovering tasks from SKILL.md, rules, or references to avoid dropped tasks.
+
+**Stage guard:** `extensions/ce-core/utils/capability-matrix.ts` is a pure module that classifies a repo-relative path into one of 11 `PathClass` values and decides whether the active stage may write it. `extensions/ce-core/utils/active-stage.ts` tracks the live stage in memory and persists it to `.context/compound-engineering/active-stage.json` (gated on an existing `context-state.json`). The `pi.on("tool_call")` handler in `extensions/ce-core/index.ts` blocks forbidden `write`/`edit` calls before execution and fails open on any error.
 
 ## Code Style
 

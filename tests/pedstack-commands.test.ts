@@ -1,6 +1,7 @@
 import { describe, expect, test, mock, afterEach } from "bun:test";
 import path from "node:path";
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, readFile, rm, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 mock.module("@earendil-works/pi-ai", () => {
 	return {
@@ -75,6 +76,8 @@ import {
 	cmdPedStart,
 	cmdPedNext,
 	cmdPedReload,
+	cmdPedFixIssues,
+	startStageFromRememberedContext,
 	isModelVisible,
 	findPreConversationEntry,
 	findFreshTargetId,
@@ -88,8 +91,12 @@ import {
 	type PipelineStageKey,
 } from "../extensions/ce-core/commands/pedstack";
 import { parseModelRef } from "../extensions/ce-core/utils/parse-model-ref";
+import {
+	clearActiveStage,
+	getActiveStage,
+	setActiveStage,
+} from "../extensions/ce-core/utils/active-stage";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 describe("commands/pedstack: session-traversal helpers", () => {
 	// These helpers are internal to the module but we test them
@@ -229,13 +236,10 @@ describe("commands/pedstack: session-traversal helpers", () => {
 	describe("cmdPedStart", () => {
 		test("with empty prompt notifies warning and does not send message", async () => {
 			const notifications: Array<{ message: string; level: string }> = [];
-			let appended: any = null;
 			let sentMessage: any = null;
 
 			const pi = {
-				appendEntry(type: string, data?: any) {
-					appended = { type, data };
-				},
+				appendEntry(_type: string, _data?: any) {},
 				sendUserMessage(content: any) {
 					sentMessage = content;
 				},
@@ -1179,5 +1183,133 @@ describe("cmdPedReload", () => {
 
 		// Cleanup
 		await rm(testRepo, { recursive: true, force: true }).catch(() => {});
+	});
+});
+
+// ── Active-stage wiring (Unit 3) ───────────────────────────────────
+
+describe("commands/pedstack: active-stage wiring", () => {
+	afterEach(() => {
+		clearActiveStage();
+		resetPedstackState();
+	});
+
+	function makePi() {
+		const appendCalls: Array<{ type: string; data: any }> = [];
+		const sentMessages: Array<{ content: any; opts?: any }> = [];
+
+		const pi = {
+			appendEntry(type: string, data?: any) {
+				appendCalls.push({ type, data });
+			},
+			sendUserMessage(content: any, opts?: any) {
+				sentMessages.push({ content, opts });
+			},
+			setModel: async () => true,
+			setThinkingLevel: () => {},
+			getThinkingLevel: () => "medium",
+		} as any;
+
+		return { pi, appendCalls, sentMessages };
+	}
+
+	function makeCtx(cwd: string) {
+		return {
+			hasUI: false,
+			cwd,
+			sessionManager: {
+				getLeafId: () => "leaf-1",
+				getBranch: () => [
+					{ type: "message", id: "msg-1", parentId: "root-1" } as SessionEntry,
+				],
+			},
+			model: { provider: "anthropic", id: "sonnet" },
+			modelRegistry: { find: () => undefined },
+			ui: { notify: () => {} },
+			navigateTree: async () => ({ cancelled: false }),
+			waitForIdle: async () => {},
+		} as any;
+	}
+
+	async function makeTempRepo(): Promise<string> {
+		return mkdtemp(path.join(tmpdir(), "pi-pedstack-active-stage-"));
+	}
+
+	test("cmdPedStart activates 01-brainstorm in memory and persists it", async () => {
+		const { pi } = makePi();
+		const repo = await makeTempRepo();
+		try {
+			await cmdPedStart(pi).handler("build a CLI", makeCtx(repo));
+
+			expect(getActiveStage()).toBe("01-brainstorm");
+			const raw = await readFile(
+				path.join(
+					repo,
+					".context",
+					"compound-engineering",
+					"active-stage.json",
+				),
+				"utf8",
+			);
+			expect(JSON.parse(raw).activeStage).toBe("01-brainstorm");
+		} finally {
+			await rm(repo, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
+	test("cmdPedFixIssues activates 01-brainstorm", async () => {
+		const { pi } = makePi();
+		const repo = await makeTempRepo();
+		try {
+			await cmdPedFixIssues(pi).handler("#12", makeCtx(repo));
+			expect(getActiveStage()).toBe("01-brainstorm");
+		} finally {
+			await rm(repo, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
+	test("startStageFromRememberedContext activates the dispatched stage", async () => {
+		const { pi } = makePi();
+		const repo = await makeTempRepo();
+		try {
+			await cmdPedStart(pi).handler("build a CLI", makeCtx(repo));
+			await startStageFromRememberedContext(pi, "04-review");
+
+			expect(getActiveStage()).toBe("04-review");
+			const raw = await readFile(
+				path.join(
+					repo,
+					".context",
+					"compound-engineering",
+					"active-stage.json",
+				),
+				"utf8",
+			);
+			expect(JSON.parse(raw).activeStage).toBe("04-review");
+		} finally {
+			await rm(repo, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
+	test("persistence failure does not reject the command", async () => {
+		const { pi } = makePi();
+		const repo = await makeTempRepo();
+		const blockingFile = path.join(repo, "not-a-dir");
+		await writeFile(blockingFile, "x", "utf8");
+		try {
+			// cwd points at a regular file, so `persistActiveStage` cannot mkdir.
+			await expect(
+				cmdPedStart(pi).handler("build a CLI", makeCtx(blockingFile)),
+			).resolves.toBeUndefined();
+			expect(getActiveStage()).toBe("01-brainstorm");
+		} finally {
+			await rm(repo, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
+	test("resetPedstackState clears the active stage", () => {
+		setActiveStage("03-work");
+		resetPedstackState();
+		expect(getActiveStage()).toBeNull();
 	});
 });
