@@ -101,6 +101,35 @@ Run it at the end of `02-plan` and again before implementing in `03-work`.
 - In `04-review`, treat "code matches plan" and "plan matches requirements" as **two** checks. A green suite plus the plan being self-consistent is not evidence for the second.
 - Treat a spec-vs-code divergence as a blocker even when the module is inert, because it becomes real the moment a consumer wires in.
 
+## Recurrence (2026-02-14): field-set reachability and contract-shape drift
+
+The same class of divergence recurred one feature later, in the failure-triage review
+([`2026-02-14-jev-failure-triage.md`](../../reviews/2026-02-14-jev-failure-triage.md)), proving the
+prevention above was not applied even though the earlier card was in `docs/solutions/`.
+
+| Finding | Status | Divergence | Why the diff looked green |
+|---|---|---|---|
+| M1 | Open decision | `TriageSource = "jev" \| "heuristic" \| "skipped"`, but the abstain path returns `null` before persisting, so `source: "skipped"` is **unreachable** — while the plan's failure registry says `Heuristic \| Abstains \| … \| Record (skipped)`. | Tests covered the declared union only by *presence*, never asserted each member is actually written. |
+| M2 | Open decision | Requirement says `escalationSignal` is a versioned object (`v: 1`); `PersistedTriage.escalationSignal` is a `boolean`. | The plan never froze the field's shape, so code-vs-plan matched; the diff was compared to the plan, not the requirement. |
+| M5 | Fixed in autofix | Plan Unit 5 says `details: {...event.details, triage: record}` (all 12 `PersistedTriage` fields); the handler exposed 3. | The handler test asserted only `.category`, so the narrowing was invisible. |
+
+**Root cause:** the requirements↔plan diff checked *type names*, but not (a) **reachability of every union
+member / enum value**, (b) **runtime shape of every persisted or returned field** (object vs primitive vs
+versioned wrapper), or (c) **the field set of a record promised wholesale in the plan**.
+
+**Detection added (extends the checklist above):**
+
+- For every union/enum in a frozen signature, name the code path that writes each member. An unwritten
+  member is a finding even if the type compiles and the branch exists (a `return` before the write path
+  makes the member dead without a type error).
+- For every persisted or returned field, cite the requirement line that defines its **shape**, not just its
+  name. "Boolean now, versioned object when a downstream consumer arrives" is a divergence, not a detail.
+- When the plan says a handler returns `record` / `…` wholesale, assert the full field set in a test, not a
+  single representative field. A narrowed return is a silent contract cut.
+
+This is the implementation-side twin of the type-narrowing variant above; the sibling signal-semantics
+learning from the same review is [`../architecture/keep-degraded-fallbacks-out-of-primary-signal-state.md`](../architecture/keep-degraded-fallbacks-out-of-primary-signal-state.md).
+
 ## Downstream Impact
 
 ### For 02-plan

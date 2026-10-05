@@ -26,6 +26,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
 - **Bash stage guard (shadow by default)** — an indirect-surface guard classifies `bash` commands by effect (writes, deletes, installs, package runners, pipes) and logs verdicts to `.context/compound-engineering/jev-stage-guard.jsonl`; set `PEDSTACK_JEV_STAGE_GUARD=enforce` to block
 - **Stage completion gate** — every stage scores the artifact it produced before its cross-stage handoff. Deterministic per-stage predicates (artifact present, required headings, no placeholders, persisted review findings) block in **both** `shadow` and `enforce`; CommandCode `typesafe/jev` adds a bounded semantic score via the `stage_gate` tool. `PEDSTACK_STAGE_GATE=off|shadow|enforce` (default `shadow`)
+- **Failure triage** — a failed `test`/`typecheck`/`lint`/`build` command during `03-work` or `04-5-debug` gains an inline, bounded advisory TRIAGE block (category, relation to recent change, root-cause clarity) and a record under `.context/compound-engineering/triage/`; Jev degrades to a deterministic heuristic on outage, and triage never auto-fixes or changes the exit status
 - **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
 - **Token-efficient** — ~3,700 tokens new-conversation overhead; progressive loading
 
@@ -342,6 +343,7 @@ your-project/
         ├── checkpoints/       # Breakpoint files
         ├── handoffs/          # Cross-stage context
         ├── history/           # Execution history
+        ├── triage/            # Failure triage records (latest.json + history.jsonl)
         ├── checklist.json     # Persistent task list
         ├── context-state.json # Current workflow stage
         ├── active-stage.json  # Guard's persisted active stage
@@ -361,8 +363,8 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 16 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~28,272 |
-| Tests | 805 (+1 opt-in skip) (2,734 assertions) |
+| TypeScript lines | ~30,041 |
+| Tests | 883 (882 pass + 1 opt-in skip) (2,857 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -380,12 +382,20 @@ save-side guard that `context_handoff save` consults on cross-stage completion s
 `typesafe/jev` decision model (Noul / Choice / Score questions over stdin). It registers
 **no Pi tool** of its own and adds **no dependency**; it is consumed by the stage gate, by
 the solution-ranking engine behind the `solution_search` tool and optional stage
-auto-injection, and by the bash stage guard (`extensions/ce-core/utils/stage-guard-runtime.ts`)
-for the bounded semantic fallback on commands the deterministic classifier cannot prove —
-all through an injected runtime so its validated spawn/parse/error path is shared and
-testable (issue
+auto-injection, by the bash stage guard
+(`extensions/ce-core/utils/stage-guard-runtime.ts`) for the bounded semantic fallback on
+commands the deterministic classifier cannot prove, and by the failure-triage
+`tool_result` handler — all through an injected runtime so its validated
+spawn/parse/error path is shared and testable (issue
 [#2](https://github.com/pedrozadotdev/pi-pedstack/issues/2)).
-[#2](https://github.com/pedrozadotdev/pi-pedstack/issues/2)).
+
+The failure-triage subsystem (`extensions/ce-core/tools/failure-triage.ts`,
+`failure-triage-runner.ts`, `triage-store.ts`) registers no Pi tool either. It runs as a
+fourth `tool_result` handler: on a failed verification command it bounds the failure
+excerpt, classifies it with Jev (2.5 s cap), degrades to a keyword heuristic on outage or
+abstention, annotates the result in place, and persists the record. It is advisory only —
+it never returns `isError`, mutates code, or changes the command's exit status, and it
+fails open on any internal error.
 
 ## Commands
 

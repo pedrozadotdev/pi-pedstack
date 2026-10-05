@@ -89,6 +89,58 @@ function classifyCommand(command: string): CommandPattern | null {
 }
 
 // ============================================================================
+// Verification Command Classification
+// ============================================================================
+
+/** Categories of commands whose failures benefit from failure triage. */
+export type VerificationCategory = "test" | "typecheck" | "lint" | "build"
+
+interface VerificationPattern {
+  pattern: RegExp
+  category: VerificationCategory
+}
+
+// ponytail: ordered first-match list; script-runner forms come first because the
+// script name is a stronger signal than the runner binary.
+const VERIFICATION_PATTERNS: VerificationPattern[] = [
+  // Test — script runners, then standalone runners
+  { pattern: /\b(npm|yarn|pnpm|bun)\s+(?:run\s+)?test(?::[\w.-]+)?\b/, category: "test" },
+  { pattern: /\b(vitest|jest|mocha|pytest)\b/, category: "test" },
+  { pattern: /\b(cargo|go)\s+test\b/, category: "test" },
+  // Typecheck
+  { pattern: /\b(npm|yarn|pnpm|bun)\s+(?:run\s+)?typecheck\b/, category: "typecheck" },
+  { pattern: /\b(tsc|vue-tsc|tsgo)\b/, category: "typecheck" },
+  // Lint
+  { pattern: /\b(npm|yarn|pnpm|bun)\s+(?:run\s+)?lint\b/, category: "lint" },
+  { pattern: /\b(eslint|oxlint|stylelint)\b/, category: "lint" },
+  { pattern: /\bbiome\s+lint\b/, category: "lint" },
+  { pattern: /\bruff\s+check\b/, category: "lint" },
+  // Build
+  { pattern: /\b(npm|yarn|pnpm|bun)\s+(?:run\s+)?build\b/, category: "build" },
+  { pattern: /\b(vite|webpack|rollup|esbuild|parcel)\s+build\b/, category: "build" },
+  { pattern: /\b(cargo|go)\s+build\b/, category: "build" },
+  { pattern: /\bmake\b/, category: "build" },
+]
+
+/**
+ * Classify a shell command as a verification command, or `null` when it is not
+ * one. Only the primary command (before any pipe) is inspected.
+ */
+export function classifyVerificationCommand(
+  command: string,
+): VerificationCategory | null {
+  const primaryCmd = command.trim().split("|")[0].trim()
+
+  for (const { pattern, category } of VERIFICATION_PATTERNS) {
+    if (pattern.test(primaryCmd)) {
+      return category
+    }
+  }
+
+  return null
+}
+
+// ============================================================================
 // Output Filters
 // ============================================================================
 
