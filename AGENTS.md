@@ -71,6 +71,7 @@ skills/          # 7 pipeline skills (01-brainstorm, 02-plan, 03-work, 04-review
 extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt injection)
   ce-core/utils/ # Pure helpers: auto-advance, active-stage store, capability matrix
   ce-core/tools/ # Registerable Pi tools
+  ce-core/jev/   # Inert typed transport for CommandCode headless decisions (no Pi surface, no wiring)
 tests/           # Test files
 docs/            # Documentation, brainstorms, plans, reviews, solutions
 ```
