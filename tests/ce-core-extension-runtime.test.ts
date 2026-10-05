@@ -79,8 +79,23 @@ import { resetPedstackState } from "../extensions/ce-core/commands/pedstack";
 import ceCoreExtension from "../extensions/ce-core/index";
 import { createMultiReviewerTool } from "../extensions/ce-core/tools/multi-reviewer";
 
+const PLAN_FIXTURE = `# Plan: fixture
+
+## Problem summary
+${'Detailed problem context. '.repeat(40)}
+## Implementation units
+
+### Unit 1 — One
+- **Files**
+  - create \`src/a.ts\`
+- **Verification:** \`bun test\`
+
+## Verification
+- RED then GREEN; Strict Review applied.
+`;
+
 describe("ce-core extension runtime registration", () => {
-	test("registers 15 workflow control tools (no subagent tools)", () => {
+	test("registers 16 workflow control tools (no subagent tools)", () => {
 		const registeredNames: string[] = [];
 		const eventHandlers = new Map<string, any[]>();
 		const pi = {
@@ -110,6 +125,7 @@ describe("ce-core extension runtime registration", () => {
 			"session_history",
 			"pattern_extractor",
 			"context_handoff",
+			"stage_gate",
 			"checklist_add",
 			"checklist_show",
 			"checklist_del",
@@ -241,6 +257,12 @@ describe("ce-core extension runtime registration", () => {
 
 		const contextHandoff = definitions.get("context_handoff");
 		const repoRoot = `/tmp/pi-ce-handoff-wrapper-${Date.now()}`;
+		await mkdir(path.join(repoRoot, ".context", "compound-engineering", "stage-reports"), { recursive: true });
+		await writeFile(path.join(repoRoot, ".context", "compound-engineering", "stage-reports", "03-work.md"), "bun test: 10 pass, 0 fail");
+		await mkdir(path.join(repoRoot, ".context", "compound-engineering", "checkpoints"), { recursive: true });
+		await writeFile(path.join(repoRoot, ".context", "compound-engineering", "checkpoints", "c.json"), JSON.stringify({ status: "ok", completedUnits: ["u1"] }));
+		await mkdir(path.join(repoRoot, "docs", "plans"), { recursive: true });
+		await writeFile(path.join(repoRoot, "docs", "plans", "plan.md"), "# Plan\n\nbody");
 
 		const result = await contextHandoff.execute("tool-call-id", {
 			operation: "save",
@@ -280,6 +302,8 @@ describe("ce-core extension runtime registration", () => {
 
 		const contextHandoff = definitions.get("context_handoff");
 		const repoRoot = `/tmp/pi-ce-handoff-validate-wrapper-${Date.now()}`;
+		await mkdir(path.join(repoRoot, "docs", "plans"), { recursive: true });
+		await writeFile(path.join(repoRoot, "docs", "plans", "plan.md"), PLAN_FIXTURE);
 
 		// First save a handoff with recall + continuation evidence
 		await contextHandoff.execute("tool-call-id", {
@@ -606,12 +630,13 @@ describe("auto-advance tool_result wiring", () => {
 		expect(getActiveStage()).toBeNull();
 	});
 
-	test("includes solution_search and stays at least 15 tools", () => {
+	test("registers both stage_gate and solution_search", () => {
 		const { pi, registeredNames } = createPiMock();
 		ceCoreExtension(pi as never);
 
+		expect(registeredNames).toContain("stage_gate");
 		expect(registeredNames).toContain("solution_search");
-		expect(registeredNames.length).toBeGreaterThanOrEqual(15);
+		expect(registeredNames.length).toBe(16);
 	});
 
 	test("does not queue for non-context_handoff tool", async () => {

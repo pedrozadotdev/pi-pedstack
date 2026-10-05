@@ -5,7 +5,7 @@ import {
 	buildStderrExcerpt,
 	mapExitCodeToReason,
 } from "../extensions/ce-core/jev/errors.js";
-import { validateRequest } from "../extensions/ce-core/jev/validate.js";
+import { validateRequest, validateResponse } from "../extensions/ce-core/jev/validate.js";
 import type {
 	JevCreateProcessOptions,
 	JevDecideOptions,
@@ -376,6 +376,156 @@ describe("jev request validation (Unit 2)", () => {
 		) as { questions: Record<string, unknown> };
 
 		expect(Object.keys(parsed.questions)).toEqual(["a"]);
+	});
+});
+
+describe("jev criteria widening (Unit 0: H1)", () => {
+	test("accepts object and array JevContent criteria for choice, score, and noul", () => {
+		const request: JevRequest = {
+			state: "s",
+			questions: {
+				q1: {
+					type: "choice",
+					instructions: "pick",
+					criteria: { a: { label: "A", weight: 1 }, b: ["x", "y"] },
+				},
+				q2: {
+					type: "score",
+					instructions: "rate",
+					criteria: [{ desc: "low" }, "mid", ["high"]],
+				},
+				q3: {
+					type: "noul",
+					instructions: "risky?",
+					criteria: { true: { desc: "yes" }, false: "no" },
+				},
+			},
+		};
+
+		expect(validateRequest(request).body).toBeString();
+	});
+
+	test("still accepts string criteria (regression)", () => {
+		const request: JevRequest = {
+			state: "s",
+			questions: {
+				q1: { type: "choice", instructions: "pick", criteria: { a: "A" } },
+				q2: { type: "score", instructions: "rate", criteria: ["low", "high"] },
+				q3: {
+					type: "noul",
+					instructions: "risky?",
+					criteria: { true: "yes", false: "no" },
+				},
+			},
+		};
+
+		expect(validateRequest(request).body).toBeString();
+	});
+
+	test("still rejects missing criteria for choice and score", () => {
+		expectInvalidRequest(
+			() =>
+				validateRequest({
+					state: "s",
+					questions: { q1: { type: "choice", instructions: "x" } },
+				}),
+			"questions.q1.criteria",
+		);
+		expectInvalidRequest(
+			() =>
+				validateRequest({
+					state: "s",
+					questions: { q1: { type: "score", instructions: "x" } },
+				}),
+			"questions.q1.criteria",
+		);
+	});
+
+	test("still rejects non-content criteria values", () => {
+		expectInvalidRequest(
+			() =>
+				validateRequest({
+					state: "s",
+					questions: {
+						q1: { type: "score", instructions: "x", criteria: [1, 2] },
+					},
+				}),
+			"questions",
+		);
+	});
+
+	test("validateResponse builds legend/probabilities keys from rich score criteria length", () => {
+		const request: JevRequest = {
+			state: "s",
+			questions: {
+				q1: {
+					type: "score",
+					instructions: "rate",
+					criteria: [{ d: "L0" }, "L1", { d: "L2" }],
+				},
+			},
+		};
+		const response = {
+			model: "typesafe/jev",
+			answers: {
+				q1: {
+					type: "score",
+					score: 2,
+					legend: { "0": "a", "1": "b", "2": "c" },
+					probabilities: { "0": 0.05, "1": 0.05, "2": 0.9 },
+					confidence: 0.9,
+				},
+			},
+		};
+
+		const result = validateResponse(response, request);
+		expect(result.answers.q1).toMatchObject({ type: "score", score: 2 });
+	});
+
+	test("validates the 5-level score question the gate engine builds (Unit 5 guard)", () => {
+		const criteria = ["absent", "weak", "partial", "solid", "exemplary"];
+		const request: JevRequest = {
+			state: { stage: "02-plan" },
+			questions: {
+				unit_atomicity: {
+					type: "score",
+					instructions: "rate unit atomicity",
+					criteria,
+				},
+			},
+		};
+		expect(validateRequest(request).body).toBeString();
+
+		const legend: Record<string, string> = {
+			"0": "absent",
+			"1": "weak",
+			"2": "partial",
+			"3": "solid",
+			"4": "exemplary",
+		};
+		const probabilities: Record<string, number> = {
+			"0": 0,
+			"1": 0,
+			"2": 0.1,
+			"3": 0.3,
+			"4": 0.6,
+		};
+		const result = validateResponse(
+			{
+				model: "typesafe/jev",
+				answers: {
+					unit_atomicity: {
+						type: "score",
+						score: 4,
+						legend,
+						probabilities,
+						confidence: 0.8,
+					},
+				},
+			},
+			request,
+		);
+		expect(result.answers.unit_atomicity).toMatchObject({ type: "score", score: 4 });
 	});
 });
 

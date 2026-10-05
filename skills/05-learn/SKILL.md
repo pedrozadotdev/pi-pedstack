@@ -33,5 +33,6 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 8. Mention how future `02-plan` and `04-review` runs should benefit from the new learning.
 9. Include `🧠 Context Status` (health, handoff path, active files, recommendation for `06-docsync`) for workflow progression.
 10. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`. Recommend running `/ped-next` to advance to `06-docsync`.
+11. Before the handoff save, run `stage_gate` for `05-learn`; deterministic failures block the save in both `shadow` and `enforce`.
 
 Before finishing this skill, apply the completion checklist in [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/pipeline-config.md).

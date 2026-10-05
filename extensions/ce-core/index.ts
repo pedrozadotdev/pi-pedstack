@@ -35,6 +35,8 @@ import { createPlanDiffTool } from "./tools/plan-diff";
 import { createSessionHistoryTool } from "./tools/session-history";
 import { createPatternExtractorTool } from "./tools/pattern-extractor";
 import { createContextHandoffTool } from "./tools/context-handoff";
+import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
+import { resolveStageGateMode } from "./stage-gate/store";
 import { filterBashOutput } from "./tools/bash-output-filter";
 import { filterReadOutput } from "./tools/read-output-filter";
 import { COMPACTION_FOCUS_INSTRUCTIONS } from "./tools/compaction-optimizer";
@@ -359,7 +361,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const planDiff = createPlanDiffTool();
 	const sessionHistory = createSessionHistoryTool();
 	const patternExtractor = createPatternExtractorTool();
-	const contextHandoff = createContextHandoffTool();
+	// ponytail: operator-only gate mode, resolved once at init like the guard.
+	const gateMode = resolveStageGateMode(process.env);
+	const contextHandoff = createContextHandoffTool({ gateMode });
+	const stageGate = createStageGateTool({ mode: gateMode });
 	const multiReviewer = createMultiReviewerTool();
 	const checklistAdd = createChecklistAddTool();
 	const checklistShow = createChecklistShowTool();
@@ -594,6 +599,26 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				recentlyAccessedFiles: params.recentlyAccessedFiles,
 				compressionRisk: params.compressionRisk,
 				activeRules: params.activeRules,
+			});
+
+			return {
+				content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+				details: result,
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: stageGate.name,
+		label: "Stage Gate",
+		description:
+			"Score the artifact a stage produced: deterministic evidence checks first, bounded semantic scoring second, and one combined verdict (accept | revise | review | escalate).",
+		parameters: stageGateParams,
+		async execute(_toolCallId, params) {
+			const result = await stageGate.execute({
+				repoRoot: params.repoRoot,
+				stage: params.stage,
+				artifactPaths: params.artifactPaths,
 			});
 
 			return {
@@ -1054,6 +1079,7 @@ export { createPlanDiffTool } from "./tools/plan-diff";
 export { createSessionHistoryTool } from "./tools/session-history";
 export { createPatternExtractorTool } from "./tools/pattern-extractor";
 export { createContextHandoffTool } from "./tools/context-handoff";
+export { createStageGateTool } from "./tools/stage-gate";
 export { createMultiReviewerTool } from "./tools/multi-reviewer";
 export {
 	createChecklistAddTool,

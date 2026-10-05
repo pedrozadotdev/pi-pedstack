@@ -24,8 +24,9 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Semantic solution search** — the `solution_search` tool and stage auto-injection rank `docs/solutions/` cards with a Jev semantic layer over a deterministic, never-weaker fallback; ships shadow-first (inert until `solutionRanking.shadow=false`)
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
+- **Stage completion gate** — every stage scores the artifact it produced before its cross-stage handoff. Deterministic per-stage predicates (artifact present, required headings, no placeholders, persisted review findings) block in **both** `shadow` and `enforce`; CommandCode `typesafe/jev` adds a bounded semantic score via the `stage_gate` tool. `PEDSTACK_STAGE_GATE=off|shadow|enforce` (default `shadow`)
 - **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
-- **Token-efficient** — ~3,600 tokens new-conversation overhead; progressive loading
+- **Token-efficient** — ~3,700 tokens new-conversation overhead; progressive loading
 
 ---
 
@@ -88,7 +89,9 @@ Skill invocation, reload, and model/thinking level switching are handled automat
 | **04-review** | Auto-assigned reviewers, five-axis findings, autofix loop | `review_router`, `multi_reviewer`, `context_handoff`, `solution_search` |
 | **04-5-debug** *(on-demand)* | Debug and fix issues with a 5-phase workflow: Information Gathering, Root Cause Analysis, Implementation, Verification, Report. Enter via `/ped-debug`. | `context_handoff`, `solution_search` |
 | **05-learn** | Pattern extraction → searchable solution artifacts | `pattern_extractor`, `context_handoff`, `artifact_helper`, `solution_search` |
-| **06-docsync** | Synchronize project documentation after completion | `context_handoff` |
+| **06-docsync** | Synchronize project documentation after completion | `context_handoff`, `stage_gate` |
+
+Before a stage saves its completion handoff it runs the `stage_gate` tool on the artifact it produced; see [Stage completion gate](#stage-completion-gate-jev-scoring).
 
 ### Model & Thinking Routing
 
@@ -231,6 +234,19 @@ When implementation depends on a framework/library API, version-specific behavio
 
 All reviewers evaluate changes across: **correctness, readability, architecture, security, performance.**
 
+### Stage completion gate (Jev scoring)
+
+Cross-stage progression is not just "the checklist is empty": the ce-core extension scores the artifact each stage produced before allowing a completion handoff.
+
+- **Deterministic floor (blocks in `shadow` and `enforce`)** — pure per-stage predicates: the canonical artifact is present and non-empty, required headings exist, minimum length, no placeholder tokens, review findings persisted with path:line evidence, checkpoints consistent, verification recorded. A failure means: fix the artifact and re-run `stage_gate`.
+- **Semantic verdict (warns in `shadow`, blocks in `enforce`)** — the `stage_gate` tool sends the artifact and deterministic results to CommandCode `typesafe/jev`, then combines the bounded per-dimension scores with TypeScript into one of `accept | revise | review | escalate`.
+- `context_handoff save` re-runs the deterministic floor on every cross-stage completion save, so a fresh `accept` record can never override a drifted artifact.
+- `PEDSTACK_STAGE_GATE = off | shadow | enforce` (default `shadow`) is read once at extension init.
+
+Records are persisted per stage under `.context/compound-engineering/stage-gates/<stage>.json` with a content hash; `enforce` only accepts a fresh, enforcing `accept`.
+
+**Known limitations:** the semantic scorer needs CommandCode to be available — when the runtime is unavailable the score is marked `jev unavailable` and the deterministic floor still decides. The placeholder predicate currently rejects normal schema notation (`<string>`, `<sha256>`) and the shared `stage-reports/` fallback can resolve the wrong stage's report; both confirmed defects are recorded in the [stage-gate solution card](docs/solutions/workflow/stage-artifact-completion-gate-shadow-first-rubrics.md).
+
 ### Deterministic stage guard
 
 Stage discipline is not just prompt text. The ce-core extension hooks the `write`/`edit` tools and classifies each target path against the active stage's capability matrix before the write executes. A call that targets a foreign class is blocked with a deterministic reason — for example, a `02-plan` session cannot edit `extensions/` source, and no stage may write `.context/` workflow state directly (it is managed by extension tools).
@@ -288,12 +304,12 @@ Only add a blocker in `context_handoff save` when an actual problem blocks progr
 
 ## Token Cost
 
-New conversation overhead: **~3,600 tokens** (1.8% of 200K context).
+New conversation overhead: **~3,700 tokens** (1.9% of 200K context).
 
 | Component | Tokens |
 |-----------|--------|
 | 7 pipeline skill registrations | ~850 |
-| 25 tool schemas (15 CE + 10 built-in) | ~2,750 |
+| 26 tool schemas (16 CE + 10 built-in) | ~2,860 |
 | Skill context (per user invocation) | ~300–1,200 |
 
 Progressive loading: only needed skills loaded on-demand.
@@ -318,7 +334,9 @@ your-project/
         ├── history/           # Execution history
         ├── checklist.json     # Persistent task list
         ├── context-state.json # Current workflow stage
-        └── active-stage.json  # Guard's persisted active stage
+        ├── active-stage.json  # Guard's persisted active stage
+        ├── stage-reports/     # Per-stage completion reports
+        └── stage-gates/       # Stage-gate verdict records (content-hashed)
 ```
 
 Commit everything to git — these files are the project's traceable memory.
@@ -330,10 +348,10 @@ Commit everything to git — these files are the project's traceable memory.
 | Component | Count |
 |-----------|------:|
 | Skills | 7 |
-| Tools | 15 CE + 10 Pi built-in |
+| Tools | 16 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~22,200 |
-| Tests | 636 (+1 opt-in skip) (2,121 assertions) |
+| TypeScript lines | ~25,700 |
+| Tests | 733 (+1 opt-in skip) (2,427 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -341,13 +359,19 @@ Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, R
 
 ## Internal Subsystems
 
-`extensions/ce-core/jev/` is a typed transport and runtime for CommandCode's headless
-`typesafe/jev` decision model (Noul / Choice / Score questions over stdin). It adds **no
-dependency** — it exists so Jev-based features share one validated spawn/parse/error path
-instead of drifting (see issue [#2](https://github.com/pedrozadotdev/pi-pedstack/issues/2)).
-It is now consumed by the solution-ranking engine behind the `solution_search` tool and
-optional stage auto-injection; it registers **no Pi tool of its own** and never becomes the
-worker — Pedstack (TypeScript) remains the policy authority and the main model the worker.
+`extensions/ce-core/stage-gate/` implements the stage completion gate: pure per-stage
+rubrics, repo-confined artifact resolution with a content-hash freshness store, and a
+save-side guard that `context_handoff save` consults on cross-stage completion saves. The
+`stage_gate` tool exposes it to the model (issue
+[#5](https://github.com/pedrozadotdev/pi-pedstack/issues/5)).
+
+`extensions/ce-core/jev/` is the typed transport and runtime for CommandCode's headless
+`typesafe/jev` decision model (Noul / Choice / Score questions over stdin). It registers
+**no Pi tool** of its own and adds **no dependency**; it is consumed by the stage gate and
+by the solution-ranking engine behind the `solution_search` tool and optional stage
+auto-injection, through an injected runtime so its validated spawn/parse/error path is
+shared and testable (issue
+[#2](https://github.com/pedrozadotdev/pi-pedstack/issues/2)).
 
 ## Commands
 
