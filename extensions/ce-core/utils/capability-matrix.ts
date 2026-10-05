@@ -131,6 +131,12 @@ export function classifyPath(repoRoot: string, rawPath: string): PathClass {
 
 /** Ordered first-match classification of a normalized repo-relative path. */
 function classifyRelative(rel: string): PathClass {
+	// Invariant first: workflow state is never writable, so it must not be
+	// shadowed by basename rules (package.json → config, *.test.ts → tests).
+	if (rel === ".context" || rel.startsWith(".context/")) {
+		return "workflow-state";
+	}
+
 	const base = path.posix.basename(rel);
 
 	if (DEPS_BASENAMES.has(base)) return "deps";
@@ -147,7 +153,6 @@ function classifyRelative(rel: string): PathClass {
 		return "source";
 	}
 	if (DOC_BASENAMES.has(base) || rel.startsWith("docs/")) return "docs";
-	if (rel.startsWith(".context/")) return "workflow-state";
 
 	return "unknown";
 }

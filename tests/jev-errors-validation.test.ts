@@ -5,7 +5,7 @@ import {
 	buildStderrExcerpt,
 	mapExitCodeToReason,
 } from "../extensions/ce-core/jev/errors.js";
-import { validateRequest } from "../extensions/ce-core/jev/validate.js";
+import { validateRequest, validateResponse } from "../extensions/ce-core/jev/validate.js";
 import type {
 	JevCreateProcessOptions,
 	JevDecideOptions,
@@ -376,6 +376,99 @@ describe("jev request validation (Unit 2)", () => {
 		) as { questions: Record<string, unknown> };
 
 		expect(Object.keys(parsed.questions)).toEqual(["a"]);
+	});
+});
+
+describe("jev criteria content widening (Unit 0)", () => {
+	test("accepts object and array choice criteria through validateRequest + validateResponse", () => {
+		const request: JevRequest = {
+			state: "s",
+			questions: {
+				q1: {
+					type: "choice",
+					instructions: "pick",
+					criteria: { a: { description: "A" }, b: ["B"] },
+				},
+			},
+		};
+
+		const validated = validateRequest(request);
+		expect(validated.body).toBeString();
+
+		const response = validateResponse(
+			{
+				answers: {
+					q1: {
+						type: "choice",
+						choice: "a",
+						probabilities: { a: 1, b: 0 },
+						confidence: 0.9,
+					},
+				},
+			},
+			validated.request,
+		);
+		expect(response.answers.q1.type).toBe("choice");
+	});
+
+	test("accepts object score criteria entries and object noul criteria", () => {
+		const request: JevRequest = {
+			state: "s",
+			questions: {
+				q1: {
+					type: "score",
+					instructions: "rate",
+					criteria: [{ low: 1 }, ["high"]],
+				},
+				q2: {
+					type: "noul",
+					instructions: "ok?",
+					criteria: { true: { label: "yes" }, false: ["no"] },
+				},
+			},
+		};
+
+		expect(validateRequest(request).body).toBeString();
+
+		const response = validateResponse(
+			{
+				answers: {
+					q1: {
+						type: "score",
+						score: 1,
+						legend: { "0": "low", "1": "high" },
+						probabilities: { "0": 0, "1": 1 },
+						confidence: 0.8,
+					},
+					q2: { type: "noul", noul: 1, confidence: 0.7 },
+				},
+			},
+			request,
+		);
+		expect(response.answers.q2.type).toBe("noul");
+	});
+
+	test("still rejects bare number and boolean criteria values", () => {
+		expectInvalidRequest(
+			() =>
+				validateRequest({
+					state: "s",
+					questions: {
+						q1: { type: "choice", instructions: "x", criteria: { a: 42 } },
+					},
+				}),
+			"questions.q1.criteria",
+		);
+		expectInvalidRequest(
+			() =>
+				validateRequest({
+					state: "s",
+					questions: {
+						q1: { type: "score", instructions: "x", criteria: ["a", true] },
+					},
+				}),
+			"questions.q1.criteria",
+		);
 	});
 });
 

@@ -8,19 +8,19 @@ export type JevQuestionType = "noul" | "choice" | "score";
 export interface JevNoulQuestion {
 	type: "noul";
 	instructions: JevContent;
-	criteria?: { true?: string; false?: string };
+	criteria?: { true?: JevContent; false?: JevContent };
 }
 
 export interface JevChoiceQuestion {
 	type: "choice";
 	instructions: JevContent;
-	criteria: Record<string, string>;
+	criteria: Record<string, JevContent>;
 }
 
 export interface JevScoreQuestion {
 	type: "score";
 	instructions: JevContent;
-	criteria: string[];
+	criteria: JevContent[];
 }
 
 export type JevQuestion =
