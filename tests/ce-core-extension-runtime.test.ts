@@ -80,7 +80,7 @@ import ceCoreExtension from "../extensions/ce-core/index";
 import { createMultiReviewerTool } from "../extensions/ce-core/tools/multi-reviewer";
 
 describe("ce-core extension runtime registration", () => {
-	test("registers 14 workflow control tools (no subagent tools)", () => {
+	test("registers 15 workflow control tools (no subagent tools)", () => {
 		const registeredNames: string[] = [];
 		const eventHandlers = new Map<string, any[]>();
 		const pi = {
@@ -114,6 +114,7 @@ describe("ce-core extension runtime registration", () => {
 			"checklist_show",
 			"checklist_del",
 			"multi_reviewer",
+			"solution_search",
 		]);
 	});
 
@@ -605,26 +606,12 @@ describe("auto-advance tool_result wiring", () => {
 		expect(getActiveStage()).toBeNull();
 	});
 
-	test("tool count remains 14 (no new tools added)", () => {
+	test("includes solution_search and stays at least 15 tools", () => {
 		const { pi, registeredNames } = createPiMock();
 		ceCoreExtension(pi as never);
 
-		expect(registeredNames).toEqual([
-			"artifact_helper",
-			"workflow_state",
-			"review_router",
-			"session_checkpoint",
-			"task_splitter",
-			"brainstorm_dialog",
-			"plan_diff",
-			"session_history",
-			"pattern_extractor",
-			"context_handoff",
-			"checklist_add",
-			"checklist_show",
-			"checklist_del",
-			"multi_reviewer",
-		]);
+		expect(registeredNames).toContain("solution_search");
+		expect(registeredNames.length).toBeGreaterThanOrEqual(15);
 	});
 
 	test("does not queue for non-context_handoff tool", async () => {

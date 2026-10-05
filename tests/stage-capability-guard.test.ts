@@ -108,7 +108,8 @@ describe("stage capability guard", () => {
 
 		expect(eventHandlers.get("tool_call")?.length).toBe(1);
 		expect(eventHandlers.get("tool_result")?.length).toBe(3);
-		expect(registeredNames.length).toBe(14);
+		expect(registeredNames).toContain("solution_search");
+		expect(registeredNames.length).toBeGreaterThanOrEqual(15);
 	});
 
 	test("02-plan blocks a source write with a reason naming stage and path", async () => {

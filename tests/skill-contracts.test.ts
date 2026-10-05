@@ -125,6 +125,16 @@ describe("skill package contracts", () => {
 			path.join(repoRoot, "skills", "02-plan", "references", "handoff.md"),
 			"utf8",
 		);
+		const solutionSearch = readFileSync(
+			path.join(
+				repoRoot,
+				"skills",
+				"02-plan",
+				"references",
+				"solution-search.md",
+			),
+			"utf8",
+		);
 
 		expect(content).toContain("plan_diff");
 		expect(content).toContain("RED");
@@ -134,10 +144,11 @@ describe("skill package contracts", () => {
 		expect(content).toContain("docs/brainstorms/");
 		expect(content).toContain("docs/plans/");
 		expect(content).toContain("contextqmd");
-		// Must include grep-first solution search strategy
-		expect(content).toContain("grep -rl");
+		// Must use the shared solution_search engine, not hand-ranked grep
+		expect(content).toContain("solution_search");
 		expect(content).not.toContain("~/.pi/agent/docs/solutions");
-		expect(content).toContain("frontmatter");
+		expect(solutionSearch).toContain("solution_search");
+		expect(solutionSearch).toContain("status");
 		expect(template).toContain("Implementation units");
 		expect(unitTemplate).toContain("Goal");
 		expect(unitTemplate).toContain("Files");
@@ -287,6 +298,16 @@ describe("skill package contracts", () => {
 			path.join(repoRoot, "skills", "04-review", "references", "handoff.md"),
 			"utf8",
 		);
+		const solutionSearch = readFileSync(
+			path.join(
+				repoRoot,
+				"skills",
+				"04-review",
+				"references",
+				"solution-search.md",
+			),
+			"utf8",
+		);
 
 		expect(content).toContain("diff scope");
 		expect(content).toContain("plan");
@@ -296,10 +317,11 @@ describe("skill package contracts", () => {
 		expect(content).toContain("autofix");
 		expect(content).toContain("YAGNI");
 		expect(content).toContain("technical evaluation");
-		// Must include grep-first solution search strategy
-		expect(content).toContain("grep -rl");
+		// Must use the shared solution_search engine, not hand-ranked grep
+		expect(content).toContain("solution_search");
 		expect(content).not.toContain("~/.pi/agent/docs/solutions");
-		expect(content).toContain("frontmatter");
+		expect(solutionSearch).toContain("solution_search");
+		expect(solutionSearch).toContain("status");
 		expect(findingsSchema).toContain("severity");
 		expect(findingsSchema).toContain("summary");
 		expect(findingsSchema).toContain("evidence");
@@ -312,7 +334,7 @@ describe("skill package contracts", () => {
 		expect(handoff).toContain("autofix");
 	});
 
-	test("05-learn solution-search-strategy defines grep-first retrieval steps", () => {
+	test("05-learn solution-search-strategy defines tool-based overlap retrieval", () => {
 		const strategy = readFileSync(
 			path.join(
 				repoRoot,
@@ -324,11 +346,13 @@ describe("skill package contracts", () => {
 			"utf8",
 		);
 
-		expect(strategy).toContain("grep");
-		expect(strategy).toContain("frontmatter");
+		expect(strategy).toContain("solution_search");
+		expect(strategy).toContain("status");
+		expect(strategy).toContain("overlap");
 		expect(strategy).toContain("severity");
 		expect(strategy).toContain("tags");
 		// Must define project-level solutions search
+		expect(strategy).toContain("docs/solutions");
 		expect(strategy).not.toContain("~/.pi/agent/docs/solutions");
 	});
 

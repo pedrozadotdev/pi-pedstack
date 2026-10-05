@@ -1,6 +1,6 @@
 # Solution Search Strategy
 
-Grep-first, tiered retrieval for `docs/solutions/`. Use this in `02-plan` and `04-review` to find relevant learnings without loading all files.
+Tool-based retrieval for `docs/solutions/`. Use this in `02-plan` and `04-review` to find relevant learnings, and in `05-learn` to check a new card for overlap.
 
 ## Search locations
 
@@ -8,52 +8,39 @@ Grep-first, tiered retrieval for `docs/solutions/`. Use this in `02-plan` and `0
 
 ## Steps
 
-### Step 1: Extract keywords
+### Step 1: Build the query
 
-From the task/feature description, identify:
+From the task/feature description (or the new solution's text in `05-learn`), summarize:
 - **Technical terms**: tool names, framework names, language concepts
 - **Problem indicators**: error symptoms, failure modes, performance issues
 - **Component types**: CLI, extension, skill, test, config
 
-### Step 2: Grep frontmatter fields
+### Step 2: Call `solution_search`
 
-Run parallel grep searches across the project solution directory. Only return file paths, do not load content:
-
-```bash
-# Search tags (most precise)
-grep -rl "tags:.*keyword1" docs/solutions/
-# Search title
-grep -rl "title:.*keyword" docs/solutions/
-# Search applies_when
-grep -rl "applies_when:" docs/solutions/ | head -5
+```text
+solution_search({ query: "<summary>", repoRoot: "<project root>" })
 ```
 
-### Step 3: Narrow if needed
+The engine performs deterministic recall (frontmatter `tags`, `title`, `category`, `applies_when`, plus a bounded body fallback) and semantic ranking. Keyword extraction, `severity`, `tags`, and thresholds stay in TypeScript — do not hand-score.
 
-- **>10 candidates**: Re-run with more specific keyword combinations
-- **<3 candidates**: Broaden search to grep full file content, not just frontmatter
+### Step 3: Read `status`
 
-### Step 4: Read frontmatter only
+| Status     | Meaning                             | Action                                           |
+| ---------- | ----------------------------------- | ------------------------------------------------ |
+| `ok`       | 1–3 cards crossed the relevance bar | Read and apply the returned cards                |
+| `none`     | Nothing crossed the bar             | Proceed; an empty result is valuable information |
+| `degraded` | Semantic ranking unavailable        | Use the `prior`-ranked cards as candidates only  |
 
-For each candidate file, read only the first 15 lines (frontmatter):
+### Step 4: `05-learn` overlap check
 
-```bash
-head -15 <file>
+When writing a new solution, run the same engine in **overlap** mode with the new card's text as the query:
+
+```text
+solution_search({ query: "<new solution text>", repoRoot: "<project root>", mode: "overlap" })
 ```
 
-### Step 5: Score and rank
-
-Match quality:
-- **Strong**: `tags` contain direct keyword matches
-- **Moderate**: `title` or `applies_when` are semantically related
-- **Weak**: No overlap — skip
-
-Sort by `severity` (critical > high > medium > low) when multiple strong matches exist.
-
-### Step 6: Full read top-N
-
-Only fully read the **top 3** ranked files. Summarize relevance in 1-2 sentences per file.
+Overlap questions are `duplicate`, `overlap`, and `conflict`. `conflict` is surfaced separately as a warning — never fold it into the score. If a card duplicates an existing solution, update the existing card instead of adding a new one.
 
 ## When to stop
 
-If no candidates found after Step 2, do **not** fall back to reading all files. Report "No relevant solutions found" and proceed. An empty result is valuable information — it means the area has no prior learnings.
+If `status` is `none`, do **not** fall back to reading all files. Report "No relevant solutions found" and proceed. An empty result means the area has no prior learnings.
