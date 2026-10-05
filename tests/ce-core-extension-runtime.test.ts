@@ -95,7 +95,7 @@ ${'Detailed problem context. '.repeat(40)}
 `;
 
 describe("ce-core extension runtime registration", () => {
-	test("registers 15 workflow control tools (no subagent tools)", () => {
+	test("registers 16 workflow control tools (no subagent tools)", () => {
 		const registeredNames: string[] = [];
 		const eventHandlers = new Map<string, any[]>();
 		const pi = {
@@ -130,6 +130,7 @@ describe("ce-core extension runtime registration", () => {
 			"checklist_show",
 			"checklist_del",
 			"multi_reviewer",
+			"solution_search",
 		]);
 	});
 
@@ -629,27 +630,13 @@ describe("auto-advance tool_result wiring", () => {
 		expect(getActiveStage()).toBeNull();
 	});
 
-	test("tool count remains 15 (stage_gate added)", () => {
+	test("registers both stage_gate and solution_search", () => {
 		const { pi, registeredNames } = createPiMock();
 		ceCoreExtension(pi as never);
 
-		expect(registeredNames).toEqual([
-			"artifact_helper",
-			"workflow_state",
-			"review_router",
-			"session_checkpoint",
-			"task_splitter",
-			"brainstorm_dialog",
-			"plan_diff",
-			"session_history",
-			"pattern_extractor",
-			"context_handoff",
-			"stage_gate",
-			"checklist_add",
-			"checklist_show",
-			"checklist_del",
-			"multi_reviewer",
-		]);
+		expect(registeredNames).toContain("stage_gate");
+		expect(registeredNames).toContain("solution_search");
+		expect(registeredNames.length).toBe(16);
 	});
 
 	test("does not queue for non-context_handoff tool", async () => {

@@ -21,11 +21,12 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **TDD enforcement** — every unit follows RED → GREEN → REFACTOR with hard gates
 - **Evidence-first review** — auto-assigned reviewers across five axes, autofix loop
 - **Knowledge compounding** — solved problems become searchable solution artifacts
+- **Semantic solution search** — the `solution_search` tool and stage auto-injection rank `docs/solutions/` cards with a Jev semantic layer over a deterministic, never-weaker fallback; ships shadow-first (inert until `solutionRanking.shadow=false`)
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
 - **Stage completion gate** — every stage scores the artifact it produced before its cross-stage handoff. Deterministic per-stage predicates (artifact present, required headings, no placeholders, persisted review findings) block in **both** `shadow` and `enforce`; CommandCode `typesafe/jev` adds a bounded semantic score via the `stage_gate` tool. `PEDSTACK_STAGE_GATE=off|shadow|enforce` (default `shadow`)
 - **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
-- **Token-efficient** — ~3,600 tokens new-conversation overhead; progressive loading
+- **Token-efficient** — ~3,700 tokens new-conversation overhead; progressive loading
 
 ---
 
@@ -83,11 +84,11 @@ Skill invocation, reload, and model/thinking level switching are handled automat
 | Skill | What it does | Core tool |
 |-------|-------------|-----------|
 | **01-brainstorm** | Structured multi-round discovery, domain vocabulary persistence | `brainstorm_dialog`, `artifact_helper` |
-| **02-plan** | TDD-gated implementation units, mandatory Strict Review before `multi_reviewer` | `plan_diff`, `context_handoff`, `artifact_helper`, `multi_reviewer` |
+| **02-plan** | TDD-gated implementation units, mandatory Strict Review before `multi_reviewer` | `plan_diff`, `context_handoff`, `artifact_helper`, `multi_reviewer`, `solution_search` |
 | **03-work** | Execution with checkpoint resume, strict TDD | `session_checkpoint`, `task_splitter`, `context_handoff` |
-| **04-review** | Auto-assigned reviewers, five-axis findings, autofix loop | `review_router`, `multi_reviewer`, `context_handoff` |
-| **04-5-debug** *(on-demand)* | Debug and fix issues with a 5-phase workflow: Information Gathering, Root Cause Analysis, Implementation, Verification, Report. Enter via `/ped-debug`. | `context_handoff` |
-| **05-learn** | Pattern extraction → searchable solution artifacts | `pattern_extractor`, `context_handoff`, `artifact_helper` |
+| **04-review** | Auto-assigned reviewers, five-axis findings, autofix loop | `review_router`, `multi_reviewer`, `context_handoff`, `solution_search` |
+| **04-5-debug** *(on-demand)* | Debug and fix issues with a 5-phase workflow: Information Gathering, Root Cause Analysis, Implementation, Verification, Report. Enter via `/ped-debug`. | `context_handoff`, `solution_search` |
+| **05-learn** | Pattern extraction → searchable solution artifacts | `pattern_extractor`, `context_handoff`, `artifact_helper`, `solution_search` |
 | **06-docsync** | Synchronize project documentation after completion | `context_handoff`, `stage_gate` |
 
 Before a stage saves its completion handoff it runs the `stage_gate` tool on the artifact it produced; see [Stage completion gate](#stage-completion-gate-jev-scoring).
@@ -148,6 +149,14 @@ Here is a complete configuration schema example:
   "docsync": {
     "model": "anthropic/claude-sonnet-4-20250514",
     "thinkingLevel": "medium"
+  },
+  "solutionRanking": {
+    "minRank": 0.6,
+    "minConfidence": 0.5,
+    "concurrency": 4,
+    "candidates": 15,
+    "limit": 3,
+    "shadow": true
   }
 }
 ```
@@ -155,6 +164,12 @@ Here is a complete configuration schema example:
 #### Supported Keys and Options
 
 - **`reviewers`**: Stages that support parallel reviews (`brainstorm`, `plan`, `review`, `learn`) can define an array of sub-reviewers. These reviews will run concurrently using subagents on the specified models.
+- **`solutionRanking`**: Tunables for the semantic solution-ranking engine. All keys are optional and fall back to the defaults shown above.
+  - `minRank` / `minConfidence` — a card must reach both (`rank >= minRank` and `confidence >= minConfidence`) to qualify; numbers in `[0, 1]`.
+  - `concurrency` — maximum in-flight Jev decisions (integer `>= 1`).
+  - `candidates` — deterministic recall cap before any Jev call (integer `>= 1`).
+  - `limit` — maximum cards returned/injected (integer `>= 1`).
+  - `shadow` — when `true` (default), auto-injection computes and logs but stays inert. Set to `false` to enforce stage injection. Unknown keys warn and are ignored; invalid values throw.
 
 ### Dynamic Append Instructions
 
@@ -243,6 +258,18 @@ Stage discipline is not just prompt text. The ce-core extension hooks the `write
 
 **Known limitations:** the guard covers only the path-classifiable `write`/`edit` surface — `bash`, redirection, `git`, `sed -i`, `rm`/`mv`/`cp`, subagents, and symlink aliasing bypass it by design. The `config` class is an exact-basename allowlist (`package.json`, `tsconfig.json`, `bunfig.toml`, `.github/`), so other config files (`.eslintrc.json`, `biome.json`, `tsconfig.build.json`) classify as `unknown` and are writable in every stage. Two confirmed but unfixed issues are recorded in the [guard solution card](docs/solutions/workflow/deterministic-path-classification-guard-for-stage-scoped-tool-calls.md): activation can persist the wrong stage on a cancelled navigation (H1), and `.context/**` paths with conflicting basenames escape the always-blocked `workflow-state` rule (M1).
 
+### Semantic solution ranking (shadow-first)
+
+`02-plan`, `04-review`, `04-5-debug`, and `05-learn` can surface prior solution cards automatically. The engine (`extensions/ce-core/utils/solution-ranking.ts`) does deterministic recall first (≤ `candidates` cards), then asks Jev for three atomic `noul` judgments per candidate (`relevance`, `applicability`, `reuse`) and combines them in TypeScript (`rank = relevance × applicability`, `reuse` as a tie-breaker). Policy — thresholds, ordering, and status — never leaves TypeScript.
+
+- **Status contract:** `ok` (1–3 cards crossed the bar), `none` (nothing crossed — an explicit “no prior learning”), or `degraded` (Jev unavailable; the top cards by the deterministic `prior` score are returned).
+- **Never-weaker fallback:** `degraded` ignores the thresholds and returns the pre-Jev deterministic ranking, so a Jev outage never removes context that exists today.
+- **Shadow-first:** `solutionRanking.shadow` defaults to `true`. In shadow mode the engine computes and logs a structured record (query hash, `prior` vs `rank` order, thresholds, drops) but the auto-injection hook returns `undefined` and the turn is unchanged. The `solution_search` tool works in either mode, so the model can opt in while the feature is calibrated.
+- **One handler:** auto-injection is composed inside the single existing `before_agent_start` handler; a second handler or a `{ systemPrompt: event.systemPrompt }` no-op would break extension chaining.
+- **Untrusted content:** injected card bodies are reference data, not instructions.
+
+**Enforcement checkpoint:** before setting `solutionRanking.shadow=false`, resolve the deferred findings (M1 request-cap byte-bounding of every serialized frontmatter field, M2 silent catch, M3 module-singleton reset) recorded in the [shadow-first solution card](docs/solutions/architecture/shadow-first-semantic-ranking-with-deterministic-fallback.md) via a `04-5-debug` pass. None block merge while the feature is inert.
+
 ---
 
 ## 🐴 Ponytail Discipline (YAGNI / Lazy Senior Dev Mode)
@@ -277,12 +304,12 @@ Only add a blocker in `context_handoff save` when an actual problem blocks progr
 
 ## Token Cost
 
-New conversation overhead: **~3,600 tokens** (1.8% of 200K context).
+New conversation overhead: **~3,700 tokens** (1.9% of 200K context).
 
 | Component | Tokens |
 |-----------|--------|
 | 7 pipeline skill registrations | ~850 |
-| 25 tool schemas (15 CE + 10 built-in) | ~2,750 |
+| 26 tool schemas (16 CE + 10 built-in) | ~2,860 |
 | Skill context (per user invocation) | ~300–1,200 |
 
 Progressive loading: only needed skills loaded on-demand.
@@ -291,7 +318,7 @@ Progressive loading: only needed skills loaded on-demand.
 
 ## Generated Structure
 
-```
+```text
 your-project/
 ├── docs/
 │   ├── brainstorms/      # Requirements
@@ -321,10 +348,10 @@ Commit everything to git — these files are the project's traceable memory.
 | Component | Count |
 |-----------|------:|
 | Skills | 7 |
-| Tools | 15 CE + 10 Pi built-in |
+| Tools | 16 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~22,554 |
-| Tests | 644 (+1 opt-in skip) (2,213 assertions) |
+| TypeScript lines | ~25,700 |
+| Tests | 733 (+1 opt-in skip) (2,427 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -338,10 +365,12 @@ save-side guard that `context_handoff save` consults on cross-stage completion s
 `stage_gate` tool exposes it to the model (issue
 [#5](https://github.com/pedrozadotdev/pi-pedstack/issues/5)).
 
-`extensions/ce-core/jev/` is the typed transport for CommandCode's headless `typesafe/jev`
-decision model (Noul / Choice / Score questions over stdin). It registers **no Pi tool** of
-its own and adds **no dependency**; the stage gate calls it through an injected runtime so
-its validated spawn/parse/error path is shared and testable (issue
+`extensions/ce-core/jev/` is the typed transport and runtime for CommandCode's headless
+`typesafe/jev` decision model (Noul / Choice / Score questions over stdin). It registers
+**no Pi tool** of its own and adds **no dependency**; it is consumed by the stage gate and
+by the solution-ranking engine behind the `solution_search` tool and optional stage
+auto-injection, through an injected runtime so its validated spawn/parse/error path is
+shared and testable (issue
 [#2](https://github.com/pedrozadotdev/pi-pedstack/issues/2)).
 
 ## Commands

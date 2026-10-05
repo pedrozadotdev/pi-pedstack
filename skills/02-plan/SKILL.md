@@ -20,9 +20,8 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 2. **Priority:** project-level `{repo-root}/rules/` overrides package defaults
 3. Search `docs/brainstorms/` for relevant requirements first
 4. Run solution search (see `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/02-plan/references/solution-search.md`):
-   - Extract keywords → `grep -rl "tags:.*keyword" docs/solutions/`
-   - Read **frontmatter** only (first 15 lines) of matches → score by severity + tag relevance
-   - Fully read top 3 candidates
+   - Call the **`solution_search`** tool with a task summary → read only the returned top 1–3 cards
+   - Honor `status`: `ok` → apply guidance; `none` → no prior learnings (proceed); `degraded` → prior-ranked candidates only
 5. Run documentation search (see [shared contextqmd docs instruction](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/contextqmd-docs.md)) using the `contextqmd` CLI as the primary tool.
 6. Write plan to `docs/plans/`
 7. If plan exists, use **`plan_diff`** to compare and patch incrementally
@@ -44,7 +43,7 @@ Every unit follows **RED → GREEN → REFACTOR**:
 
 1. **Load context**: consume latest handoff before any broad file reads — `context_handoff load` or read `.context/compound-engineering/handoffs/latest.md`. If found, use `activeFiles` and `blocker` as starting point. If not found, proceed normally (new project).
 2. Read relevant brainstorm from `docs/brainstorms/`
-3. Run solution search (keywords → grep frontmatter → read top 3)
+3. Run solution search (`solution_search` tool → read the returned top 1–3 cards)
 4. Gather repository context
 5. **Source-driven check:** For each unit that involves framework/library APIs, verify the API or pattern against official documentation using the `contextqmd` CLI as the primary tool (see [shared contextqmd docs instruction](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/contextqmd-docs.md)). Check if the library is installed with `contextqmd libraries list --json`, search locally with `contextqmd docs search` (installing first if needed using `contextqmd libraries install <library>`), and read the relevant pages using `contextqmd docs get`. Add a note to the implementation unit detailing the documentation findings and citation sources.
 6. If plan exists: use `plan_diff` `compare` → review with user → `patch`

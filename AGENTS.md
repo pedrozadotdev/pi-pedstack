@@ -70,10 +70,10 @@ skills/          # 7 pipeline skills (01-brainstorm, 02-plan, 03-work, 04-review
   references/    # Shared templates and schemas
   rules/         # Coding standards (common + language-specific)
 extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt injection)
-  ce-core/utils/ # Pure helpers: auto-advance, active-stage store, capability matrix
+  ce-core/utils/ # Pure helpers: auto-advance, active-stage store, capability matrix, solution ranking
   ce-core/tools/ # Registerable Pi tools
   ce-core/stage-gate/ # Stage artifact rubrics, evidence, record store, save-side completion guard
-  ce-core/jev/   # Typed transport for CommandCode headless decisions (no Pi surface; called by the stage gate)
+  ce-core/jev/   # Typed transport + runtime for CommandCode headless decisions (consumed by solution ranking and the stage gate; no direct Pi tool surface)
 tests/           # Test files
 docs/            # Documentation, brainstorms, plans, reviews, solutions
 ```
@@ -95,12 +95,15 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 | `stage_gate` | Score a stage artifact: deterministic checks + bounded Jev scoring → one verdict |
 | `multi_reviewer` | Orchestrate parallel reviewer subagents |
 | `checklist_add` / `checklist_show` / `checklist_del` | Persistent task tracking with handoff gating (bulk add via `descriptions[]`) |
+| `solution_search` | Rank `docs/solutions/**` cards for a query via Jev semantic ranking with a deterministic fallback (`mode: recall` / `overlap`) |
 
 **Handoff gating:** `context_handoff save` blocks cross-stage saves when the checklist is non-empty. The model must complete or delete all pending tasks before advancing to the next stage. Use `checklist_add` (accepts `descriptions: string[]`) when discovering tasks from SKILL.md, rules, or references to avoid dropped tasks.
 
 **Stage guard:** `extensions/ce-core/utils/capability-matrix.ts` is a pure module that classifies a repo-relative path into one of 11 `PathClass` values and decides whether the active stage may write it. `extensions/ce-core/utils/active-stage.ts` tracks the live stage in memory and persists it to `.context/compound-engineering/active-stage.json` (gated on an existing `context-state.json`). The `pi.on("tool_call")` handler in `extensions/ce-core/index.ts` blocks forbidden `write`/`edit` calls before execution and fails open on any error.
 
 **Stage completion gate:** `extensions/ce-core/stage-gate/` scores a stage's produced artifact (via the `stage_gate` tool) and persists content-hashed records under `.context/compound-engineering/stage-gates/`. `context_handoff save` re-runs the deterministic floor on every cross-stage completion save and consults the record for the semantic verdict. Deterministic failures block in both `shadow` and `enforce`; `PEDSTACK_STAGE_GATE` (default `shadow`) is resolved once at init in `extensions/ce-core/stage-gate/store.ts`.
+
+**Solution ranking:** `extensions/ce-core/utils/solution-ranking.ts` exposes `rankSolutions()`, the single entry point used by the `solution_search` tool, by stage auto-injection (`02-plan`, `04-review`, `04-5-debug`, `05-learn`) and by `05-learn` overlap detection. It ships shadow-first: `solutionRanking.shadow` defaults to `true`, so auto-injection computes and logs but stays inert until enforcement is enabled. A Jev outage returns the deterministic `prior` ranking (`status: "degraded"`), never an empty list. Auto-injection is composed inside the single existing `before_agent_start` handler (`extensions/ce-core/utils/solution-wiring.ts`).
 
 ## Code Style
 

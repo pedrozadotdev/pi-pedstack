@@ -22,9 +22,8 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 4. Use **`review_router`** tool to select reviewer personas based on diff metadata. You (the model) must perform the initial reviews yourself by applying each persona's perspective and rules. Do NOT run `multi_reviewer` to delegate or orchestrate parallel reviewer subagents at this stage; instead, apply all reviewer personas yourself to compile the initial findings report, and call `multi_reviewer` (with `stepName: "04-review"`) only after this initial review and pass it to the sub-reviewers to audit and refine the findings.
 5. Read relevant **plan** artifact when exists
 6. Run solution search (see `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/solution-search.md`):
-   - Extract keywords → `grep -rl "tags:.*keyword" docs/solutions/`
-   - Read **frontmatter** only (first 15 lines) of matches → score by severity + tag relevance
-   - Fully read top 3 candidates
+   - Call the **`solution_search`** tool with the change summary → read only the returned top 1–3 cards
+   - Honor `status`: `ok` → apply guidance; `none` → no prior learnings (proceed); `degraded` → prior-ranked candidates only
 7. Produce a compiled review findings report under `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<topic>.md` (using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/findings-schema.md` as the baseline structured findings format and `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/review-findings-template.md` as the document layout).
 8. **Autofixable findings:** apply and re-review (max 3 iterations)
 

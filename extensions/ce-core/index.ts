@@ -22,6 +22,11 @@ import {
 	type PipelineStageKey,
 } from "./commands/pedstack";
 import { buildSystemPromptAppend } from "./commands/prompt-inject";
+import {
+	buildSolutionsAppend,
+	composeSolutionSystemPrompt,
+	registerSolutionSearch,
+} from "./utils/solution-wiring";
 import { createReviewRouterTool } from "./tools/review-router";
 import { createSessionCheckpointTool } from "./tools/session-checkpoint";
 import { createTaskSplitterTool } from "./tools/task-splitter";
@@ -741,7 +746,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	// Capture skills and inject pending skill path into system prompt
-	pi.on("before_agent_start", async (event) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		if (event.systemPromptOptions?.skills?.length) {
 			initSkillRegistry(event.systemPromptOptions.skills);
 		}
@@ -750,11 +755,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		const fixIssues = getAndClearPendingFixIssues();
 
 		const append = buildSystemPromptAppend(skillPath, fixIssues);
-		if (!append) return undefined;
-
-		return {
-			systemPrompt: event.systemPrompt + append,
-		};
+		const solutionsBlock = ctx?.cwd
+			? await buildSolutionsAppend({ repoRoot: ctx.cwd, skillPath })
+			: undefined;
+		return composeSolutionSystemPrompt(event.systemPrompt, append, solutionsBlock);
 	});
 
 	pi.registerTool({
@@ -776,6 +780,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			};
 		},
 	});
+
+	// Semantic solution ranking: model-facing tool + auto-injection (one handler above).
+	registerSolutionSearch(pi);
 
 	// Bash output smart filter — reduces context waste from verbose command output
 	pi.on("tool_result", async (event, _ctx) => {
