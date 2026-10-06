@@ -16,6 +16,7 @@ import {
 	appendDriftLog,
 	clearDriftRecord,
 	driftRecordPath,
+	driftRecordRelPath,
 	driftStatusPath,
 	driftStatusRelPath,
 	getCurrentDriftSessionKey,
@@ -145,6 +146,13 @@ describe("record path and round-trip", () => {
 		expect(driftRecordPath("/repo", "../../etc")).toBe(
 			path.join("/repo", DRIFT_DIR, "etc.json"),
 		);
+	});
+
+	test("derives the repo-relative record path from the stage slug", () => {
+		expect(driftRecordRelPath("02-plan")).toBe(
+			`${DRIFT_DIR}/02-plan.json`,
+		);
+		expect(driftRecordRelPath("")).toBe(`${DRIFT_DIR}/unknown.json`);
 	});
 
 	test("round-trips a written record", async () => {

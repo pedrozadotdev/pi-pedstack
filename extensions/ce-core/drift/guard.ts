@@ -169,6 +169,7 @@ function buildLogRecord(
 	signature: string,
 	outcome: DriftOutcome,
 	jevCalled: boolean,
+	statusWriteFailed: boolean,
 	now: Date,
 ): DriftLogRecord {
 	return {
@@ -186,6 +187,7 @@ function buildLogRecord(
 			confidence: entry.confidence,
 		})),
 		jevCalled,
+		...(statusWriteFailed ? { statusWriteFailed: true } : {}),
 		...(outcome.reason ? { reason: outcome.reason } : {}),
 		...(outcome.correction ? { correction: outcome.correction } : {}),
 	};
@@ -209,12 +211,14 @@ async function writeStatusSafe(
 	repoRoot: string,
 	deps: DriftGuardDeps,
 	status: DriftStatus,
-): Promise<void> {
+): Promise<boolean> {
 	try {
 		if (deps.writeStatus) await deps.writeStatus(repoRoot, status);
 		else await writeDriftStatus(repoRoot, status);
+		return true;
 	} catch {
-		// ponytail: swallowed — the marker is best-effort; the log already ran.
+		// ponytail: swallowed — the marker is best-effort; the log carries the failure.
+		return false;
 	}
 }
 
@@ -283,7 +287,7 @@ async function finishDeterministic(
 	await logOutcome(
 		input.repoRoot,
 		deps,
-		buildLogRecord(stage, sessionKey, deps.mode, signature, outcome, false, now),
+		buildLogRecord(stage, sessionKey, deps.mode, signature, outcome, false, false, now),
 	);
 	return outcomeToResult(outcome, { gated: true, recorded: false });
 }
@@ -423,18 +427,19 @@ async function runJevJudgment(
 		state,
 		context,
 	);
+	let statusWriteFailed = false;
 	if (
 		deps.mode === "enforce" &&
 		(outcome.source === "jev" || outcome.source === "degraded")
 	) {
-		await writeStatusSafe(input.repoRoot, deps, {
+		statusWriteFailed = !(await writeStatusSafe(input.repoRoot, deps, {
 			schema: 1,
 			stage: context.stage,
 			sessionKey: context.sessionKey,
 			thresholdsVersion: THRESHOLDS_VERSION,
 			degraded: outcome.source === "degraded",
 			updatedAt: context.now.toISOString(),
-		});
+		}));
 	}
 	if (
 		deps.mode === "enforce" &&
@@ -454,6 +459,7 @@ async function runJevJudgment(
 			context.signature,
 			outcome,
 			outcome.source === "jev" || outcome.source === "degraded",
+			statusWriteFailed,
 			context.now,
 		),
 	);
@@ -521,6 +527,7 @@ async function evaluateDrift(
 				deps.mode,
 				signature,
 				reused,
+				false,
 				false,
 				now,
 			),

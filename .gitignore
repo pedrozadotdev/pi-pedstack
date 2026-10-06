@@ -6,6 +6,7 @@ coverage/
 .context/
 graphify-out/
 bun.lock
+package-lock.json
 
 # ignore local/runtime-heavy process artifacts, not for public
 docs/brainstorms/

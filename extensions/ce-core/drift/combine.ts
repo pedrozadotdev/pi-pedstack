@@ -35,7 +35,7 @@ export const MILD_REPEAT_LIMIT = 2;
 /** Frozen config/limits (plan "Frozen config/limits"). */
 export const DRIFT_JEV_TIMEOUT_MS = 8_000;
 export const MAX_DRIFT_JEV_CALLS_PER_SESSION = 24;
-export const DRIFT_CLEAR_STREAK = 2;
+export const DRIFT_CLEAR_STREAK: number = 2;
 export const DRIFT_RECORD_TTL_MS = 6 * 60 * 60 * 1_000;
 export const EXCERPT_BYTES = 1_024;
 export const ACTION_TARGET_BYTES = 160;
@@ -251,9 +251,10 @@ export function readAnswers(
 /**
  * Derive `no_drift | mild_drift | strong_drift` plus the next streak counters.
  *
- * `forbidden_work` is a hard signal and is excluded from the soft count so one
- * underlying observation can never count twice. A prior strong verdict blocks
- * until a jev `no_drift` turn writes the stage artifact or reaches the clear
+ * `forbidden_work` is tiered — the mild tier counts once as a soft signal; the
+ * strong tier is excluded from the soft count and forces `strong_drift`.
+ * `progress` is supporting-only and never triggers. A prior strong verdict
+ * blocks until a jev `no_drift` turn writes the stage artifact or reaches the clear
  * streak; a prior strong verdict is never dropped by a degraded/deterministic
  * context (callers pass 0/undefined for those).
  */

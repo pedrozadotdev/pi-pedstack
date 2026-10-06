@@ -299,6 +299,7 @@ When reviewing guards, classifiers, or stage-transition code:
 - [auto-advance-workflow-via-tool-result-interception-with-authorization-gates.md](./auto-advance-workflow-via-tool-result-interception-with-authorization-gates.md) — the pure-verdict-module + thin error-isolated handler template reused here; also the source of the failure-mode-registry → test-map practice.
 - [tool-based-task-tracking-with-handoff-gating.md](./tool-based-task-tracking-with-handoff-gating.md) — corrupt-file resilience for state readers, backslash normalization, and the prior high-cyclomatic→low refactor precedent.
 - [child-process-event-listener-mock-for-pi-extension-tests.md](../testing/child-process-event-listener-mock-for-pi-extension-tests.md) — the fake-`pi` harness used to emit synthetic `write`/`edit` events and assert block/allow.
+- [stage-capability-matrix-defers-a-fix-to-a-later-stage.md](./stage-capability-matrix-defers-a-fix-to-a-later-stage.md) — the planning consequence of the phase separation this guard creates: a fix that spans stages must schedule each deferred unit in its owning stage and carry it in the handoff.
 
 ## Provenance
 
