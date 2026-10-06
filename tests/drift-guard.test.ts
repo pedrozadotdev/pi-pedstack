@@ -74,6 +74,7 @@ interface Harness {
 	statuses: Map<string, DriftStatus>;
 	logs: DriftLogRecord[];
 	calls: { count: number };
+	statusWrites: number;
 	setValues(values: Partial<Record<DriftDimensionId, number>>): void;
 	setError(): void;
 }
@@ -85,6 +86,7 @@ function makeGuard(over: Partial<DriftGuardDeps> = {}): Harness {
 	const statuses = new Map<string, DriftStatus>();
 	const logs: DriftLogRecord[] = [];
 	const calls = { count: 0 };
+	const writes = { count: 0 };
 
 	const jev = createFakeJevRuntime({
 		handler: (request: JevRequest) => {
@@ -117,6 +119,7 @@ function makeGuard(over: Partial<DriftGuardDeps> = {}): Harness {
 			records.delete(stage);
 		},
 		writeStatus: async (_repoRoot: string, status: DriftStatus) => {
+			writes.count += 1;
 			statuses.set(status.stage, status);
 		},
 		logRecord: (_repoRoot: string, record: DriftLogRecord) => {
@@ -132,6 +135,9 @@ function makeGuard(over: Partial<DriftGuardDeps> = {}): Harness {
 		statuses,
 		logs,
 		calls,
+		get statusWrites() {
+			return writes.count;
+		},
 		setValues(next) {
 			values = { ...GOOD, ...next };
 		},
@@ -476,8 +482,10 @@ describe("drift status marker (enforce only)", () => {
 		await reused.guard.evaluate(first);
 		await reused.guard.evaluate(first);
 		expect(reused.statuses.size).toBe(1);
+	});
 
-		const capped = makeGuard({ mode: "shadow" });
+	test("the per-session cap adds no status write in enforce", async () => {
+		const capped = makeGuard();
 		for (let index = 0; index < MAX_DRIFT_JEV_CALLS_PER_SESSION; index++) {
 			await capped.guard.evaluate(
 				turn({
@@ -486,10 +494,17 @@ describe("drift status marker (enforce only)", () => {
 				}),
 			);
 		}
-		await capped.guard.evaluate(
-			turn({ message: assistant([{ type: "text", text: "one more" }]) }),
+		const writesBefore = capped.statusWrites;
+		expect(writesBefore).toBeGreaterThan(0);
+
+		const cappedTurn = await capped.guard.evaluate(
+			turn({
+				message: assistant([{ type: "text", text: "one more" }]),
+				turnIndex: MAX_DRIFT_JEV_CALLS_PER_SESSION,
+			}),
 		);
-		expect(capped.statuses.size).toBe(0);
+		expect(cappedTurn.source).toBe("deterministic");
+		expect(capped.statusWrites).toBe(writesBefore);
 	});
 
 	test("shadow writes neither a status nor a record", async () => {
@@ -510,6 +525,7 @@ describe("drift status marker (enforce only)", () => {
 		const result = await harness.guard.evaluate(turn());
 		expect(result.verdict).toBe("mild_drift");
 		expect(harness.logs).toHaveLength(1);
+		expect(harness.logs.at(-1)?.statusWriteFailed).toBe(true);
 	});
 });
 

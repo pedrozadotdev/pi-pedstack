@@ -168,7 +168,7 @@ outcome that is never acceptable.
 # Prevention
 
 - **In `02-plan`, name the single normative artifact.** If a matrix and a derivation both
-  appear, state which one wins and add a "every row must be reproducible by §<derivation>"
+  appear, state which one wins and add a "every row must be reproducible by the derivation"
   acceptance check.
 - **Freeze the matrix as data the tests import.** No per-row overrides, no "documented
   deviation" comments. The test file should contain the table verbatim.
@@ -220,8 +220,10 @@ outcome that is never acceptable.
 - **Source files:**
   - `extensions/ce-core/drift/combine.ts` — `const repeated = soft === 1 && priorMild >= limit - 1;`
   - `tests/drift-combine.test.ts:242-252` — row 8 rewritten with `in_stage_scope: 0.49` and a "documented deviation" comment
-- **Status:** findings recorded; the normative-artifact decision and the resulting fix are
-  deferred to `04-5-debug` / `03-work`. No source was modified in `05-learn`.
+- **Status:** **resolved 2026-10-06** by follow-up
+  [#33](https://github.com/pedrozadotdev/pi-pedstack/issues/33) — VD-4 confirmed normative,
+  matrix row 8 amended, deviation comment deleted, phrase guard added. See
+  [Resolution (2026-10-06)](#resolution-2026-10-06).
 
 ## 🧠 Context Status
 
@@ -232,7 +234,36 @@ outcome that is never acceptable.
   `docs/plans/2026-10-06-turn-level-stage-drift-corrections-plan.md`,
   `extensions/ce-core/drift/combine.ts`,
   `tests/drift-combine.test.ts`
-- **Recommendation for `06-docsync`:** link this card from the drift feature docs and the
-  requirements/plan follow-up list; the open decision (matrix row 8 vs VD-4) must be
-  resolved by amending whichever artifact loses, and the test's `documented deviation`
-  comment must be removed once the frozen spec is made internally consistent.
+- **Recommendation for `06-docsync`:** link this card from the drift feature docs; the open
+  decision (matrix row 8 vs VD-4) is **closed** — VD-4 won and row 8 was amended (see
+  [Resolution (2026-10-06)](#resolution-2026-10-06)). The follow-up deferral lesson is captured
+  in [`stage-capability-matrix-defers-a-fix-to-a-later-stage.md`](./stage-capability-matrix-defers-a-fix-to-a-later-stage.md).
+
+## Resolution (2026-10-06)
+
+Follow-up [#33](https://github.com/pedrozadotdev/pi-pedstack/issues/33) resolved the conflict this
+card recorded. **VD-4 is normative** for recurrence
+(`repeatedMild = soft === 1 && priorConsecutiveMild >= limit - 1`); frozen matrix row 8 was the
+artifact that lost.
+
+- **Amended row 8** (`tests/drift-combine.test.ts`) is now VD-4-reachable:
+  `in_stage_scope: 0.49`, `forbidden_work: 0.10`, `scope_drift: 0.10`, `progress: 0.10`,
+  `priorMild: 1`, `verdict: "strong_drift"`, `triggered: ["in_stage_scope"]`.
+- **The “documented deviation” comment was deleted.** A regression guard
+  (`the frozen matrix carries no deviation phrasing`) reads the test file’s own source and fails
+  if the phrases reappear; its literal phrases are built with `join` so the guard cannot match
+  itself.
+- **The per-row conformance loop this card asked for now exists.** Every row in the tracked
+  `MATRIX` literal is evaluated through `deriveVerdict` using only row-declared inputs, so an
+  unreachable row fails the suite instead of being quietly rewritten.
+- **Normative-home declaration:** VD-4 in `extensions/ce-core/drift/combine.ts` is the contract;
+  the tracked `MATRIX` literal in `tests/drift-combine.test.ts` is the conformance fixture;
+  **this card is provenance only.** Precedence on disagreement: VD-4 wins, then the matrix.
+- **Why the amendment lived here:** `docs/brainstorms/` and `docs/plans/` are gitignored, so this
+  card was the only tracked copy of row 8 + VD-4 at review time. The tracked matrix literal became
+  the durable home; this note is the decision record.
+
+Verified in the follow-up review (`docs/reviews/2026-10-06-drift-guard-follow-ups-issue-33.md`):
+`bun test` 1545 pass / 0 fail, `bun x tsc --noEmit` clean, deviation-phrase grep clean. The
+cross-stage scheduling lesson this resolution exposed is captured in
+[`stage-capability-matrix-defers-a-fix-to-a-later-stage.md`](./stage-capability-matrix-defers-a-fix-to-a-later-stage.md).

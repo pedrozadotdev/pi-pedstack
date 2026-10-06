@@ -6,8 +6,9 @@ import { evaluateCompletionGate } from "../stage-gate/guard";
 import { isCompletionSave } from "../stage-gate/store";
 import type { StageGateMode } from "../stage-gate/types";
 import { THRESHOLDS_VERSION } from "../handoff-readiness/combine";
+import { DRIFT_CLEAR_STREAK } from "../drift/combine";
 import {
-	DRIFT_DIR,
+	driftRecordRelPath,
 	driftStatusRelPath,
 	isDriftRecordFresh,
 	isDriftStatusFresh,
@@ -637,10 +638,6 @@ interface DriftRun {
 	advice?: ContextHandoffDriftAdvice;
 }
 
-function driftRecordRelPath(stage: string): string {
-	return `${DRIFT_DIR}/${normalizeSlug(stage) || "unknown"}.json`;
-}
-
 function driftAdvice(
 	record: DriftRecord,
 	fresh: boolean,
@@ -662,7 +659,7 @@ function strongDriftBlocker(record: DriftRecord): string {
 	return (
 		`Cannot save cross-stage handoff: stage "${record.stage}" has unresolved ` +
 		`strong drift: ${dims}. ${reason}` +
-		`Do in-scope work for 2 turns to clear, delete ` +
+		`Do in-scope work for ${DRIFT_CLEAR_STREAK} turn${DRIFT_CLEAR_STREAK === 1 ? "" : "s"} to clear, delete ` +
 		`${driftRecordRelPath(record.stage)} to clear, or set ` +
 		`PEDSTACK_DRIFT_GUARD=off (restart required).`
 	);
@@ -670,8 +667,8 @@ function strongDriftBlocker(record: DriftRecord): string {
 
 function degradedDriftBlocker(stage: string): string {
 	return (
-		`Cannot save cross-stage handoff: drift status is unknown for stage ` +
-		`"${stage}" (semantic drift layer degraded) and ` +
+		`Cannot save cross-stage handoff: drift status for stage ` +
+		`"${stage}" is degraded (the last evaluated turn failed) and ` +
 		`PEDSTACK_DRIFT_GUARD_FAILCLOSED=1. Re-run in-scope work, delete ` +
 		`${driftStatusRelPath(stage)} to clear, or set PEDSTACK_DRIFT_GUARD=off ` +
 		`(restart required).`
@@ -706,6 +703,22 @@ async function readDriftStatusSafe(
 	}
 }
 
+/** FC-2: block a completion save only on a fresh degraded status marker. */
+async function blockedByDegradedStatus(
+	drift: ContextHandoffDriftOptions,
+	repoRoot: string,
+	stage: string,
+	sessionKey: string,
+	now: Date,
+): Promise<boolean> {
+	if (!drift.failClosed) return false;
+	const status = await readDriftStatusSafe(drift, repoRoot, stage);
+	return (
+		status?.degraded === true &&
+		isDriftStatusFresh(status, stage, sessionKey, now)
+	);
+}
+
 /**
  * AD-5 completion rule (FC-1..FC-3). Off/same-stage are not gated; shadow warns
  * only; enforce blocks a fresh `jev` strong record (FC-1) and, with
@@ -736,18 +749,20 @@ async function runDriftCompletion(
 				advice,
 			};
 		}
-		if (drift.failClosed) {
-			const status = await readDriftStatusSafe(drift, repoRoot, currentStage);
-			if (
-				status?.degraded === true &&
-				isDriftStatusFresh(status, currentStage, sessionKey, now)
-			) {
-				return {
-					blocked: true,
-					blocker: degradedDriftBlocker(currentStage),
-					advice,
-				};
-			}
+		if (
+			await blockedByDegradedStatus(
+				drift,
+				repoRoot,
+				currentStage,
+				sessionKey,
+				now,
+			)
+		) {
+			return {
+				blocked: true,
+				blocker: degradedDriftBlocker(currentStage),
+				advice,
+			};
 		}
 		return { blocked: false, advice };
 	}

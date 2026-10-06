@@ -5,7 +5,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DRIFT_RECORD_TTL_MS, THRESHOLDS_VERSION } from "../extensions/ce-core/drift/combine.js";
-import type { DriftRecord, DriftStatus } from "../extensions/ce-core/drift/store.js";
+import { createDriftGuard } from "../extensions/ce-core/drift/guard.js";
+import {
+	readDriftStatus,
+	type DriftRecord,
+	type DriftStatus,
+} from "../extensions/ce-core/drift/store.js";
+import { createFakeJevRuntime } from "../extensions/ce-core/jev/runtime.js";
 import {
 	createContextHandoffTool,
 	type ContextHandoffDriftOptions,
@@ -62,8 +68,7 @@ function makeOptions(
 	};
 }
 
-function saveInput(over: Partial<ContextHandoffInput> = {}): ContextHandoffInput {
-	return {
+function saveInput(over: Partial<ContextHandoffInput> = {}): ContextHandoffInput {	return {
 		operation: "save",
 		repoRoot: root,
 		currentStage: STAGE,
@@ -81,6 +86,11 @@ function handoffWritten(): boolean {
 	return existsSync(
 		path.join(root, ".context", "compound-engineering", "handoffs", "latest.md"),
 	);
+}
+
+// ponytail: the guard only reads `role`/`content` from the turn message.
+function assistantMessage(text: string): any {
+	return { role: "assistant", content: [{ type: "text", text }] };
 }
 
 beforeEach(async () => {
@@ -199,6 +209,49 @@ describe("save gating", () => {
 		expect(handoffWritten()).toBe(true);
 	});
 
+	test("a failed status write leaves no marker, so FAILCLOSED=1 stays fail-open", async () => {
+		// Cross-component (finding 6): the guard swallows a failed status write
+		// and persists no marker, so the handoff save reads no degraded status
+		// and allows the completion even with FAILCLOSED=1.
+		const jev = createFakeJevRuntime({
+			handler: () => {
+				throw new Error("jev unavailable");
+			},
+		});
+		const guard = createDriftGuard({
+			mode: "enforce",
+			failClosed: true,
+			sessionKey: () => SESSION,
+			createJev: () => jev,
+			now: () => NOW,
+			writeStatus: () => {
+				throw new Error("disk full");
+			},
+			logRecord: () => {},
+		});
+		const evaluated = await guard.evaluate({
+			repoRoot: root,
+			stage: STAGE,
+			message: assistantMessage("Working the plan."),
+			toolResults: [],
+			turnIndex: 1,
+		});
+		expect(evaluated.source).toBe("degraded");
+		expect(await readDriftStatus(root, STAGE)).toBeNull();
+
+		const tool = createContextHandoffTool({
+			drift: {
+				mode: "enforce",
+				failClosed: true,
+				sessionKey: () => SESSION,
+				now: () => NOW,
+			},
+		});
+		const result = await tool.execute(saveInput());
+		expect(result.blocker).toBeUndefined();
+		expect(handoffWritten()).toBe(true);
+	});
+
 	test("enforce + failClosed blocks a fresh degraded status", async () => {
 		const tool = createContextHandoffTool({
 			drift: makeOptions({
@@ -207,7 +260,7 @@ describe("save gating", () => {
 			}),
 		});
 		const result = await tool.execute(saveInput());
-		expect(result.blocker).toContain("drift status is unknown");
+		expect(result.blocker).toContain("is degraded");
 		expect(result.blocker).toContain("02-plan.status.json");
 		expect(result.blocker).toContain("PEDSTACK_DRIFT_GUARD_FAILCLOSED=1");
 		expect(handoffWritten()).toBe(false);

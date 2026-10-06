@@ -6,6 +6,7 @@
 // never from the production constants; the only constant import used for
 // assertions is `DRIFT_QUESTION_IDS` (ask order).
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import * as combine from "../extensions/ce-core/drift/combine.js";
 import {
 	ACTION_REASON_BYTES,
@@ -239,9 +240,6 @@ describe("deriveVerdict — explicit frozen matrix (spec literals)", () => {
 			triggered: ["in_stage_scope", "forbidden_work"],
 		},
 		{
-			// Matrix row 8 lists all-in-scope values with `priorMild=1`; VD-4
-			// requires `soft == 1`, so the recurrence row carries the soft
-			// trigger it depends on (documented deviation, see plan row 8).
 			name: "row 8: one soft signal with a prior mild → strong (repeated mild)",
 			values: {
 				in_stage_scope: 0.49,
@@ -267,6 +265,12 @@ describe("deriveVerdict — explicit frozen matrix (spec literals)", () => {
 			});
 		});
 	}
+
+	test("the frozen matrix carries no deviation phrasing", () => {
+		const source = readFileSync(new URL(import.meta.url), "utf8");
+		expect(source).not.toContain(["documented", "deviation"].join(" "));
+		expect(source).not.toContain(["see", "plan", "row"].join(" "));
+	});
 });
 
 describe("deriveVerdict — threshold boundaries", () => {

@@ -49,6 +49,7 @@ export interface DriftLogRecord {
 	triggered: DriftDimensionId[];
 	dimensions: { id: DriftDimensionId; value: number; confidence: number }[];
 	jevCalled: boolean;
+	statusWriteFailed?: boolean;
 	reason?: string;
 	correction?: string;
 }
@@ -78,8 +79,13 @@ export function resolveDriftFailClosed(
 }
 
 export function driftRecordPath(repoRoot: string, stage: string): string {
+	return path.join(repoRoot, driftRecordRelPath(stage));
+}
+
+/** Repo-relative record path for operator-facing messages. */
+export function driftRecordRelPath(stage: string): string {
 	const slug = normalizeSlug(stage) || "unknown";
-	return path.join(repoRoot, DRIFT_DIR, `${slug}.json`);
+	return `${DRIFT_DIR}/${slug}.json`;
 }
 
 /**
