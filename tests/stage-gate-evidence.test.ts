@@ -207,17 +207,61 @@ describe("stage gate evidence (Unit 2)", () => {
 });
 
 describe("stage gate evidence — prior gate action (Unit 4)", () => {
-	test("defaults priorGate to null and passes through an explicit value", async () => {
-		const defaulted = await gatherEvidence({ repoRoot: root, stage: "04-review" });
-		expect(defaulted.priorGate).toBeNull();
+test("defaults priorGate to null and passes through an explicit value", async () => {
+const defaulted = await gatherEvidence({ repoRoot: root, stage: "04-review" });
+expect(defaulted.priorGate).toBeNull();
 
-		const passed = await gatherEvidence({
-			repoRoot: root,
-			stage: "04-review",
-			priorGate: { verdict: "review", action: "review" },
-		});
-		expect(passed.priorGate).toEqual({ verdict: "review", action: "review" });
-	});
+const passed = await gatherEvidence({
+repoRoot: root,
+stage: "04-review",
+priorGate: {
+verdict: "review",
+action: "review",
+updatedAt: "2026-10-06T10:00:00.000Z",
+},
+});
+expect(passed.priorGate).toEqual({
+verdict: "review",
+action: "review",
+updatedAt: "2026-10-06T10:00:00.000Z",
+});
+});
+});
+describe("stage gate evidence — findings observedAt (Unit 5)", () => {
+test("sets observedAt from generatedAt when present", async () => {
+await write(
+`${CONTEXT}/review-findings/a-04-review.json`,
+JSON.stringify({
+count: 0,
+findings: [],
+generatedAt: "2026-10-06T10:00:00.000Z",
+}),
+);
+const evidence = await gatherEvidence({ repoRoot: root, stage: "04-review" });
+expect(evidence.reviewFindings[0].observedAt).toBe(
+"2026-10-06T10:00:00.000Z",
+);
+});
+
+test("falls back to file mtime when generatedAt is absent or invalid", async () => {
+const abs = await write(
+`${CONTEXT}/review-findings/b-04-review.json`,
+JSON.stringify({ count: 0, findings: [] }),
+);
+const stat = await fs.stat(abs);
+const evidence = await gatherEvidence({ repoRoot: root, stage: "04-review" });
+expect(evidence.reviewFindings[0].observedAt).toBe(stat.mtime.toISOString());
+
+await write(
+`${CONTEXT}/review-findings/b-04-review.json`,
+JSON.stringify({ count: 0, findings: [], generatedAt: "not-a-date" }),
+);
+const stat2 = await fs.stat(abs);
+const evidence2 = await gatherEvidence({ repoRoot: root, stage: "04-review" });
+expect(evidence2.reviewFindings[0].observedAt).toBe(
+stat2.mtime.toISOString(),
+);
+});
 });
 
 async function sha256String(value: string): Promise<string> {

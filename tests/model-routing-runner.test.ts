@@ -26,6 +26,14 @@ function writeStageGate(
 	stage: string,
 	attempt: Record<string, unknown>,
 ): void {
+	writeStageGateAttempts(repoRoot, stage, [attempt]);
+}
+
+function writeStageGateAttempts(
+	repoRoot: string,
+	stage: string,
+	attempts: Array<Record<string, unknown>>,
+): void {
 	const file = path.join(
 		repoRoot,
 		".context",
@@ -34,7 +42,7 @@ function writeStageGate(
 		`${stage}.json`,
 	);
 	mkdirSync(path.dirname(file), { recursive: true });
-	writeFileSync(file, JSON.stringify({ stage, attempts: [attempt] }), "utf8");
+	writeFileSync(file, JSON.stringify({ stage, attempts }), "utf8");
 }
 
 function routingHandler(
@@ -144,6 +152,28 @@ describe("resolveStageRouting — enforce mode", () => {
 		expect(record?.role).toBe("sota");
 		expect(record?.escalations).toBe(1);
 		expect(record?.attempts).toBe(0);
+		expect(record?.revisions).toBe(0);
+		expect(record?.reviews).toBe(0);
+	});
+
+	test("persists revision and review counters derived from retained attempts", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
+		writeStageGateAttempts(repo, "03-work", [
+			{ verdict: "revise" },
+			{ verdict: "review" },
+			{ verdict: "accept" },
+		]);
+		const jev = createFakeJevRuntime({
+			handler: routingHandler({ value: 0.1, confidence: 0.9 }),
+		});
+
+		await resolveStageRouting({ repoRoot: repo, stage: "03-work", jev });
+
+		const record = await readRoutingRecord(repo, "03-work");
+		expect(record?.attempts).toBe(3);
+		expect(record?.revisions).toBe(1);
+		expect(record?.reviews).toBe(1);
 	});
 
 	test("non-qualifying Jev applies the default role", async () => {

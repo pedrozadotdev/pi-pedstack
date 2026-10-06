@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	MAX_INDEPENDENT_REVIEW,
 	collectExecutionModels,
+	filterIndependentReviewers,
 	hasIndependentReviewer,
 	resolveReviewAction,
 } from "../extensions/ce-core/review/policy.js";
@@ -147,5 +148,42 @@ describe("review policy — reviewer availability (Unit 1)", () => {
 
 	test("is false with no reviewer config at all", () => {
 		expect(hasIndependentReviewer(null, "plan")).toBe(false);
+	});
+});
+
+describe("review policy — explicit reviewer independence (Unit 3)", () => {
+	test("drops explicit reviewers that collide with an execution model", () => {
+		const config = {
+			plan: {
+				model: "stage/plan",
+				reviewers: [{ model: "stage/plan" }, { model: "explicit/one" }],
+			},
+		} as PiPedstackConfig;
+		const { reviewers, dropped } = filterIndependentReviewers(
+			config.plan?.reviewers ?? [],
+			config,
+			"plan",
+		);
+		expect(reviewers.map((reviewer) => reviewer.model)).toEqual([
+			"explicit/one",
+		]);
+		expect(dropped).toEqual(["stage/plan"]);
+	});
+
+	test("hasIndependentReviewer ignores a fully colliding explicit list", () => {
+		const config = {
+			plan: { model: "stage/plan", reviewers: [{ model: "stage/plan" }] },
+		} as PiPedstackConfig;
+		expect(hasIndependentReviewer(config, "plan")).toBe(false);
+	});
+
+	test("hasIndependentReviewer is true when one explicit reviewer survives", () => {
+		const config = {
+			plan: {
+				model: "stage/plan",
+				reviewers: [{ model: "stage/plan" }, { model: "explicit/one" }],
+			},
+		} as PiPedstackConfig;
+		expect(hasIndependentReviewer(config, "plan")).toBe(true);
 	});
 });

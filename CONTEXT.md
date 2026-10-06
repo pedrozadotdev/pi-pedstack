@@ -60,9 +60,11 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Execution role** — the role actually applied to a stage turn: `default | sota` only.
   `review` is never an execution target.
 - **Routing decision** — the persisted `{ role, reason, source, scores, weighted, confidence,
-  attempts, escalations }` produced at stage entry. `reason` is one of
+  attempts, escalations, revisions, reviews }` produced at stage entry. `reason` is one of
   `override | gate_escalate | jev | budget_exhausted | fallback`; `source` is one of
-  `override | deterministic | jev | budget | fallback`.
+  `override | deterministic | jev | budget | fallback`. `revisions`/`reviews` count the
+  retained stage-gate attempts with those verdicts (bounded by the stage-gate
+  `ATTEMPT_CAP = 3`); a legacy record without them reads as `0`.
 - **Deterministic escalation** — a `sota` choice justified by the newest stage-gate
   `escalate` verdict, independent of Jev; it short-circuits any Jev call.
 - **Escalation budget** — `routing.maxEscalationsPerStage` (default 1). A Jev judgment that
@@ -70,7 +72,36 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   never `fallback`, so a spend cap is distinguishable from an outage.
 - **Shadow-first routing** — `routing.shadow` defaults `true`: the decision is computed and
   persisted while the legacy per-stage model is still applied. Routing runs at all only when
-  a `models` or `routing` block exists.
+  a `models` or `routing` block exists. Promotion to `enforce` is gated on the documented
+  README criteria (Model roles → Promotion to enforce) and measured from
+  `.context/compound-engineering/routing/*.json`; the flip is reversible.
+- **Role migration plan** — the pure `buildRoleMigration` result
+  (`extensions/ce-core/utils/role-migration.ts`): `migratable | not_migratable | noop`, with
+  `distinctModels`, the resolved `roles`, the `foldedStages`, and a full `nextConfig` that is
+  deep-equal to the input unless `migratable`. More than three distinct per-stage `model`
+  values is `not_migratable`. The CLI (`bun run migrate:roles`) is dry-run-first and writes
+  only with `--write` on a lossless plan.
+
+## Conditional review loop (#7)
+
+- **Review action** — the bounded `ReviewAction` (`none | revise | review | escalate`) the
+  `stage_gate` derives in TypeScript from the verdict, the retained budget, and reviewer
+  availability: `accept → none`, `revise → revise`, `escalate → escalate`,
+  `review → review` (one reviewer) or `→ escalate` when the budget is spent or no
+  independent reviewer resolves.
+- **Review budget** — `MAX_INDEPENDENT_REVIEW = 1`: at most one independent review per stage
+  loop, counted from the retained prior attempts whose verdict is `review` since the newest
+  `accept`. A second `review` maps to `escalate`.
+- **Independent reviewer** — a reviewer whose model differs from every execution-model writer
+  (`models.default`, `models.sota`, and the per-stage `config[<stage>].model`; the union
+  enumerated by `collectExecutionModels`). Explicit `reviewers[]` entries that collide are
+  dropped with a warning (`filterIndependentReviewers`); a stage with no surviving
+  independent reviewer maps `review → escalate` with a reason, so an unconfigured operator
+  cannot deadlock.
+- **Findings freshness** — a findings sidecar satisfies a `review` demand only when its
+  `observedAt` (`generatedAt`, else the file mtime) is on or after the demanding gate
+  record's `updatedAt`. A sidecar predating the demand is stale and contributes no review
+  demand; a well-formed `count: 0` sidecar still satisfies a fresh demand.
 
 ## Semantic file scouting (#14)
 

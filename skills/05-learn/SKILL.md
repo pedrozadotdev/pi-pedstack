@@ -34,6 +34,7 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
     - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
     - `review` → invoke **`multi_reviewer`** with `stepName: "05-learn"` and `mode: "single"` to review the newly written or updated solution card (the solution artifact), then re-run `stage_gate`.
     - `escalate` → do not loop; proceed to escalated execution.
+    A missing `action` (unknown stage or a tool regression) is treated as `none`; advance.
     Use `mode: "deep"` only on an explicit user request.
 8. Mention how future `02-plan` and `04-review` runs should benefit from the new learning.
 9. Include `🧠 Context Status` (health, handoff path, active files, recommendation for `06-docsync`) for workflow progression.

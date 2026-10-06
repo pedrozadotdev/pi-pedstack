@@ -33,9 +33,21 @@ function check(
  * Shared conditional findings predicate (Unit 4). A matching sidecar is
  * malformed when its `count` does not equal `findings.length`; a malformed
  * sidecar always fails. A sidecar is required only when the prior fresh gate
- * action demanded `review`; a well-formed zero-finding sidecar passes, so a
- * clean review is never a deadlock.
+ * action demanded `review`, and it must have been observed at or after the
+ * demanding record's `updatedAt` (Unit 5). A well-formed zero-finding sidecar
+ * that satisfies freshness passes, so a clean review is never a deadlock.
  */
+function findingsObservedAtOrAfter(
+	file: ReviewFindingsFile,
+	updatedAt: string,
+): boolean {
+	if (typeof file.observedAt !== "string") return false;
+	const observed = Date.parse(file.observedAt);
+	const demand = Date.parse(updatedAt);
+	if (Number.isNaN(observed) || Number.isNaN(demand)) return false;
+	return observed >= demand;
+}
+
 function findingsPersisted(
 	id: string,
 	matches: (file: ReviewFindingsFile) => boolean,
@@ -56,9 +68,17 @@ function findingsPersisted(
 				? fail("prior gate action 'review' requires a persisted findings file")
 				: pass("no independent review demanded by the prior gate action");
 		}
-		return required
-			? pass(`${files.length} findings file(s) satisfy the prior review demand`)
-			: pass(`${files.length} findings file(s) persisted`);
+		if (!required) return pass(`${files.length} findings file(s) persisted`);
+		const demandAt = e.priorGate?.updatedAt;
+		const fresh =
+			typeof demandAt === "string"
+				? files.filter((f) => findingsObservedAtOrAfter(f, demandAt))
+				: [];
+		return fresh.length > 0
+			? pass(`${fresh.length} findings file(s) satisfy the prior review demand`)
+			: fail(
+					"prior gate action 'review' requires a findings file observed at or after the gate record (freshness)",
+				);
 	});
 }
 

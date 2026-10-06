@@ -100,6 +100,7 @@ Stop and ask instead of guessing when: requirements conflict, success criteria u
     - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
     - `review` → invoke **`multi_reviewer`** with `stepName: "01-brainstorm"` and `mode: "single"`, then re-run `stage_gate`.
     - `escalate` → do not loop; proceed to escalated execution.
+    A missing `action` (unknown stage or a tool regression) is treated as `none`; advance.
     Use `mode: "deep"` only on an explicit user request.
 12. Get explicit user approval
 13. Handoff to `02-plan` using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/01-brainstorm/references/handoff.md`

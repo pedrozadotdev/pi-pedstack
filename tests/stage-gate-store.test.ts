@@ -11,6 +11,7 @@ import {
 	isRecordFresh,
 	readAcceptRecord,
 	readLatestRecord,
+	resolvePriorGate,
 	resolveStageGateMode,
 	stageGatePath,
 } from "../extensions/ce-core/stage-gate/store.js";
@@ -119,6 +120,32 @@ describe("stage gate store (Unit 4)", () => {
 			reviewerCount: 0,
 			reason: "budget exhausted",
 		});
+	});
+
+	test("resolvePriorGate returns the newest fresh attempt updatedAt", async () => {
+		await write("docs/plans/x.md", "hello");
+		const hash = await computeArtifactsHash(root, ["docs/plans/x.md"]);
+		await appendRecord(
+			root,
+			attempt({
+				verdict: "review",
+				artifacts: ["docs/plans/x.md"],
+				artifactsHash: hash,
+				updatedAt: "2026-10-06T10:00:00.000Z",
+				review: { action: "review", reviewerCount: 1, reason: "demand" },
+			}),
+		);
+		const prior = await resolvePriorGate(root, "02-plan");
+		expect(prior).toEqual({
+			verdict: "review",
+			action: "review",
+			updatedAt: "2026-10-06T10:00:00.000Z",
+		});
+	});
+
+	test("resolvePriorGate returns null for a note without a review action", async () => {
+		await appendRecord(root, attempt({ verdict: "accept" }));
+		expect(await resolvePriorGate(root, "02-plan")).toBeNull();
 	});
 
 	test("isRecordFresh rejects edits, additions, removals, and renames", async () => {

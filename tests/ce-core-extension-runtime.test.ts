@@ -396,7 +396,7 @@ describe("multi_reviewer tool", () => {
 			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
 			JSON.stringify({
 				review: {
-					model: "anthropic/claude-3-opus",
+					model: "anthropic/claude-3-haiku",
 					thinkingLevel: "high",
 					reviewers: [
 						{ model: "anthropic/claude-3-opus", thinkingLevel: "high" },

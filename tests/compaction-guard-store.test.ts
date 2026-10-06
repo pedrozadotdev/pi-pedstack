@@ -27,6 +27,7 @@ import {
 	setCurrentCompactionSessionKey,
 	type CompactionLogRecord,
 } from "../extensions/ce-core/compaction-guard/store.js";
+import type { ContextHealth } from "../extensions/ce-core/compaction-guard/types.js";
 
 let root: string;
 
@@ -142,7 +143,7 @@ describe("snapshot mirror and health precedence", () => {
 	});
 
 	test("maps numeric pressure through tier → health", () => {
-		const cases: Array<[number, string]> = [
+		const cases: Array<[number, ContextHealth]> = [
 			[0.1, "good"],
 			[0.65, "watch"],
 			[0.8, "heavy"],

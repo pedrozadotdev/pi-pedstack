@@ -170,7 +170,11 @@ describe("stage gate rubrics (Unit 1)", () => {
 	test("01-brainstorm: prior action review and no sidecar fails", () => {
 		const results = run("01-brainstorm", {
 			txt: BRAINSTORM_COMPLETE,
-			priorGate: { verdict: "review", action: "review" },
+			priorGate: {
+				verdict: "review",
+				action: "review",
+				updatedAt: "2026-10-06T10:00:00.000Z",
+			},
 		});
 		expectFail(results, "multi_reviewer_findings");
 	});
@@ -178,9 +182,18 @@ describe("stage gate rubrics (Unit 1)", () => {
 	test("01-brainstorm: prior action review and a zero-finding sidecar passes", () => {
 		const results = run("01-brainstorm", {
 			txt: BRAINSTORM_COMPLETE,
-			priorGate: { verdict: "review", action: "review" },
+			priorGate: {
+				verdict: "review",
+				action: "review",
+				updatedAt: "2026-10-06T10:00:00.000Z",
+			},
 			reviewFindings: [
-				{ path: "review-findings/x-01-brainstorm.json", count: 0, findings: [] },
+				{
+					path: "review-findings/x-01-brainstorm.json",
+					count: 0,
+					findings: [],
+					observedAt: "2026-10-06T10:00:01.000Z",
+				},
 			],
 		});
 		expectPass(results, "multi_reviewer_findings");
@@ -280,7 +293,11 @@ describe("stage gate rubrics (Unit 1)", () => {
 
 	test("04-review: prior action review and no sidecar fails", () => {
 		const results = run("04-review", {
-			priorGate: { verdict: "review", action: "review" },
+			priorGate: {
+				verdict: "review",
+				action: "review",
+				updatedAt: "2026-10-06T10:00:00.000Z",
+			},
 		});
 		expectFail(results, "review_findings_persisted");
 	});
@@ -291,10 +308,15 @@ describe("stage gate rubrics (Unit 1)", () => {
 				path: "review-findings/x-04-review.json",
 				count: 1,
 				findings: [finding("high", "src/app.ts:12")],
+				observedAt: "2026-10-06T10:00:01.000Z",
 			},
 		];
 		const results = run("04-review", {
-			priorGate: { verdict: "review", action: "review" },
+			priorGate: {
+				verdict: "review",
+				action: "review",
+				updatedAt: "2026-10-06T10:00:00.000Z",
+			},
 			reviewFindings: files,
 		});
 		expectPass(results, "review_findings_persisted");
@@ -302,9 +324,104 @@ describe("stage gate rubrics (Unit 1)", () => {
 
 	test("04-review: prior action accept and no sidecar passes", () => {
 		const results = run("04-review", {
-			priorGate: { verdict: "accept", action: "none" },
+			priorGate: {
+				verdict: "accept",
+				action: "none",
+				updatedAt: "2026-10-06T10:00:00.000Z",
+			},
 		});
 		expectPass(results, "review_findings_persisted");
+	});
+
+	describe("findings freshness (Unit 5)", () => {
+		const DEMAND = "2026-10-06T10:00:00.000Z";
+
+		test("a sidecar observed after the demanding gate record passes", () => {
+			const results = run("04-review", {
+				priorGate: { verdict: "review", action: "review", updatedAt: DEMAND },
+				reviewFindings: [
+					{
+						path: "review-findings/x-04-review.json",
+						count: 0,
+						findings: [],
+						observedAt: "2026-10-06T10:00:01.000Z",
+					},
+				],
+			});
+			expectPass(results, "review_findings_persisted");
+		});
+
+		test("a sidecar observed at the exact gate record time passes", () => {
+			const results = run("04-review", {
+				priorGate: { verdict: "review", action: "review", updatedAt: DEMAND },
+				reviewFindings: [
+					{
+						path: "review-findings/x-04-review.json",
+						count: 0,
+						findings: [],
+						observedAt: DEMAND,
+					},
+				],
+			});
+			expectPass(results, "review_findings_persisted");
+		});
+
+		test("a sidecar observed before the demanding gate record fails", () => {
+			const results = run("04-review", {
+				priorGate: { verdict: "review", action: "review", updatedAt: DEMAND },
+				reviewFindings: [
+					{
+						path: "review-findings/x-04-review.json",
+						count: 0,
+						findings: [],
+						observedAt: "2026-10-06T09:59:59.000Z",
+					},
+				],
+			});
+			const result = resultFor(results, "review_findings_persisted");
+			expect(result.pass).toBe(false);
+			expect(result.reason.toLowerCase()).toContain("fresh");
+		});
+
+		test("no review demand accepts an old sidecar", () => {
+			const results = run("04-review", {
+				priorGate: { verdict: "accept", action: "none", updatedAt: DEMAND },
+				reviewFindings: [
+					{
+						path: "review-findings/x-04-review.json",
+						count: 0,
+						findings: [],
+						observedAt: "2020-01-01T00:00:00.000Z",
+					},
+				],
+			});
+			expectPass(results, "review_findings_persisted");
+		});
+
+		test("a sidecar with no observedAt cannot satisfy a review demand", () => {
+			const results = run("04-review", {
+				priorGate: { verdict: "review", action: "review", updatedAt: DEMAND },
+				reviewFindings: [
+					{ path: "review-findings/x-04-review.json", count: 0, findings: [] },
+				],
+			});
+			expectFail(results, "review_findings_persisted");
+		});
+
+		test("a malformed sidecar still fails even when observed after the record", () => {
+			const results = run("04-review", {
+				priorGate: { verdict: "review", action: "review", updatedAt: DEMAND },
+				reviewFindings: [
+					{
+						path: "review-findings/x-04-review.json",
+						count: 3,
+						findings: [],
+						observedAt: "2026-10-06T11:00:00.000Z",
+					},
+				],
+			});
+			expectFail(results, "review_findings_persisted");
+		});
 	});
 
 	test("the two findings predicates remain critical", () => {

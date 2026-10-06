@@ -121,6 +121,8 @@ describe("stage_gate tool (Unit 6)", () => {
 		const result = await tool.execute({ repoRoot: root, stage: "02-plan" });
 
 		expect(result.skipped).toBe(true);
+		expect(result.action).toBe("none");
+		expect((result.actionReason ?? "").toLowerCase()).toContain("disabled");
 		expect(runtime.calls.length).toBe(0);
 		expect(await readLatestRecord(root, "02-plan")).toBeNull();
 	});

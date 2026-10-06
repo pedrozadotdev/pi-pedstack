@@ -35,6 +35,8 @@ function sampleRecord(overrides: Partial<RoutingRecord> = {}): RoutingRecord {
 		confidence: 0.6,
 		attempts: 2,
 		escalations: 1,
+		revisions: 2,
+		reviews: 1,
 		updatedAt: "2026-10-06T00:00:00.000Z",
 		...overrides,
 	};
@@ -108,5 +110,15 @@ describe("routing-store", () => {
 			JSON.stringify({ schema: 2, stage: "03-work" }),
 		);
 		expect(await readRoutingRecord(repoRoot, "03-work")).toBeNull();
+	});
+
+	test("defaults missing revisions and reviews to 0 for a legacy record", async () => {
+		const repoRoot = makeTempRoot();
+		const { revisions: _revisions, reviews: _reviews, ...legacy } = sampleRecord();
+		rawRecordPath(repoRoot, "03-work", JSON.stringify(legacy));
+
+		const read = await readRoutingRecord(repoRoot, "03-work");
+		expect(read?.revisions).toBe(0);
+		expect(read?.reviews).toBe(0);
 	});
 });
