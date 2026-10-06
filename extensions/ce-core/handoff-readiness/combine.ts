@@ -1,8 +1,8 @@
 // Handoff readiness — pure combination logic (plan Unit 2). No I/O.
 // Canonicalization + hashing (Unit 1) live here too because both modules share
 // the same frozen byte thresholds; `combine.ts` is their single owner.
-import { createHash } from "node:crypto";
 import type { JevQuestion, JevRequest, JevResult } from "../jev/types";
+import { sha256ShortHex, stableStringify } from "../utils/canonical-json";
 import { truncateUtf8ToBytes } from "../utils/solution-recall";
 import type {
 	ReadinessCorrection,
@@ -106,26 +106,12 @@ export function normalizeState(state: ReadinessState): ReadinessState {
 	};
 }
 
-/** JSON with object keys sorted at every depth; array order preserved. */
-function stableStringify(value: unknown): string {
-	if (value === null || typeof value !== "object") return JSON.stringify(value);
-	if (Array.isArray(value)) {
-		return `[${value.map(stableStringify).join(",")}]`;
-	}
-	const entries = Object.entries(value as Record<string, unknown>)
-		.filter(([, item]) => item !== undefined)
-		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-	return `{${entries
-		.map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
-		.join(",")}}`;
-}
-
 export function canonicalizeState(state: ReadinessState): string {
 	return stableStringify(state);
 }
 
 export function hashCanonical(canonical: string): string {
-	return createHash("sha256").update(canonical).digest("hex").slice(0, 16);
+	return sha256ShortHex(canonical);
 }
 
 function isMeaningfulText(value: string | undefined): boolean {
