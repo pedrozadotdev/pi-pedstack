@@ -3,6 +3,7 @@
 // signature hashing, and redaction. No I/O.
 import type { JevNoulQuestion, JevQuestion, JevRequest, JevResult } from "../jev/types";
 import { sha256ShortHex, stableStringify } from "../utils/canonical-json";
+import { redactSecrets } from "../utils/redact";
 import { truncateUtf8ToBytes as truncateToBytes } from "../utils/solution-recall";
 import type {
 	DerivedVerdict,
@@ -85,31 +86,9 @@ export const QUESTION_COPY: Record<
 	},
 };
 
-// ── Redaction (mirrors injection-screen/engine.ts sanitizeRef) ──────
+// ── Redaction (AD-7: re-exported from utils/redact for call-site stability) ──
 
-const CREDENTIAL_ASSIGNMENT =
-	/([A-Za-z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASSWD))=(\S+)/gi;
-const FIRST_URL = /https?:\/\/[^\s]+/;
-
-/** Redact credential assignments and strip URL query/fragment. */
-export function redactSecrets(text: string): string {
-	let out = typeof text === "string" ? text : String(text ?? "");
-	out = out.replace(CREDENTIAL_ASSIGNMENT, "$1=[redacted]");
-	const url = FIRST_URL.exec(out)?.[0];
-	if (url) {
-		try {
-			const parsed = new URL(url);
-			parsed.search = "";
-			parsed.hash = "";
-			parsed.username = "";
-			parsed.password = "";
-			out = out.replace(url, parsed.toString());
-		} catch {
-			// Not a parseable URL; keep the sanitized credential form.
-		}
-	}
-	return out;
-}
+export { redactSecrets };
 
 // ── Request building + byte bounding ────────────────────────────────
 

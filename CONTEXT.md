@@ -202,6 +202,54 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   below 5%. Promotion is calibrated from the shadow log
   `.context/compound-engineering/drift.jsonl`.
 
+## Semantic compaction (#11)
+
+- **Compaction tier** — `silent | notice | recommend | request`; the TypeScript-derived
+  context-pressure level (`silent < 0.60`, `notice < 0.75`, `recommend < 0.90`, `request`
+  otherwise) computed in `extensions/ce-core/compaction-guard/facts.ts`. It is **not**
+  `ContextHealth`: a one-directional, documented bridge maps `silent→good`, `notice→watch`,
+  `recommend→heavy`, `request→critical`, and the two are never used interchangeably in
+  logs or `pedstack.ts`.
+- **Context pressure** — `tokens / contextWindow`; the deterministic gate that decides
+  whether Jev may be called at all.
+- **Trigger tokens** — `contextWindow - reserveTokens`, the context-token count at which
+  Pi's automatic compaction fires. `headroomTokens` is the reserve that remains.
+- **Overage tokens** — `tokensBefore - triggerTokens` (absolute, window-independent), the
+  only hook-side defer gate. A defer requires `0 <= overageTokens <= 2000` (about 12% of
+  the default 16384 reserve). Because Pi only fires the hook past the trigger, the hook's
+  absolute pressure is always ~0.87–0.98, so defer is gated on overage, not an absolute
+  floor.
+- **Threshold episode** — the span from crossing the trigger to the next successful
+  `session_compact`; it defines `consecutiveDefers` and the signature-reuse scope. A
+  `session_compact` ends it: `consecutiveDefers`, `lastSignature`, `lastOutcome`, and the
+  one-shot request-nudge flag reset, and `lastCompactionAt` is stamped. Session state is in
+  memory, keyed by session; only a redacted shadow log is persisted.
+- **Good boundary** — the frozen Jev-derived rule
+  `(task_switch >= 0.5 OR meaningful_boundary >= 0.5) AND history_need < 0.5 AND
+  mid_operation < 0.6`. A good boundary allows compaction; anything else is a defer
+  candidate inside the hard guards.
+- **Live multi-step operation** — in-flight work whose exact state would be lost if
+  summarized; captured by the `mid_operation` and `history_need` dimensions.
+- **Defer** — the `enforce`-only `{ cancel: true }` outcome; allowed only inside the
+  deterministic hard guards (reason `threshold`, `willRetry` false, `overageTokens` in
+  range, the consecutive-defer cap, derived action `defer`). Verified against the installed
+  Pi bundle to reschedule at the next threshold check (it does not suppress compaction until
+  overflow).
+- **Defer budget** — `MAX_CONSECUTIVE_DEFERS = 2`; once reached, the next check allows, so
+  a defer can only reschedule, never suppress compaction until overflow.
+- **Compaction health bridge** — one-directional tier→health mapping (`silent → good`,
+  `notice → watch`, `recommend → heavy`, `request → critical`) feeding
+  `context_handoff.contextHealth`. It is never derived from a Jev answer.
+- **Context-health provider** — the live `getContextUsage()` read captured per turn and
+  consulted by `context_handoff save` when no explicit `contextHealth` is supplied; an
+  unexplained `null` never claims `good`.
+- **Compaction mode** — `off | shadow | enforce`, resolved from
+  `PEDSTACK_COMPACTION_GUARD` once at init. `shadow` is deterministic-only unless
+  `PEDSTACK_COMPACTION_GUARD_LIVE=1`; only `enforce` returns `{ cancel: true }`. There is
+  no fail-closed knob: a degraded semantic layer always allows stock Pi compaction.
+- **Module** — `extensions/ce-core/compaction-guard/` (named `compaction-guard`, not
+  `context-health`, to avoid colliding with the existing `ContextHealth` type).
+
 ## Overengineering signal (#16)
 
 - **Overengineering signal** — four floor-only semantic dimensions that check whether an

@@ -381,6 +381,19 @@ Records are persisted per stage at `.context/compound-engineering/drift/<stage>.
 
 **Stay in `shadow` and calibrate first.** Shadow computes and logs every judgment (including `dimensions`, `triggered`, and `jevCalled`) to `.context/compound-engineering/drift.jsonl` (rotated at 1 MiB) while blocking nothing. **Promote to `enforce` only after** at least 100 judged turns over a representative multi-stage run, a mild-correction rate below 20% of non-trivial turns, zero false-positive strong verdicts on a manually labeled in-scope set, a degraded rate below 5%, and no drift-caused blocked save with a false positive.
 
+### Semantic compaction guard (#11)
+
+Pi auto-compacts on a pure token walk and can cut **inside** a live multi-step operation. The compaction guard (`extensions/ce-core/compaction-guard/`) adds a deterministic pressure pre-pass plus one bounded Jev judgment at the awaited `session_before_compact` hook: it defers a `threshold` compaction only when the cut would split live work **and** every hard guard allows it. Summarization content stays with Pi.
+
+- **Deterministic first.** TypeScript computes the tier (`silent | notice | recommend | request`), `triggerTokens`, `overageTokens`, and the good-boundary rules. A defer requires `0 <= overageTokens <= 2000`, a `threshold` reason (never `manual`/`overflow`), no retry, a defer budget below 2, and one bounded Jev `noul` judgment over `task_switch`, `meaningful_boundary`, `history_need`, `mid_operation`.
+- **Enforce-only cancel.** Only `enforce` returns `{ cancel: true }`; Pi then appends no compaction and re-checks on the next threshold. `off` and `shadow` never cancel.
+- **Never weaker than today.** An unknown reason/window, a low-confidence answer, a filesystem error, or a Jev outage all fail open to stock Pi. Degraded and deterministic outcomes never defer, and a Pi version whose `session_before_compact` event lacks `reason`/`willRetry` fails open. The repo's pinned devDependency `@earendil-works/pi-coding-agent@0.76.0` lacks both fields, so the guard stays inert under it until the harness is upgraded (both fields are present in 1.0.1).
+- **Pressure-only health.** `turn_end` captures `ctx.getContextUsage()` and the handoff tool defaults `contextHealth` from it (`good | watch | heavy | critical`); an explicit caller value always wins. Jev never fabricates health.
+- `PEDSTACK_COMPACTION_GUARD = off | shadow | enforce` (default `shadow`) is read once at extension init; missing/empty/invalid values fall back to `shadow` with a one-time warning.
+- `PEDSTACK_COMPACTION_GUARD_LIVE=1` opts into a live Jev call in `shadow` (2 s timeout) for calibration. Without it, `shadow` is deterministic-only: one cheap `getContextUsage()` read per turn and no child process.
+
+**Stay in `shadow` and calibrate first.** Shadow logs every outcome to `.context/compound-engineering/compaction-guard.jsonl` (rotated at 256 KiB) while blocking nothing. **Promote to `enforce` only after** at least 20 threshold episodes spanning 128k/200k/1M windows, a defer agreement of at least 90%, a degraded rate below 10%, a p95 hook latency within the shadow timeout, and a re-justified `OVERAGE_TOKENS`/`MAX_CONSECUTIVE_DEFERS` set written back into the frozen constant block with a thresholds-version bump.
+
 ### Deterministic stage guard
 
 Stage discipline is not just prompt text. The ce-core extension hooks tool calls and checks them against the active stage's capability matrix before they execute.
