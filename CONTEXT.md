@@ -135,3 +135,41 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   unusable answer set; non-blocking unless `FAILCLOSED` is set in `enforce`.
 - **Shadow mode** — compute, record, and log the readiness verdict without blocking
   (the default). `PEDSTACK_HANDOFF_READINESS = off | shadow | enforce`.
+
+## Stage drift (#8)
+
+- **Stage drift** — a turn that stops honoring the active stage's mandate **without
+  making a forbidden tool call** (e.g. `02-plan` starts implementing, `04-review` edits
+  the code it reviews). Detected at each `turn_end` from the turn's own facts; distinct
+  from the deterministic capability matrix (#3) and the bash stage guard (#4), which
+  only act on a specific call's effect.
+- **Drift dimension** — one of the four independent `noul` judgments:
+  `in_stage_scope`, `forbidden_work`, `scope_drift`, `progress`. Jev answers the
+  dimensions; TypeScript derives the verdict. `forbidden_work` is a **hard** signal and
+  is excluded from the soft-signal count so one observation never counts twice.
+- **Drift verdict** — `no_drift | mild_drift | strong_drift`, always derived in
+  TypeScript (`extensions/ce-core/drift/combine.ts`). Two soft signals, a hard
+  `forbidden_work`, or a repeated mild turn is strong; a single soft signal is mild.
+- **Drift correction** — the one-shot, in-session message delivered on the next
+  `before_agent_start` for a mild drift turn (enforce only). Newest overwrites; it is
+  consumed exactly once and never forces a model continuation.
+- **Unresolved drift** — a persisted `strong_drift` verdict for the current stage and
+  session that has not been cleared. It blocks a cross-stage `context_handoff save` in
+  `enforce`; `shadow` only warns. It clears on a Jev `no_drift` turn that writes the
+  stage artifact, or after two consecutive Jev `no_drift` turns.
+- **Turn signature** — the hash of the compact turn state (stage, mandate, actions,
+  excerpt). An unchanged signature reuses the last judged outcome without a second Jev
+  call (`source: "deterministic"`, reason `unchanged turn`).
+- **Drift mode** — `off | shadow | enforce`, resolved from `PEDSTACK_DRIFT_GUARD` once
+  at init; default and any invalid value resolve to `shadow`. Only `enforce` blocks or
+  injects.
+- **Drift record** — the latest **state** (not a hash-fresh judgment) written by a Jev
+  verdict for one stage, at `.context/compound-engineering/drift/<stage>.json`. Fresh
+  means `schema`, `stage`, `sessionKey`, and `thresholdsVersion` match, `source` is
+  `jev`, and the record is within the TTL. Only a `source === "jev"` verdict writes or
+  clears it; degraded/deterministic turns log only, and `shadow` writes no record.
+- **Shadow promotion** — the documented gate before setting `enforce`: at least 100
+  judged turns over a representative multi-stage run, a mild-correction rate below 20%,
+  zero false-positive strong verdicts on a labeled in-scope set, and a degraded rate
+  below 5%. Promotion is calibrated from the shadow log
+  `.context/compound-engineering/drift.jsonl`.

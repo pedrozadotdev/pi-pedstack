@@ -337,6 +337,23 @@ A handoff can pass every structural probe and still be semantically empty — a 
 
 **Known limitations (deferred to an on-demand `04-5-debug` pass):** the deterministic pre-pass checks `activeFiles` only, not the union with `recentlyAccessedFiles`, so a deleted recent-only file can still be judged `continue`; and `validate`'s surfacing matches on pair + thresholds version alone, so it can return a stale or degraded record instead of the required “never a stale one”. The fix is to reuse the single exported freshness predicate at every read site — recorded in the [read-site freshness card](docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md).
 
+### Turn-level stage drift detection (#8)
+
+The capability matrix (#3) and the bash stage guard (#4) only act on a specific `write`/`edit`/`bash` call whose *effect* is forbidden. A cheap worker can still stop honoring a stage's mandate **without making a forbidden call** — `02-plan` starts implementing, `04-review` edits the code it reviews. The drift guard (`extensions/ce-core/drift/`) closes that gap at the turn boundary.
+
+- **Turn-side detection.** At each `turn_end`, TypeScript builds a compact, redacted turn state from the event itself (no cross-event accumulator), runs a deterministic pre-pass, and asks CommandCode `typesafe/jev` one bounded `noul` request over four dimensions: `in_stage_scope`, `forbidden_work`, `scope_drift`, `progress`. TypeScript derives `no_drift | mild_drift | strong_drift`; Jev never decides the verdict.
+- **One-shot correction (enforce).** A mild turn stores at most one correction; the single existing `before_agent_start` handler appends it once (`## 🧭 Stage Drift Correction`) and clears it. No forced continuation, so no loop. `shadow` never injects.
+- **Strong block (enforce).** A fresh `strong_drift` record for the current stage **and** session blocks a cross-stage `context_handoff save` in its deterministic floor (after the stage gate, before the readiness guard). A blocked save writes no handoff artifact. `shadow` only warns.
+- **Never weaker than today.** `off`, an unknown/absent stage, a trivial turn, an unchanged turn signature, or a Jev outage all fail open (deterministic `no_drift`). A degraded or deterministic turn never writes or clears a record, so it can never clobber a strong one.
+- `PEDSTACK_DRIFT_GUARD = off | shadow | enforce` (default `shadow`) is read once at extension init. Missing/empty/invalid values fall back to `shadow` with a one-time warning and never silently resolve to `off`; changing it requires a restart.
+- `PEDSTACK_DRIFT_GUARD_FAILCLOSED=1` blocks in `enforce` when there is **no fresh Jev record** (semantic drift layer degraded or never run); the default is fail-open.
+
+Records are persisted per stage at `.context/compound-engineering/drift/<stage>.json`. The block message **names this path**: delete `.context/compound-engineering/drift/<stage>.json` to clear the block (a missing file means no block), or set `PEDSTACK_DRIFT_GUARD=off` (restart required). A session only honors records whose `sessionKey` matches the current session, so a fresh session starts clean.
+
+**Shadow is not free.** The default `shadow` mode still calls Jev on the awaited `turn_end` handler — up to 24 distinct non-trivial turns per session, 8 s timeout each — so it adds latency even though it never blocks or injects. See the [shadow-mode-is-not-free card](docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md).
+
+**Stay in `shadow` and calibrate first.** Shadow computes and logs every judgment (including `dimensions`, `triggered`, and `jevCalled`) to `.context/compound-engineering/drift.jsonl` (rotated at 1 MiB) while blocking nothing. **Promote to `enforce` only after** at least 100 judged turns over a representative multi-stage run, a mild-correction rate below 20% of non-trivial turns, zero false-positive strong verdicts on a manually labeled in-scope set, a degraded rate below 5%, and no drift-caused blocked save with a false positive.
+
 ### Deterministic stage guard
 
 Stage discipline is not just prompt text. The ce-core extension hooks tool calls and checks them against the active stage's capability matrix before they execute.
@@ -473,6 +490,9 @@ your-project/
         ├── stage-gates/       # Stage-gate verdict records (content-hashed)
         ├── routing/           # Per-stage model-routing decisions (role, reason, scores)
         ├── handoff-readiness/ # Per-pair readiness records + shadow log (content-hashed)
+        ├── drift/             # Per-stage drift verdict records (latest state)
+        ├── drift.jsonl        # Drift shadow-judgment log (rotated at 1 MiB)
+        ├── injection-screens.jsonl # Untrusted-tool-result provenance records
         └── jev-stage-guard.jsonl # Bash guard shadow verdict log (rotated at 1 MiB)
 ```
 

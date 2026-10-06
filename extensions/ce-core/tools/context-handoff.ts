@@ -3,8 +3,22 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { normalizeSlug } from "../utils/name-utils";
 import { evaluateCompletionGate } from "../stage-gate/guard";
+import { isCompletionSave } from "../stage-gate/store";
 import type { StageGateMode } from "../stage-gate/types";
 import { THRESHOLDS_VERSION } from "../handoff-readiness/combine";
+import {
+	DRIFT_DIR,
+	isDriftRecordFresh,
+	readDriftRecord,
+	shouldBlockCompletion,
+	type DriftRecord,
+} from "../drift/store";
+import type {
+	DriftDimensionId,
+	DriftMode,
+	DriftSource,
+	DriftVerdict,
+} from "../drift/types";
 import {
 	createReadinessGuard,
 	type ReadinessGuard,
@@ -84,7 +98,7 @@ interface ContextStateEntry {
 	updatedAt: string;
 }
 
-export interface ContextHandoffResult {
+interface ContextHandoffResult {
 	operation: string;
 	found?: boolean;
 	path?: string;
@@ -107,6 +121,7 @@ export interface ContextHandoffResult {
 	updatedAt?: string;
 	gateWarning?: string;
 	readiness?: ReadinessOutcome;
+	drift?: ContextHandoffDriftAdvice;
 	// Validation fields
 	ok?: boolean;
 	probes?: ContextHandoffValidationProbes;
@@ -364,14 +379,38 @@ export interface ContextHandoffReadinessOptions {
 	fileExists?: (repoRoot: string, relPath: string) => boolean;
 }
 
+export interface ContextHandoffDriftOptions {
+	mode: DriftMode;
+	failClosed: boolean;
+	sessionKey: () => string;
+	now?: () => Date;
+	/** Test injection; defaults to the shared drift store reader. */
+	readRecord?: (
+		repoRoot: string,
+		stage: string,
+	) => Promise<DriftRecord | null>;
+}
+
+/** Advisory (no-Jev) drift summary surfaced from `validate` (AD-4). */
+interface ContextHandoffDriftAdvice {
+	verdict: DriftVerdict;
+	source: DriftSource;
+	triggered: DriftDimensionId[];
+	fresh: boolean;
+	reason?: string;
+	correction?: string;
+}
+
 export function createContextHandoffTool(
 	options: {
 		gateMode?: StageGateMode;
 		readiness?: ContextHandoffReadinessOptions;
+		drift?: ContextHandoffDriftOptions;
 	} = {},
 ) {
 	const gateMode = options.gateMode ?? "off";
 	const readiness = options.readiness;
+	const drift = options.drift;
 	const readinessGuard = readiness
 		? createReadinessGuard({
 				mode: readiness.mode,
@@ -386,7 +425,7 @@ export function createContextHandoffTool(
 		async execute(input: ContextHandoffInput): Promise<ContextHandoffResult> {
 			switch (input.operation) {
 				case "save":
-					return save(input, gateMode, readinessGuard);
+					return save(input, gateMode, readinessGuard, drift);
 				case "load":
 					return load(input);
 				case "latest":
@@ -394,7 +433,7 @@ export function createContextHandoffTool(
 				case "status":
 					return status(input);
 				case "validate":
-					return validate(input, readiness);
+					return validate(input, readiness, drift);
 				default:
 					throw new Error(`Unknown operation: ${input.operation}`);
 			}
@@ -562,10 +601,147 @@ async function surfaceReadiness(
 	};
 }
 
+interface DriftRun {
+	blocked: boolean;
+	blocker?: string;
+	warning?: string;
+	advice?: ContextHandoffDriftAdvice;
+}
+
+function driftRecordRelPath(stage: string): string {
+	return `${DRIFT_DIR}/${normalizeSlug(stage) || "unknown"}.json`;
+}
+
+function driftAdvice(
+	record: DriftRecord,
+	fresh: boolean,
+): ContextHandoffDriftAdvice {
+	return {
+		verdict: record.verdict,
+		source: record.source,
+		triggered: record.triggered,
+		fresh,
+		...(record.reason ? { reason: record.reason } : {}),
+		...(record.correction ? { correction: record.correction } : {}),
+	};
+}
+
+function strongDriftBlocker(record: DriftRecord): string {
+	const dims =
+		record.triggered.length > 0 ? record.triggered.join(", ") : "unspecified";
+	const reason = record.reason ? `${record.reason}. ` : "";
+	return (
+		`Cannot save cross-stage handoff: stage "${record.stage}" has unresolved ` +
+		`strong drift: ${dims}. ${reason}` +
+		`Do in-scope work for 2 turns to clear, delete ` +
+		`${driftRecordRelPath(record.stage)} to clear, or set ` +
+		`PEDSTACK_DRIFT_GUARD=off (restart required).`
+	);
+}
+
+function degradedDriftBlocker(stage: string): string {
+	return (
+		`Cannot save cross-stage handoff: drift status is unknown for stage ` +
+		`"${stage}" (semantic drift layer degraded) and ` +
+		`PEDSTACK_DRIFT_GUARD_FAILCLOSED=1. Re-run in-scope work, delete ` +
+		`${driftRecordRelPath(stage)} to clear, or set PEDSTACK_DRIFT_GUARD=off ` +
+		`(restart required).`
+	);
+}
+
+/** Shared read of the latest record; a reader failure is treated as absent. */
+async function readDriftRecordSafe(
+	drift: ContextHandoffDriftOptions,
+	repoRoot: string,
+	stage: string,
+): Promise<DriftRecord | null> {
+	try {
+		const read = drift.readRecord ?? readDriftRecord;
+		return await read(repoRoot, stage);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * AD-5 completion rule. Off/same-stage are not gated; shadow warns only;
+ * enforce blocks a fresh `jev` strong record and (with failClosed) an unknown
+ * drift status. Every read goes through the shared freshness predicate.
+ */
+async function runDriftCompletion(
+	drift: ContextHandoffDriftOptions | undefined,
+	repoRoot: string,
+	currentStage: string,
+	nextStage: string | undefined,
+): Promise<DriftRun> {
+	if (!drift || drift.mode === "off") return { blocked: false };
+	if (!isCompletionSave(currentStage, nextStage)) return { blocked: false };
+
+	const now = (drift.now ?? (() => new Date()))();
+	const sessionKey = drift.sessionKey();
+	const record = await readDriftRecordSafe(drift, repoRoot, currentStage);
+	const fresh = isDriftRecordFresh(record, currentStage, sessionKey, now);
+	const advice = record ? driftAdvice(record, fresh) : undefined;
+
+	if (drift.mode === "enforce") {
+		if (shouldBlockCompletion(record, currentStage, sessionKey, now)) {
+			return {
+				blocked: true,
+				blocker: strongDriftBlocker(record as DriftRecord),
+				advice,
+			};
+		}
+		if (drift.failClosed && !fresh) {
+			return {
+				blocked: true,
+				blocker: degradedDriftBlocker(currentStage),
+				advice,
+			};
+		}
+		return { blocked: false, advice };
+	}
+
+	if (shouldBlockCompletion(record, currentStage, sessionKey, now)) {
+		const dims =
+			(record as DriftRecord).triggered.join(", ") || "unspecified";
+		return {
+			blocked: false,
+			warning:
+				`unresolved drift warning: stage "${currentStage}" has strong drift ` +
+				`(${dims}); shadow mode does not block.`,
+			advice,
+		};
+	}
+	return { blocked: false, advice };
+}
+
+/** Advisory drift read for `validate`; never calls Jev (AD-4). */
+async function surfaceDrift(
+	input: ContextHandoffInput,
+	drift: ContextHandoffDriftOptions | undefined,
+	state: ContextStateEntry | null,
+	handoffFile: string,
+): Promise<ContextHandoffDriftAdvice | undefined> {
+	if (!drift || drift.mode === "off") return undefined;
+	const fromPath = stagePairFromHandoffPath(input.handoffPath ?? handoffFile);
+	const stage =
+		input.currentStage ?? state?.currentStage ?? fromPath?.currentStage;
+	if (!stage) return undefined;
+
+	const record = await readDriftRecordSafe(drift, input.repoRoot, stage);
+	if (!record) return undefined;
+	const now = (drift.now ?? (() => new Date()))();
+	return driftAdvice(
+		record,
+		isDriftRecordFresh(record, stage, drift.sessionKey(), now),
+	);
+}
+
 async function save(
 	input: ContextHandoffInput,
 	gateMode: StageGateMode,
 	readinessGuard: ReadinessGuard | null,
+	drift: ContextHandoffDriftOptions | undefined,
 ): Promise<ContextHandoffResult> {
 	const currentStage = input.currentStage ?? "unknown";
 	const nextStage = input.nextStage;
@@ -613,6 +789,26 @@ async function save(
 		};
 	}
 	const gateWarning = gate.warning;
+
+	// Drift block: after the stage gate, before the readiness guard (AD-5).
+	const driftRun = await runDriftCompletion(
+		drift,
+		input.repoRoot,
+		currentStage,
+		nextStage,
+	);
+	if (driftRun.blocked) {
+		return {
+			operation: "save",
+			found: true,
+			currentStage,
+			nextStage,
+			contextHealth,
+			blocker: driftRun.blocker,
+			drift: driftRun.advice,
+		};
+	}
+
 	const activeFiles = input.activeFiles ?? [];
 	// Normalize: treat placeholder/N/A-ish blockers as absent so they don't block /ped-next
 	const blocker =
@@ -670,6 +866,7 @@ async function save(
 			contextHealth,
 			blocker: readinessRun.blocker,
 			readiness: readinessRun.outcome,
+			drift: driftRun.advice,
 		};
 	}
 
@@ -714,7 +911,7 @@ async function save(
 	await writeState(input.repoRoot, state);
 
 	const combinedWarning =
-		[gateWarning, readinessRun.warning]
+		[gateWarning, driftRun.warning, readinessRun.warning]
 			.filter((entry): entry is string => Boolean(entry))
 			.join(" ") || undefined;
 
@@ -740,6 +937,7 @@ async function save(
 		updatedAt: state.updatedAt,
 		gateWarning: combinedWarning,
 		readiness: readinessRun.outcome,
+		drift: driftRun.advice,
 	};
 }
 
@@ -907,6 +1105,7 @@ function isMeaningfulStage(value?: string): boolean {
 async function validate(
 	input: ContextHandoffInput,
 	readiness?: ContextHandoffReadinessOptions,
+	drift?: ContextHandoffDriftOptions,
 ): Promise<ContextHandoffResult> {
 	const checks: ContextHandoffValidationCheck[] = [];
 	const missing: string[] = [];
@@ -1186,6 +1385,7 @@ async function validate(
 		state,
 		handoffFile,
 	);
+	const driftOutcome = await surfaceDrift(input, drift, state, handoffFile);
 
 	return {
 		operation: "validate",
@@ -1207,6 +1407,7 @@ async function validate(
 		contextHealth: state?.contextHealth,
 		updatedAt: state?.updatedAt,
 		readiness: readinessOutcome,
+		drift: driftOutcome,
 	};
 }
 
