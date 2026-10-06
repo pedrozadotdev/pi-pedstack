@@ -1,5 +1,9 @@
 // Frozen types for the stage gate (plan Unit 1). Pure data + signatures only,
 // so every predicate in `rubrics.ts` can be a pure function over `Evidence`.
+import type { EvidenceObligations } from "../docs-verification/types";
+import type { OverengineeringRecord } from "../overengineering/types";
+
+export type { EvidenceObligations };
 
 /** The 7 pedstack pipeline stages (R8). */
 export type StageKey =
@@ -55,6 +59,8 @@ export interface Evidence {
 	planText: string | null;
 	gitDiff: string | null;
 	truncated: boolean;
+	/** Docs-verification summary; null means the check passes (Unit 6). */
+	obligations: EvidenceObligations | null;
 }
 
 export interface DeterministicCheckResult {
@@ -122,7 +128,7 @@ export interface GateUsage {
 
 /** One persisted evaluation (record schema in the plan). */
 export interface StageGateAttempt {
-	schema: 1;
+	schema: 1 | 2;
 	stage: StageKey;
 	verdict: StageGateVerdict;
 	enforcing: boolean;
@@ -139,6 +145,8 @@ export interface StageGateAttempt {
 	artifactsHash: string;
 	attempt: number;
 	updatedAt: string;
+	/** Schema-2 addition: the composed overengineering signal (absent for schema 1). */
+	overengineering?: OverengineeringRecord;
 }
 
 /** File-level container at `.context/compound-engineering/stage-gates/<stage>.json`. */

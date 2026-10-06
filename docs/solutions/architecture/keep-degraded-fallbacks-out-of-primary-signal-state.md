@@ -100,6 +100,35 @@ test("does not count heuristic fallbacks toward the escalation signal", async ()
 - Decide per-source reset semantics explicitly: the fix leaves the streak unchanged on fallback (neither increments nor resets), because an outage is neither evidence nor a success. State that intent in the code or test, not only in the review thread.
 - In `04-review`, treat "constant sentinel value produced by a degraded path that participates in a counter/threshold" as a review finding, even when the module is advisory.
 
+## Recurrence (2026-10-06): a fallback stamp that made every healthy record look degraded
+
+The class recurred in the docs-verification review
+([`../../reviews/2026-10-06-runtime-source-driven-docs-verification.md`](../../reviews/2026-10-06-runtime-source-driven-docs-verification.md)),
+inverted: this time the fallback provenance was written *too eagerly*.
+
+- **Finding L2:** `tools/docs-verification.ts` `satisfiedUnit()` sets
+  `source: "fallback"` unconditionally when the explicit `record` operation
+  captures an obligation. But `guard.ts` `classifyPlans()` treats any prior
+  `satisfied` + `source: "fallback"` as `fallbackSatisfied`, which bypasses both
+  deterministic short-circuits and **forces a Jev re-score on the next save**.
+  A record captured while Jev was perfectly healthy is therefore never trusted,
+  and the unit is re-scored forever.
+
+**Root cause, extended:** `source` must reflect the *actual* degradation state at
+write time, not the surface that happened to write the value. Stamping
+`fallback` at a call site that cannot know whether Jev was degraded turns a
+provenance field into a constant, which is exactly the ambiguity the rule
+exists to prevent — here poisoning reuse instead of inflating a signal.
+
+**Detection added:**
+
+- A provenance field must be derived from the runtime's degradation state (or
+default to `deterministic`/`jev`), never hardcoded at a call site. Grep for
+  `source: "fallback"`/`source: "degraded"` literals outside the degradation
+  branch.
+- Add a reuse test: capture evidence while healthy, re-evaluate, and assert
+  **zero** Jev calls; a hardcoded fallback stamp fails it.
+
 # Downstream Impact
 
 ### For `02-plan`

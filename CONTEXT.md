@@ -136,6 +136,34 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Shadow mode** — compute, record, and log the readiness verdict without blocking
   (the default). `PEDSTACK_HANDOFF_READINESS = off | shadow | enforce`.
 
+## Docs verification (#15)
+
+- **Docs-verification obligation** — a persisted, per-unit record that a unit requires
+  authoritative `contextqmd` verification and has not yet produced compact evidence;
+  `open` until `satisfied` (a validated `docs-verified:` line) or `waived` (operator
+  reason). A waived obligation re-opens when the unit content hash changes.
+- **Evaluation unit** — one `### Unit` block extracted from the active plan, identified
+  by a stable slug (carry-over identity) and a content hash (dedupe key).
+- **Unit facts** — deterministic TypeScript facts for a unit: touched external packages,
+  version facts, declared files, existing evidence, and phase (`planned` at `02-plan`,
+  `observed` at `03-work`). Facts are computed in code, never by Jev.
+- **Docs decision** — the TypeScript-derived value `not_required | required | uncertain`;
+  Jev only answers the three bounded `noul` questions (`external_api_dependence`,
+  `version_sensitivity`, `verification_material`) and never derives the decision.
+- **Compact evidence** — a bounded `docs-verified: PACKAGE@VERSION DOC_REF` line naming a
+  detected package, the matching version (or `unknown` when the fact is version-unknown),
+  and a `contextqmd` doc path or page UID; format plus package/version match only, never
+  content match.
+- **Fallback evidence** — a `docs-verified:` line accepted while Jev is degraded, recorded
+  `source: "fallback"` and re-scored on recovery.
+- **Untrusted plan prose** — the active plan is agent-authored free text, not typed data. A
+  backticked token is only a candidate package; it is promoted to a fact by intersection with the
+  nearest manifest, never by a regex allowlist alone. A declared `Files` path is contained
+  (`canonicalRel`/`isInside`) before any `exists`/`readFile`/hash.
+- **Mode** — `PEDSTACK_DOCS_VERIFICATION = off | shadow | enforce` (default `shadow`);
+  `PEDSTACK_DOCS_VERIFICATION_FAILCLOSED=1` opts into blocking in `enforce` on a degraded
+  semantic layer (default `0`, fail-open).
+
 ## Stage drift (#8)
 
 - **Stage drift** — a turn that stops honoring the active stage's mandate **without
@@ -181,3 +209,22 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   zero false-positive strong verdicts on a labeled in-scope set, and a degraded rate
   below 5%. Promotion is calibrated from the shadow log
   `.context/compound-engineering/drift.jsonl`.
+
+## Overengineering signal (#16)
+
+- **Overengineering signal** — four floor-only semantic dimensions that check whether an
+  artifact added only justified complexity. They ride the existing stage-gate Jev request
+  (`StageGateAttempt.schema = 2`) and are never a second gate.
+- **Dimension** — one of the four ids: `no_unrequested_abstraction`, `scope_fidelity`,
+  `complexity_proportionality`, `dependency_justification`.
+- **OVERENGINEERING_FLOOR** — `0.5`; any present overengineering dimension below it
+  prevents `accept` and routes to `review`/`revise`. The dimensions are excluded from
+  `weightedAverage` (floor-only), so a high base average cannot mask them.
+- **Baseline** — the per-stage normative excerpt: requirements for `02-plan`, the plan (with
+  a contamination guard) for `03-work`, and both for `04-review`. Resolution is file-based;
+  the terminal fallback is `unavailable` (never a network fetch).
+- **Source** — `jev | unavailable`; `unavailable` means no baseline, all dimensions skipped,
+  or a `request_too_large` trim. A skipped dimension is absent from `sem` with a reason in
+  `skippedDimensions[]` — never a sentinel score.
+- **Shadow mode** — compute, persist, and log the dimensions without changing
+  `weightedScore` or `verdict` (the default). `PEDSTACK_OVERENGINEERING = off | shadow | enforce`.

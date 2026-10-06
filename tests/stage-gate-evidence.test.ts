@@ -1,9 +1,16 @@
 // Stage gate evidence tests (plan Unit 2: resolution, hashing, best-effort reads).
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { computePlanUnitHashes } from "../extensions/ce-core/docs-verification/facts.js";
+import { writeDocsRecord } from "../extensions/ce-core/docs-verification/store.js";
+import type {
+	DocsUnitRecord,
+	DocsVerificationRecord,
+} from "../extensions/ce-core/docs-verification/types.js";
 import {
 	computeArtifactsHash,
 	gatherEvidence,
@@ -202,3 +209,141 @@ describe("stage gate evidence (Unit 2)", () => {
 async function sha256String(value: string): Promise<string> {
 	return createHash("sha256").update(value).digest("hex");
 }
+
+const OBLIGATION_PLAN = [
+	"### Unit 1 — Alpha",
+	"",
+	"**Files.**",
+	"",
+	"- create `src/a.ts`",
+	"",
+	"Uses `typebox`.",
+	"",
+].join("\n");
+
+function obligationUnit(slug: string, hash: string, source: DocsUnitRecord["source"]): DocsUnitRecord {
+	return {
+		slug,
+		hash,
+		phase: "planned",
+		facts: {
+			phase: "planned",
+			declaredFiles: [],
+			packages: [],
+			evidence: [],
+			versionUnknown: false,
+		},
+		decision: "required",
+		packages: ["typebox"],
+		source,
+		obligation: {
+			slug,
+			status: "open",
+			decision: "required",
+			packages: ["typebox"],
+			source,
+			updatedAt: "2026-10-06T00:00:00.000Z",
+		},
+	};
+}
+
+describe("stage gate evidence — docs-verification obligations (Unit 6)", () => {
+	test("populates obligations from a seeded, fresh store", async () => {
+		await write("package.json", JSON.stringify({ dependencies: { typebox: "^1.0.0" } }));
+		await write("docs/plans/plan.md", OBLIGATION_PLAN);
+		const hashes = await computePlanUnitHashes(
+			{ repoRoot: root, phase: "planned", planText: OBLIGATION_PLAN },
+			{
+				readFile: (abs) => fs.readFile(abs, "utf8"),
+				exists: (abs) => existsSync(abs),
+			},
+		);
+		const units = [...hashes.entries()].map(([slug, hash]) =>
+			obligationUnit(slug, hash, "jev"),
+		);
+		const record: DocsVerificationRecord = {
+			schema: 1,
+			planPath: "docs/plans/plan.md",
+			grammar: 1,
+			activePhase: "planned",
+			thresholdsVersion: 1,
+			units,
+			droppedUnits: [],
+			updatedAt: "2026-10-06T00:00:00.000Z",
+		};
+		await writeDocsRecord(root, record);
+
+		const evidence = await gatherEvidence({
+			repoRoot: root,
+			stage: "02-plan",
+			docsVerificationMode: "shadow",
+			docsVerificationFailClosed: false,
+		});
+		const obligations = evidence.obligations;
+		expect(obligations?.applicable).toBe(true);
+		expect(obligations?.storePresent).toBe(true);
+		expect(obligations?.stale).toBe(false);
+		expect(obligations?.open).toBe(1);
+		expect(obligations?.degraded).toBe(false);
+		expect(obligations?.failClosed).toBe(false);
+	});
+
+	test("marks the record stale when the plan changes", async () => {
+		await write("package.json", JSON.stringify({ dependencies: { typebox: "^1.0.0" } }));
+		await write("docs/plans/plan.md", OBLIGATION_PLAN);
+		const hashes = await computePlanUnitHashes(
+			{ repoRoot: root, phase: "planned", planText: OBLIGATION_PLAN },
+			{ readFile: (abs) => fs.readFile(abs, "utf8"), exists: (abs) => existsSync(abs) },
+		);
+		await writeDocsRecord(root, {
+			schema: 1,
+			planPath: "docs/plans/plan.md",
+			grammar: 1,
+			activePhase: "planned",
+			thresholdsVersion: 1,
+			units: [...hashes.entries()].map(([slug, hash]) =>
+				obligationUnit(slug, hash, "jev"),
+			),
+			droppedUnits: [],
+			updatedAt: "2026-10-06T00:00:00.000Z",
+		});
+		await write(
+			"docs/plans/plan.md",
+			OBLIGATION_PLAN.replace("src/a.ts", "src/a-renamed.ts"),
+		);
+
+		const evidence = await gatherEvidence({ repoRoot: root, stage: "02-plan" });
+		expect(evidence.obligations?.stale).toBe(true);
+	});
+
+	test("treats a corrupt store as absent and reads the fail-closed default", async () => {
+		await write("docs/plans/plan.md", OBLIGATION_PLAN);
+		await write(
+			`.context/compound-engineering/docs-verification/plan.json`,
+			"{corrupt",
+		);
+		const evidence = await gatherEvidence({
+			repoRoot: root,
+			stage: "02-plan",
+			docsVerificationFailClosed: true,
+		});
+		expect(evidence.obligations?.storePresent).toBe(false);
+		expect(evidence.obligations?.failClosed).toBe(true);
+	});
+
+	test("is not applicable when the mode is off or the stage is out of scope", async () => {
+		await write("docs/plans/plan.md", OBLIGATION_PLAN);
+		const off = await gatherEvidence({
+			repoRoot: root,
+			stage: "02-plan",
+			docsVerificationMode: "off",
+		});
+		expect(off.obligations?.applicable).toBe(false);
+		const other = await gatherEvidence({
+			repoRoot: root,
+			stage: "05-learn",
+			docsVerificationMode: "shadow",
+		});
+		expect(other.obligations?.applicable).toBe(false);
+	});
+});

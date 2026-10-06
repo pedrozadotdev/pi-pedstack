@@ -111,4 +111,20 @@ describe("package bootstrap structure", () => {
 		const context = readFileSync(path.join(repoRoot, "CONTEXT.md"), "utf8");
 		expect(context).toContain("Semantic scout");
 	});
+
+	test("AGENTS documents the overengineering mode and module", () => {
+		const agents = readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
+		expect(agents).toContain("PEDSTACK_OVERENGINEERING");
+		expect(agents).toContain("overengineering/");
+	});
+
+	test("CONTEXT documents the overengineering vocabulary", () => {
+		const context = readFileSync(path.join(repoRoot, "CONTEXT.md"), "utf8");
+		expect(context).toContain("OVERENGINEERING_FLOOR");
+		expect(context).toContain("no_unrequested_abstraction");
+		expect(context).toContain("scope_fidelity");
+		expect(context).toContain("complexity_proportionality");
+		expect(context).toContain("dependency_justification");
+		expect(context).toContain("PEDSTACK_OVERENGINEERING");
+	});
 });

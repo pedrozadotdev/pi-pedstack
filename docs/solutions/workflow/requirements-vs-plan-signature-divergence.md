@@ -165,6 +165,37 @@ frozen signature. "The implementation matches the plan" stayed true; neither mat
 The read-site sibling signal from the same review is
 [`../architecture/one-freshness-predicate-reused-at-every-read-site.md`](../architecture/one-freshness-predicate-reused-at-every-read-site.md).
 
+## Recurrence (2026-10-06): behavior promised in docs but absent from code
+
+The class recurred a fourth time in the docs-verification review
+([`../../reviews/2026-10-06-runtime-source-driven-docs-verification.md`](../../reviews/2026-10-06-runtime-source-driven-docs-verification.md)).
+This time the divergence was not a *type* mismatch but a **behavioral contract**
+the requirements, plan, and docs all promised and the code never ran.
+
+| Finding | Status | Divergence | Why the diff looked green |
+|---|---|---|---|
+| M1 | Open decision | R7 / Unit 4 / `AGENTS.md` / `CONTEXT.md` promise that open obligations carry across a plan rewrite by unit slug and that a waiver re-opens on hash change. `store.ts` exports `carryOverObligations`, but `guard.ts` never imports it — `evaluate` builds records from a fresh `classifyPlans` re-score. The function is imported **only** by `tests/docs-verification-store.test.ts`, so it is test-only dead code. A renamed-but-unchanged unit silently drops its waiver/satisfaction and is re-scored. | The guard test "a waived obligation re-opens when the unit hash changes" passes for the wrong reason: the fake Jev re-scores it `required`, not because carry-over ran. |
+| M2 | Open decision | The plan and `AGENTS.md` scope the docs save hook to the `02-plan`/`03-work` **completion pairs**. `utils/docs-verification-wiring.ts` `run()` checks only `mode` and `DOCS_STAGES.has(currentStage)` and ignores `nextStage`; `tools/context-handoff.ts` calls it unconditionally before the completion gate. `isCompletionSave(currentStage, nextStage)` already exists in `stage-gate/store.ts` but is never consulted. An explicit same-stage checkpoint save can trigger a full evaluation and, in `enforce`, block. | The integration test always passes `nextStage: "04-review"`; no test saves with `nextStage === currentStage`. |
+
+**Root cause, extended:** a documented behavior that lives only in prose (a
+requirement row, a plan unit, `AGENTS.md`) is invisible to the type system and to
+a green suite. "Code matches the plan" and "the plan is self-consistent" both
+stay true while the promised behavior is unreachable. Dead helper code is a
+particularly strong tell: an exported function whose only import is a test is
+evidence that the intended call site was never wired.
+
+**Detection added (extends the rules above):**
+
+- For every behavior stated in requirements/plan/docs, name the production call
+  site that implements it. If the only import of the implementing function is a
+  test, the behavior is a divergence, not an implementation choice.
+- Do not accept a passing test as proof the path ran: assert the *effect* (the
+  waiver stays open / the carry-over field is merged), not just the surfaced
+  verdict, so a re-score cannot impersonate a carry-over.
+- When a plan names a predicate that scopes a hook (e.g. `isCompletionSave`),
+  require the hook to call it; a hook that re-implements a broader condition
+  inline is a divergence even when it is a superset.
+
 ## Downstream Impact
 
 ### For 02-plan

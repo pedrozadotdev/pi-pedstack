@@ -1,5 +1,6 @@
 // Stage gate rubric tests (plan Unit 1: pure deterministic evaluator).
 import { describe, expect, test } from "bun:test";
+import { combineVerdict } from "../extensions/ce-core/stage-gate/combine.js";
 import {
 	evaluateDeterministic,
 	getStageRubric,
@@ -10,6 +11,7 @@ import type {
 	DeterministicResult,
 	Evidence,
 	EvidenceFile,
+	EvidenceObligations,
 	ReviewFindingsFile,
 	StageKey,
 } from "../extensions/ce-core/stage-gate/types.js";
@@ -47,6 +49,7 @@ function evidence(
 		planText: null,
 		gitDiff: null,
 		truncated: false,
+		obligations: overrides.obligations ?? null,
 		...overrides,
 	};
 }
@@ -400,5 +403,124 @@ describe("stage gate rubrics (Unit 1)", () => {
 			checkpoints: [{ path: "checkpoints/c.json", status: "ok" }],
 		});
 		expectPass(results, "checkpoint_consistent");
+	});
+});
+
+function obligations(over: Partial<EvidenceObligations> = {}): EvidenceObligations {
+	return {
+		applicable: true,
+		planHasExternalPackages: true,
+		storePresent: true,
+		stale: false,
+		degraded: false,
+		failClosed: false,
+		open: 0,
+		satisfied: 1,
+		waived: 0,
+		...over,
+	};
+}
+
+describe("stage gate rubrics — source_verification_obligations (Unit 6)", () => {
+	test("is a non-critical check on the 02-plan and 03-work rubrics", () => {
+		for (const stage of ["02-plan", "03-work"] as StageKey[]) {
+			const found = resultFor(
+				run(stage, { txt: PLAN_COMPLETE }),
+				"source_verification_obligations",
+			);
+			expect({ stage, critical: found.critical }).toEqual({ stage, critical: false });
+		}
+	});
+
+	test("null obligations pass", () => {
+		expectPass(run("02-plan", { txt: PLAN_COMPLETE }), "source_verification_obligations");
+	});
+
+	test("no detectable external packages pass", () => {
+		const results = run("02-plan", {
+			txt: PLAN_COMPLETE,
+			obligations: obligations({ planHasExternalPackages: false, storePresent: false }),
+		});
+		expectPass(results, "source_verification_obligations");
+	});
+
+	test("all obligations satisfied or waived pass", () => {
+		const results = run("02-plan", {
+			txt: PLAN_COMPLETE,
+			obligations: obligations({ satisfied: 2, waived: 1, open: 0 }),
+		});
+		expectPass(results, "source_verification_obligations");
+	});
+
+	test("an open obligation fails", () => {
+		const results = run("02-plan", {
+			txt: PLAN_COMPLETE,
+			obligations: obligations({ open: 1, satisfied: 0 }),
+		});
+		expectFail(results, "source_verification_obligations");
+	});
+
+	test("a stale store fails", () => {
+		const results = run("02-plan", {
+			txt: PLAN_COMPLETE,
+			obligations: obligations({ stale: true }),
+		});
+		expectFail(results, "source_verification_obligations");
+	});
+
+	test("a missing store with external packages fails", () => {
+		const results = run("02-plan", {
+			txt: PLAN_COMPLETE,
+			obligations: obligations({ storePresent: false, satisfied: 0 }),
+		});
+		expectFail(results, "source_verification_obligations");
+	});
+
+	test("degraded passes when fail-closed is 0 and fails when it is 1", () => {
+		const lenient = run("03-work", {
+			txt: "bun test: 1 pass, 0 fail",
+			planText: PLAN_COMPLETE,
+			checkpoints: [{ path: "checkpoints/c.json", status: "ok", completedUnits: ["u1"] }],
+			obligations: obligations({ degraded: true, open: 1, satisfied: 0, failClosed: false }),
+		});
+		expectPass(lenient, "source_verification_obligations");
+
+		const strict = run("03-work", {
+			txt: "bun test: 1 pass, 0 fail",
+			planText: PLAN_COMPLETE,
+			checkpoints: [{ path: "checkpoints/c.json", status: "ok", completedUnits: ["u1"] }],
+			obligations: obligations({ degraded: true, open: 1, satisfied: 0, failClosed: true }),
+		});
+		expectFail(strict, "source_verification_obligations");
+	});
+
+	test("an off / out-of-scope record passes even with external packages", () => {
+		const results = run("02-plan", {
+			txt: PLAN_COMPLETE,
+			obligations: obligations({
+				applicable: false,
+				storePresent: false,
+				satisfied: 0,
+				planHasExternalPackages: true,
+			}),
+		});
+		expectPass(results, "source_verification_obligations");
+	});
+
+	test("a non-critical failure yields revise and never accept", () => {
+		const det = run("02-plan", {
+			txt: PLAN_COMPLETE,
+			obligations: obligations({ open: 1, satisfied: 0 }),
+		});
+		const combined = combineVerdict({
+			det,
+			sem: [
+				{ id: "unit_atomicity", score: 4, levels: 5, confidence: 1, weight: 1 },
+			],
+			attempts: 0,
+			jevUnavailable: false,
+		});
+		expect(combined.verdict).toBe("revise");
+		expect(combined.criticalFailed).toBe(false);
 	});
 });

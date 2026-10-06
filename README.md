@@ -28,6 +28,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
 - **Bash stage guard (shadow by default)** — an indirect-surface guard classifies `bash` commands by effect (writes, deletes, installs, package runners, pipes) and logs verdicts to `.context/compound-engineering/jev-stage-guard.jsonl`; set `PEDSTACK_JEV_STAGE_GUARD=enforce` to block
 - **Stage completion gate** — every stage scores the artifact it produced before its cross-stage handoff. Deterministic per-stage predicates (artifact present, required headings, no placeholders, persisted review findings) block in **both** `shadow` and `enforce`; CommandCode `typesafe/jev` adds a bounded semantic score via the `stage_gate` tool. `PEDSTACK_STAGE_GATE=off|shadow|enforce` (default `shadow`)
+- **Semantic overengineering signal (shadow-first)** — four floor-only dimensions (`no_unrequested_abstraction`, `scope_fidelity`, `complexity_proportionality`, `dependency_justification`) ride the existing stage-gate Jev request and judge whether an artifact added only *justified* complexity. They are excluded from `weightedAverage` and can only lower a verdict via `OVERENGINEERING_FLOOR = 0.5`. Ships inert (`PEDSTACK_OVERENGINEERING=off|shadow|enforce`, default `shadow`), independent of `PEDSTACK_STAGE_GATE`
 - **Untrusted injection screen** — a two-phase `tool_result` screen classifies provenance (HTTP, `gh` reads, external paths) and asks Jev one bounded question; `enforce` prepends a deterministic warning wrapper around flagged content without rewriting it. Ships shadow-first (`PEDSTACK_INJECTION_SCREEN=off|shadow|enforce`, default `shadow`), fails open on Jev failure and wrap-miss
 - **Failure triage** — a failed `test`/`typecheck`/`lint`/`build` command during `03-work` or `04-5-debug` gains an inline, bounded advisory TRIAGE block (category, relation to recent change, root-cause clarity) and a record under `.context/compound-engineering/triage/`; Jev degrades to a deterministic heuristic on outage, and triage never auto-fixes or changes the exit status
 - **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
@@ -306,6 +307,20 @@ Anti-rationalization: do not rationalize, downgrade, or explain away failures. S
 
 When implementation depends on a framework/library API, version-specific behavior, or a recommended pattern: verify against official documentation using the `contextqmd` CLI as the primary tool (see [shared contextqmd docs instruction](skills/references/contextqmd-docs.md)) before implementing. Pure logic, renaming, or in-project pattern reuse does not require external citation.
 
+### Docs-verification runtime trigger (#15)
+
+Source-driven verification is a **runtime trigger**, not model initiative. At the `02-plan` and `03-work` completion pairs, `context_handoff save` evaluates every implementation unit before the completion gate:
+
+- **Deterministic facts in TypeScript** — declared files, the nearest `package.json` dependency set, resolved lockfile versions (`bun.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`), and static `import` / `export ... from` / `require()` specifiers. A version-unknown fact can never justify a confident `not_required`.
+- **Jev judges only three bounded `noul` questions** — external API dependence, version sensitivity, and whether authoritative verification is materially needed.
+- **TypeScript derives** `not_required | required | uncertain`, aggregates packages (cap 8), and raises the version-unknown floor.
+- **Obligations** — a `required`/`uncertain` unit creates a tracked obligation that stays `open` until a compact, format- and package-matched `docs-verified: PACKAGE@VERSION DOC_REF` line is recorded, or the operator `waive`s it with a reason (`satisfied` → `waived` → re-opens when the unit content hash changes). A satisfied obligation is reused with **zero new Jev calls**; a `fallback`-satisfied obligation is re-scored on recovery.
+- **Non-critical rubric check** — `source_verification_obligations` fails (yielding `revise`, never `accept`) when an obligation is open, the record is stale, or a plan that touches external packages has no store. In `enforce` that blocks the cross-stage save; `shadow` warns.
+- **Tool** — `docs_verification` exposes `evaluate` / `status` / `record` / `waive`.
+- `PEDSTACK_DOCS_VERIFICATION = off | shadow | enforce` (default `shadow`) is read once at extension init; a Jev outage degrades to `uncertain` with obligations open and never marks evidence complete.
+
+**Known limitations (deferred to an on-demand `04-5-debug` pass):** the planned-phase extractor is over-broad — it can treat backticked code identifiers (`types.ts`, `status`, `mode`) as external packages and mint false obligations — and declared `Files` paths are resolved without repo containment (`canonicalRel`/`isInside`), so an absolute or `../` entry can be read outside the repo. The save hook also runs on every `02-plan`/`03-work` save rather than only the completion pair, and `status` returns the raw record with no freshness verdict. Both high findings share one root cause — model-authored plan prose trusted as typed data — recorded in the [untrusted plan-field card](docs/solutions/architecture/validate-model-authored-plan-fields-before-read-or-extract.md); the read-site and fallback defects are in the [read-site freshness card](docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md) and [degraded-fallback card](docs/solutions/architecture/keep-degraded-fallbacks-out-of-primary-signal-state.md).
+
 ### Review five axes
 
 All reviewers evaluate changes across: **correctness, readability, architecture, security, performance.**
@@ -323,6 +338,17 @@ Records are persisted per stage under `.context/compound-engineering/stage-gates
 
 **Known limitations:** the semantic scorer needs CommandCode to be available — when the runtime is unavailable the score is marked `jev unavailable` and the deterministic floor still decides. The placeholder predicate currently rejects normal schema notation (`<string>`, `<sha256>`) and the shared `stage-reports/` fallback can resolve the wrong stage's report; both confirmed defects are recorded in the [stage-gate solution card](docs/solutions/workflow/stage-artifact-completion-gate-shadow-first-rubrics.md).
 
+### Overengineering signal (shadow-first)
+
+The Ponytail/YAGNI discipline is injected as prompt prose into `02-plan`, `03-work`, `04-review`, and `04-5-debug`. The overengineering signal (`extensions/ce-core/overengineering/`) gives the stage gate four semantic dimensions that check whether the artifact added only *justified* complexity — `no_unrequested_abstraction`, `scope_fidelity`, `complexity_proportionality`, and `dependency_justification`.
+
+- **Floor-only, never averageable.** The four dimensions are excluded from `weightedAverage`, so they cannot move a historical verdict boundary. They can only lower a verdict: any present dimension below `OVERENGINEERING_FLOOR = 0.5` blocks `accept` when enforcement is on. A skipped dimension is absent from `sem` with a reason in `skippedDimensions[]` — never a sentinel score.
+- **Independent shadow flag.** `PEDSTACK_OVERENGINEERING = off | shadow | enforce` (default `shadow`) is read once at init and is independent of `PEDSTACK_STAGE_GATE`, so calibrating one judgment cannot force the other. An invalid value resolves to `shadow`, never `off`.
+- **Deterministic baseline first.** Each stage's normative excerpt (requirements for `02-plan`, the plan for `03-work`, both for `04-review`) is resolved from files — never a network fetch. A missing baseline short-circuits to `unavailable` with no git call; `off` performs no reads.
+- **Exact evidence, injected I/O.** `facts.ts` extracts diff, manifest, and untracked-file facts behind an injected `runGit`; a git failure degrades to empty facts plus skip reasons. The record's `source` separates a real reading (`jev`) from an outage or a size trim, so the calibration log never counts an outage as a reading.
+
+**Enforcement checkpoint:** flip `PEDSTACK_OVERENGINEERING` to `enforce` only after the D10 calibration data exists. The `04-review` pass confirmed the feature and found 1 high + 2 moderate + 4 low findings, all in the deterministic evidence path: H1 treats a directory with *no* `package.json` as unreadable (permanently skipping `dependency_justification`), M1 extracts script/nested manifest keys as dependencies, and M2 stamps a Jev outage as `source: "jev"`. None change a verdict while the signal is inert; they are deferred to an on-demand `04-5-debug` pass and recorded in the [floor-only semantic dimensions card](docs/solutions/architecture/floor-only-semantic-dimensions-with-exact-evidence.md).
+
 ### Handoff readiness (#10)
 
 A handoff can pass every structural probe and still be semantically empty — a bare `/ped-next` next step, `verification: ran tests` with no command or result, stale active files, blocking open decisions, or missing history. The save-side readiness guard (`extensions/ce-core/handoff-readiness/`) is layered **on top of** the deterministic floor, which stays authoritative: Jev can only add a block, never override a deterministic one.
@@ -334,6 +360,7 @@ A handoff can pass every structural probe and still be semantically empty — a 
 - **Advisory read-back.** `context_handoff validate` returns the latest record for the resolved pair without ever calling Jev.
 - `PEDSTACK_HANDOFF_READINESS = off | shadow | enforce` (default `shadow`) is read once at extension init.
 - `PEDSTACK_HANDOFF_READINESS_FAILCLOSED=1` blocks in `enforce` when the semantic layer is **degraded**; the default is fail-open.
+- `PEDSTACK_DOCS_VERIFICATION = off | shadow | enforce` (default `shadow`) gates the docs-verification runtime trigger; `PEDSTACK_DOCS_VERIFICATION_FAILCLOSED=1` blocks in `enforce` on a degraded layer (default `0`, fail-open).
 
 **Known limitations (deferred to an on-demand `04-5-debug` pass):** the deterministic pre-pass checks `activeFiles` only, not the union with `recentlyAccessedFiles`, so a deleted recent-only file can still be judged `continue`; and `validate`'s surfacing matches on pair + thresholds version alone, so it can return a stale or degraded record instead of the required “never a stale one”. The fix is to reuse the single exported freshness predicate at every read site — recorded in the [read-site freshness card](docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md).
 
@@ -468,7 +495,7 @@ New conversation overhead: **~3,700 tokens** (1.9% of 200K context).
 | Component | Tokens |
 |-----------|--------|
 | 7 pipeline skill registrations | ~850 |
-| 26 tool schemas (16 CE + 10 built-in) | ~2,860 |
+| 27 tool schemas (17 CE + 10 built-in) | ~2,860 |
 | Skill context (per user invocation) | ~300–1,200 |
 
 Progressive loading: only needed skills loaded on-demand.
@@ -514,10 +541,10 @@ Commit everything to git — these files are the project's traceable memory.
 | Component | Count |
 |-----------|------:|
 | Skills | 7 |
-| Tools | 16 CE + 10 Pi built-in |
+| Tools | 17 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~44,300 |
-| Tests | 1,298 (1,296 pass + 2 opt-in skips) (3,963 assertions) |
+| TypeScript lines | ~52,600 |
+| Tests | 1,504 (1,502 pass + 2 opt-in skips) (4,599 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -554,6 +581,16 @@ then Jev — with all I/O injected. `context_handoff save` consults it on
 cross-stage completion saves and `context_handoff validate` reads a record back
 advisorily, never calling Jev (issue
 [#10](https://github.com/pedrozadotdev/pi-pedstack/issues/10)).
+
+The overengineering subsystem (`extensions/ce-core/overengineering/`) supplies the stage
+gate with the two things it lacked — a per-stage baseline and deterministic complexity
+facts — for four floor-only semantic dimensions. `baseline.ts` resolves the per-stage
+normative excerpt from files only; `facts.ts` is pure diff/manifest/untracked extraction
+behind an injected git runner; `compose.ts` resolves the mode and baseline first, then
+degrades to `unavailable` rather than throwing; `shadow-log.ts` appends the D10
+calibration records. The four dimensions are excluded from `weightedAverage` and can only
+lower a verdict through `OVERENGINEERING_FLOOR = 0.5` (issue
+[#16](https://github.com/pedrozadotdev/pi-pedstack/issues/16)).
 
 The failure-triage subsystem (`extensions/ce-core/tools/failure-triage.ts`,
 `failure-triage-runner.ts`, `triage-store.ts`) registers no Pi tool either. It runs as a
