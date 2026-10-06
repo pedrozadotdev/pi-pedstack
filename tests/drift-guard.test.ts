@@ -22,6 +22,7 @@ import {
 	shouldBlockCompletion,
 	type DriftLogRecord,
 	type DriftRecord,
+	type DriftStatus,
 } from "../extensions/ce-core/drift/store.js";
 import type { DriftDimensionId } from "../extensions/ce-core/drift/types.js";
 
@@ -70,6 +71,7 @@ interface Harness {
 	guard: DriftGuard;
 	jev: ReturnType<typeof createFakeJevRuntime>;
 	records: Map<string, DriftRecord>;
+	statuses: Map<string, DriftStatus>;
 	logs: DriftLogRecord[];
 	calls: { count: number };
 	setValues(values: Partial<Record<DriftDimensionId, number>>): void;
@@ -80,6 +82,7 @@ function makeGuard(over: Partial<DriftGuardDeps> = {}): Harness {
 	let values: Record<DriftDimensionId, number> = { ...GOOD };
 	let failing = false;
 	const records = new Map<string, DriftRecord>();
+	const statuses = new Map<string, DriftStatus>();
 	const logs: DriftLogRecord[] = [];
 	const calls = { count: 0 };
 
@@ -113,6 +116,9 @@ function makeGuard(over: Partial<DriftGuardDeps> = {}): Harness {
 		clearRecord: async (_repoRoot: string, stage: string) => {
 			records.delete(stage);
 		},
+		writeStatus: async (_repoRoot: string, status: DriftStatus) => {
+			statuses.set(status.stage, status);
+		},
 		logRecord: (_repoRoot: string, record: DriftLogRecord) => {
 			logs.push(record);
 		},
@@ -123,6 +129,7 @@ function makeGuard(over: Partial<DriftGuardDeps> = {}): Harness {
 		guard,
 		jev,
 		records,
+		statuses,
 		logs,
 		calls,
 		setValues(next) {
@@ -254,7 +261,7 @@ describe("shadow vs enforce", () => {
 
 	test("newest correction overwrites the pending one across stages", async () => {
 		const harness = makeGuard();
-		harness.setValues({ progress: 0.1 });
+		harness.setValues({ in_stage_scope: 0.1 });
 		await harness.guard.evaluate(
 			turn({ message: assistant([{ type: "text", text: "one" }]) }),
 		);
@@ -287,7 +294,7 @@ describe("streak transition and strong persistence", () => {
 
 	test("two consecutive mild jev turns escalate to strong", async () => {
 		const harness = makeGuard();
-		harness.setValues({ progress: 0.1 });
+		harness.setValues({ in_stage_scope: 0.1 });
 		await harness.guard.evaluate(
 			turn({ message: assistant([{ type: "text", text: "mild one" }]) }),
 		);
@@ -388,15 +395,121 @@ describe("streak transition and strong persistence", () => {
 describe("record shape", () => {
 	test("a persisted record carries the frozen fields and thresholds version", async () => {
 		const harness = makeGuard();
-		harness.setValues({ progress: 0.1 });
+		harness.setValues({ in_stage_scope: 0.1 });
 		await harness.guard.evaluate(turn());
 		const record = harness.records.get(STAGE)!;
 		expect(record.schema).toBe(1);
 		expect(record.thresholdsVersion).toBe(THRESHOLDS_VERSION);
 		expect(record.sessionKey).toBe(SESSION);
 		expect(record.source).toBe("jev");
-		expect(record.triggered).toContain("progress");
+		expect(record.triggered).toContain("in_stage_scope");
 		expect(record.updatedAt).toBe(NOW.toISOString());
+	});
+});
+
+describe("drift status marker (enforce only)", () => {
+	test("enforce writes a non-degraded status for a jev verdict", async () => {
+		const harness = makeGuard();
+		harness.setValues({ in_stage_scope: 0.1 });
+		await harness.guard.evaluate(turn());
+		const status = harness.statuses.get(STAGE);
+		expect(status).toEqual({
+			schema: 1,
+			stage: STAGE,
+			sessionKey: SESSION,
+			thresholdsVersion: THRESHOLDS_VERSION,
+			degraded: false,
+			updatedAt: NOW.toISOString(),
+		});
+	});
+
+	test("enforce writes degraded:true on a Jev outage without touching the record", async () => {
+		const harness = makeGuard();
+		harness.records.set(STAGE, {
+			schema: 1,
+			stage: STAGE,
+			sessionKey: SESSION,
+			turnIndex: 0,
+			signature: "old",
+			thresholdsVersion: THRESHOLDS_VERSION,
+			verdict: "strong_drift",
+			source: "jev",
+			triggered: ["forbidden_work"],
+			consecutiveMild: 0,
+			consecutiveNoDrift: 0,
+			updatedAt: NOW.toISOString(),
+		});
+		harness.setError();
+		const result = await harness.guard.evaluate(turn());
+		expect(result.source).toBe("degraded");
+		expect(harness.statuses.get(STAGE)?.degraded).toBe(true);
+		expect(harness.records.get(STAGE)?.verdict).toBe("strong_drift");
+	});
+
+	test("enforce writes degraded:true on invalid (degraded) answers", async () => {
+		const harness = makeGuard({
+			createJev: () =>
+				createFakeJevRuntime({
+					handler: () => ({
+						exitCode: 0,
+						stdout: JSON.stringify({ answers: {}, model: "typesafe/jev" }),
+						stderr: "",
+					}),
+				}),
+		});
+		const result = await harness.guard.evaluate(turn());
+		expect(result.source).toBe("degraded");
+		expect(harness.statuses.get(STAGE)?.degraded).toBe(true);
+	});
+
+	test("deterministic short-circuits write no status", async () => {
+		const unknown = makeGuard();
+		await unknown.guard.evaluate(turn({ stage: "09-nope" }));
+		expect(unknown.statuses.size).toBe(0);
+
+		const trivial = makeGuard();
+		await trivial.guard.evaluate(turn({ message: assistant([]) }));
+		expect(trivial.statuses.size).toBe(0);
+
+		const reused = makeGuard();
+		const first = turn();
+		await reused.guard.evaluate(first);
+		await reused.guard.evaluate(first);
+		expect(reused.statuses.size).toBe(1);
+
+		const capped = makeGuard({ mode: "shadow" });
+		for (let index = 0; index < MAX_DRIFT_JEV_CALLS_PER_SESSION; index++) {
+			await capped.guard.evaluate(
+				turn({
+					message: assistant([{ type: "text", text: `turn ${index}` }]),
+					turnIndex: index,
+				}),
+			);
+		}
+		await capped.guard.evaluate(
+			turn({ message: assistant([{ type: "text", text: "one more" }]) }),
+		);
+		expect(capped.statuses.size).toBe(0);
+	});
+
+	test("shadow writes neither a status nor a record", async () => {
+		const harness = makeGuard({ mode: "shadow" });
+		harness.setValues({ in_stage_scope: 0.1 });
+		await harness.guard.evaluate(turn());
+		expect(harness.statuses.size).toBe(0);
+		expect(harness.records.size).toBe(0);
+	});
+
+	test("a status-write failure does not fail the turn or suppress the log", async () => {
+		const harness = makeGuard({
+			writeStatus: () => {
+				throw new Error("disk full");
+			},
+		});
+		harness.setValues({ in_stage_scope: 0.1 });
+		const result = await harness.guard.evaluate(turn());
+		expect(result.verdict).toBe("mild_drift");
+		expect(harness.logs).toHaveLength(1);
 	});
 });
 
@@ -419,7 +532,7 @@ describe("prior lookup only from a fresh jev record", () => {
 				NOW.getTime() - DRIFT_RECORD_TTL_MS - 1,
 			).toISOString(),
 		});
-		harness.setValues({ progress: 0.1 });
+		harness.setValues({ in_stage_scope: 0.1 });
 		const result = await harness.guard.evaluate(turn());
 		expect(result.verdict).toBe("mild_drift");
 		expect(DRIFT_QUESTION_IDS).toContain("progress");

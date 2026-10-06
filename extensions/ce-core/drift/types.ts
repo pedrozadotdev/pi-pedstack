@@ -28,6 +28,13 @@ export interface DriftDimension {
 	confidence: number; // >= MIN_CONFIDENCE
 }
 
+/**
+ * Dimensions that can carry a one-shot correction. `progress` is
+ * supporting-only (FT-5) and can never be the triggering signal of a mild
+ * verdict, so it is excluded from correction copy.
+ */
+export type CorrectionDimensionId = Exclude<DriftDimensionId, "progress">;
+
 export interface DriftOutcome {
 	verdict: DriftVerdict;
 	source: DriftSource;
@@ -67,6 +74,11 @@ export interface DeriveContext {
 	priorConsecutiveNoDrift?: number;
 	/** Whether the turn wrote the active stage's own artifact class. */
 	wroteStageArtifact?: boolean;
+	/**
+	 * Recurrence knob (D4): a mild signal escalates to strong once the prior
+	 * consecutive-mild count reaches `limit - 1`. Invalid values clamp to 2.
+	 */
+	mildRepeatLimit?: number;
 }
 
 /** Result of the pure derivation; counters are ready to persist. */

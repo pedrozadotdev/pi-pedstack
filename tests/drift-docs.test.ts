@@ -46,3 +46,28 @@ describe("Unit 7 — README operator surface", () => {
 		expect(readme).toContain("calibrate");
 	});
 });
+
+describe("Unit 6 — corrected drift semantics in docs", () => {
+	test("README drops the shipped-divergence text and documents the .status.json marker", () => {
+		const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
+		expect(readme).not.toContain("no fresh Jev record");
+		expect(readme).not.toContain("FORBIDDEN_STRONG");
+		expect(readme).toContain(".status.json");
+		expect(readme).toMatch(/degraded/);
+	});
+
+	test("CONTEXT documents the drift-status term and removes the fail-closed gap", () => {
+		const context = readFileSync(path.join(repoRoot, "CONTEXT.md"), "utf8");
+		expect(context).toContain("Drift status");
+		expect(context).toContain("supporting-only");
+		expect(context).not.toContain("Fail-closed gap");
+		expect(context).not.toContain("Shipped divergence");
+	});
+
+	test("AGENTS documents the narrowed fail-closed rule and no stale known limitation", () => {
+		const agents = readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
+		expect(agents).toContain(".status.json");
+		expect(agents).toMatch(/degraded/);
+		expect(agents).not.toContain("known limitation: it cannot distinguish");
+	});
+});

@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DRIFT_RECORD_TTL_MS, THRESHOLDS_VERSION } from "../extensions/ce-core/drift/combine.js";
-import type { DriftRecord } from "../extensions/ce-core/drift/store.js";
+import type { DriftRecord, DriftStatus } from "../extensions/ce-core/drift/store.js";
 import {
 	createContextHandoffTool,
 	type ContextHandoffDriftOptions,
@@ -36,6 +36,18 @@ function strongRecord(over: Partial<DriftRecord> = {}): DriftRecord {
 	};
 }
 
+function degradedStatus(over: Partial<DriftStatus> = {}): DriftStatus {
+	return {
+		schema: 1,
+		stage: STAGE,
+		sessionKey: SESSION,
+		thresholdsVersion: THRESHOLDS_VERSION,
+		degraded: true,
+		updatedAt: NOW.toISOString(),
+		...over,
+	};
+}
+
 function makeOptions(
 	over: Partial<ContextHandoffDriftOptions> = {},
 ): ContextHandoffDriftOptions {
@@ -45,6 +57,7 @@ function makeOptions(
 		sessionKey: () => SESSION,
 		now: () => NOW,
 		readRecord: async () => null,
+		readStatus: async () => null,
 		...over,
 	};
 }
@@ -177,14 +190,103 @@ describe("save gating", () => {
 		expect(result.blocker).toBeUndefined();
 	});
 
-	test("enforce + failClosed with no record blocks with the degraded message", async () => {
+	test("enforce + failClosed with no record and no status is allowed", async () => {
 		const tool = createContextHandoffTool({
 			drift: makeOptions({ failClosed: true, readRecord: async () => null }),
 		});
 		const result = await tool.execute(saveInput());
+		expect(result.blocker).toBeUndefined();
+		expect(handoffWritten()).toBe(true);
+	});
+
+	test("enforce + failClosed blocks a fresh degraded status", async () => {
+		const tool = createContextHandoffTool({
+			drift: makeOptions({
+				failClosed: true,
+				readStatus: async () => degradedStatus(),
+			}),
+		});
+		const result = await tool.execute(saveInput());
 		expect(result.blocker).toContain("drift status is unknown");
+		expect(result.blocker).toContain("02-plan.status.json");
 		expect(result.blocker).toContain("PEDSTACK_DRIFT_GUARD_FAILCLOSED=1");
 		expect(handoffWritten()).toBe(false);
+	});
+
+	test("enforce + failClosed allows a fresh non-degraded status", async () => {
+		const tool = createContextHandoffTool({
+			drift: makeOptions({
+				failClosed: true,
+				readStatus: async () => degradedStatus({ degraded: false }),
+			}),
+		});
+		const result = await tool.execute(saveInput());
+		expect(result.blocker).toBeUndefined();
+	});
+
+	test("enforce + failClosed fail-open matrix (all allowed)", async () => {
+		const expired = new Date(
+			NOW.getTime() - DRIFT_RECORD_TTL_MS - 1,
+		).toISOString();
+		const rows: { name: string; status: DriftStatus }[] = [
+			{
+				name: "expired status",
+				status: degradedStatus({ updatedAt: expired }),
+			},
+			{
+				name: "session mismatch",
+				status: degradedStatus({ sessionKey: "other" }),
+			},
+			{
+				name: "unknown-session",
+				status: degradedStatus({ sessionKey: "unknown-session" }),
+			},
+			{
+				name: "old thresholds version",
+				status: degradedStatus({ thresholdsVersion: 1 }),
+			},
+		];
+		for (const row of rows) {
+			const tool = createContextHandoffTool({
+				drift: makeOptions({
+					failClosed: true,
+					sessionKey: () =>
+						row.name === "unknown-session" ? "unknown-session" : SESSION,
+					readStatus: async () => row.status,
+				}),
+			});
+			const result = await tool.execute(saveInput());
+			expect({ name: row.name, blocker: result.blocker }).toEqual({
+				name: row.name,
+				blocker: undefined,
+			});
+		}
+	});
+
+	test("enforce + failClosed allows when the status reader throws", async () => {
+		const tool = createContextHandoffTool({
+			drift: makeOptions({
+				failClosed: true,
+				readStatus: async () => {
+					throw new Error("boom");
+				},
+			}),
+		});
+		const result = await tool.execute(saveInput());
+		expect(result.blocker).toBeUndefined();
+	});
+
+	test("a v1 strong record cannot block after the thresholds bump", async () => {
+		const tool = createContextHandoffTool({
+			drift: makeOptions({
+				failClosed: true,
+				readRecord: async () => strongRecord({ thresholdsVersion: 1 }),
+				readStatus: async () => degradedStatus({ thresholdsVersion: 1 }),
+			}),
+		});
+		const result = await tool.execute(saveInput());
+		expect(result.blocker).toBeUndefined();
+		expect(handoffWritten()).toBe(true);
 	});
 
 	test("enforce + failClosed false with no record is allowed", async () => {

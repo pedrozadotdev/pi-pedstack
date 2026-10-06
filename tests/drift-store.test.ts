@@ -16,17 +16,23 @@ import {
 	appendDriftLog,
 	clearDriftRecord,
 	driftRecordPath,
+	driftStatusPath,
+	driftStatusRelPath,
 	getCurrentDriftSessionKey,
 	isDriftRecordFresh,
+	isDriftStatusFresh,
 	readDriftRecord,
+	readDriftStatus,
 	resolveDriftFailClosed,
 	resolveDriftMode,
 	resolveSessionKey,
 	setCurrentDriftSessionKey,
 	shouldBlockCompletion,
 	writeDriftRecord,
+	writeDriftStatus,
 	type DriftLogRecord,
 	type DriftRecord,
+	type DriftStatus,
 } from "../extensions/ce-core/drift/store.js";
 
 let root: string;
@@ -304,6 +310,129 @@ describe("shouldBlockCompletion", () => {
 				NOW,
 			),
 		).toBe(false);
+	});
+});
+
+describe("drift status store", () => {
+	function status(over: Partial<DriftStatus> = {}): DriftStatus {
+		return {
+			schema: 1,
+			stage: "03-work",
+			sessionKey: "sid-1",
+			thresholdsVersion: THRESHOLDS_VERSION,
+			degraded: false,
+			updatedAt: "2026-10-06T00:00:00.000Z",
+			...over,
+		};
+	}
+
+	test("derives the .status.json path from the stage slug", () => {
+		expect(driftStatusPath("/repo", "03-work")).toBe(
+			path.join("/repo", DRIFT_DIR, "03-work.status.json"),
+		);
+		expect(driftStatusPath("/repo", "../../etc")).toBe(
+			path.join("/repo", DRIFT_DIR, "etc.status.json"),
+		);
+		expect(driftStatusRelPath("03-work")).toBe(
+			`${DRIFT_DIR}/03-work.status.json`,
+		);
+	});
+
+	test("round-trips a written status", async () => {
+		await writeDriftStatus(root, status({ degraded: true }));
+		const read = await readDriftStatus(root, "03-work");
+		expect(read).toEqual(status({ degraded: true }));
+	});
+
+	test("returns null for a missing status file", async () => {
+		expect(await readDriftStatus(root, "03-work")).toBeNull();
+	});
+
+	test("returns null for corrupt JSON and wrong-shape fields", async () => {
+		const cases: unknown[] = [
+			"{not json",
+			{ ...status(), schema: 2 },
+			{ ...status(), stage: "" },
+			{ ...status(), sessionKey: "" },
+			{ ...status(), thresholdsVersion: "2" },
+			{ ...status(), degraded: "false" },
+			{ ...status(), updatedAt: 123 },
+		];
+		for (const [index, payload] of cases.entries()) {
+			await writeRaw(
+				`${DRIFT_DIR}/03-work.status.json`,
+				typeof payload === "string" ? payload : JSON.stringify(payload),
+			);
+			expect({ index, read: await readDriftStatus(root, "03-work") }).toEqual({
+				index,
+				read: null,
+			});
+		}
+	});
+
+	test("fails open (null) when the status path is unreadable", async () => {
+		await fs.mkdir(path.join(root, DRIFT_DIR, "03-work.status.json"), {
+			recursive: true,
+		});
+		expect(await readDriftStatus(root, "03-work")).toBeNull();
+	});
+
+	test("isDriftStatusFresh: a matching status is fresh", () => {
+		expect(
+			isDriftStatusFresh(status(), "03-work", "sid-1", NOW),
+		).toBe(true);
+	});
+
+	test("isDriftStatusFresh: stage, session, and version mismatches are not fresh", () => {
+		expect(
+			isDriftStatusFresh(status(), "04-review", "sid-1", NOW),
+		).toBe(false);
+		expect(
+			isDriftStatusFresh(status(), "03-work", "other", NOW),
+		).toBe(false);
+		expect(
+			isDriftStatusFresh(
+				status({ thresholdsVersion: THRESHOLDS_VERSION + 1 }),
+				"03-work",
+				"sid-1",
+				NOW,
+			),
+		).toBe(false);
+	});
+
+	test("isDriftStatusFresh: an empty or unknown session key is not fresh", () => {
+		expect(isDriftStatusFresh(status({ sessionKey: "" }), "03-work", "", NOW)).toBe(
+			false,
+		);
+		expect(
+			isDriftStatusFresh(
+				status({ sessionKey: "unknown-session" }),
+				"03-work",
+				"unknown-session",
+				NOW,
+			),
+		).toBe(false);
+	});
+
+	test("isDriftStatusFresh: expired or unparseable timestamps are not fresh", () => {
+		const expired = new Date(
+			NOW.getTime() - DRIFT_RECORD_TTL_MS - 1,
+		).toISOString();
+		expect(
+			isDriftStatusFresh(status({ updatedAt: expired }), "03-work", "sid-1", NOW),
+		).toBe(false);
+		expect(
+			isDriftStatusFresh(
+				status({ updatedAt: "not-a-date" }),
+				"03-work",
+				"sid-1",
+				NOW,
+			),
+		).toBe(false);
+	});
+
+	test("isDriftStatusFresh: null is never fresh", () => {
+		expect(isDriftStatusFresh(null, "03-work", "sid-1", NOW)).toBe(false);
 	});
 });
 
