@@ -370,7 +370,7 @@ The capability matrix (#3) and the bash stage guard (#4) only act on a specific 
 
 - **Turn-side detection.** At each `turn_end`, TypeScript builds a compact, redacted turn state from the event itself (no cross-event accumulator), runs a deterministic pre-pass, and asks CommandCode `typesafe/jev` one bounded `noul` request over four dimensions: `in_stage_scope`, `forbidden_work`, `scope_drift`, `progress`. TypeScript derives `no_drift | mild_drift | strong_drift`; Jev never decides the verdict.
 - **One-shot correction (enforce).** A mild turn stores at most one correction; the single existing `before_agent_start` handler appends it once (`## 🧭 Stage Drift Correction`) and clears it. No forced continuation, so no loop. `shadow` never injects.
-- **Strong block (enforce).** A fresh `strong_drift` record for the current stage **and** session blocks a cross-stage `context_handoff save` in its deterministic floor (after the stage gate, before the readiness guard). A blocked save writes no handoff artifact. `shadow` only warns.
+- **Strong block (enforce).** A fresh `strong_drift` record for the current stage **and** session blocks a cross-stage `context_handoff save` in its deterministic floor (after the stage gate, before the readiness guard). A blocked save writes no handoff artifact. `shadow` writes no record, so the save-side warning only fires when a prior `enforce` run left a record.
 - **Never weaker than today.** `off`, an unknown/absent stage, a trivial turn, an unchanged turn signature, or a Jev outage all fail open (deterministic `no_drift`). A degraded or deterministic turn never writes or clears a record, so it can never clobber a strong one.
 - `PEDSTACK_DRIFT_GUARD = off | shadow | enforce` (default `shadow`) is read once at extension init. Missing/empty/invalid values fall back to `shadow` with a one-time warning and never silently resolve to `off`; changing it requires a restart.
 - `PEDSTACK_DRIFT_GUARD_FAILCLOSED=1` blocks in `enforce` when there is **no fresh Jev record** (semantic drift layer degraded or never run); the default is fail-open.
@@ -380,6 +380,15 @@ Records are persisted per stage at `.context/compound-engineering/drift/<stage>.
 **Shadow is not free.** The default `shadow` mode still calls Jev on the awaited `turn_end` handler — up to 24 distinct non-trivial turns per session, 8 s timeout each — so it adds latency even though it never blocks or injects. See the [shadow-mode-is-not-free card](docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md).
 
 **Stay in `shadow` and calibrate first.** Shadow computes and logs every judgment (including `dimensions`, `triggered`, and `jevCalled`) to `.context/compound-engineering/drift.jsonl` (rotated at 1 MiB) while blocking nothing. **Promote to `enforce` only after** at least 100 judged turns over a representative multi-stage run, a mild-correction rate below 20% of non-trivial turns, zero false-positive strong verdicts on a manually labeled in-scope set, a degraded rate below 5%, and no drift-caused blocked save with a false positive.
+
+**Known limitations (deferred to an on-demand `04-5-debug` pass).** The `04-review` findings below all raise the false-positive hard-block rate relative to the frozen plan, so `enforce` is not ready until they are resolved:
+
+- The frozen strong/mild table was collapsed — `forbidden_work >= 0.60` is `strong_drift` with **no** confidence gate (the plan required `>= 0.80` **and** confidence `>= 0.60`), so a 0.6–0.79 or low-confidence answer hard-blocks the cross-stage save (H3).
+- `progress` is counted as a soft trigger, so a lone slow/exploratory turn becomes `mild_drift` and can inject a correction (H1); `MILD_REPEAT_LIMIT` is exported but unread (M5).
+- `PEDSTACK_DRIFT_GUARD_FAILCLOSED=1` keys on “no fresh record”, which cannot distinguish a degraded semantic run from a stage that was never judged or whose record TTL-expired (H2, M1); the record TTL also contradicts the frozen “no TTL in v1” rule.
+- The planned per-stage correction ledger (capped-out recurrence escalates to strong) shipped without the ledger (M3).
+
+Findings are recorded in the [review report](docs/reviews/2026-10-06-turn-level-stage-drift-correction.md), the [frozen-decision-table drift card](docs/solutions/workflow/frozen-decision-tables-drift-from-implemented-constants.md), and the [shadow-mode-is-not-free recurrence](docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md).
 
 ### Deterministic stage guard
 
@@ -486,7 +495,7 @@ New conversation overhead: **~3,700 tokens** (1.9% of 200K context).
 | Component | Tokens |
 |-----------|--------|
 | 7 pipeline skill registrations | ~850 |
-| 26 tool schemas (16 CE + 10 built-in) | ~2,860 |
+| 27 tool schemas (17 CE + 10 built-in) | ~2,860 |
 | Skill context (per user invocation) | ~300–1,200 |
 
 Progressive loading: only needed skills loaded on-demand.
@@ -532,10 +541,10 @@ Commit everything to git — these files are the project's traceable memory.
 | Component | Count |
 |-----------|------:|
 | Skills | 7 |
-| Tools | 16 CE + 10 Pi built-in |
+| Tools | 17 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~43,386 |
-| Tests | 1251 (1249 pass + 2 opt-in skip) (4,053 assertions) |
+| TypeScript lines | ~52,600 |
+| Tests | 1,504 (1,502 pass + 2 opt-in skips) (4,599 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 

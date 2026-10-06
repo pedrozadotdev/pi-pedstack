@@ -178,13 +178,18 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Drift verdict** — `no_drift | mild_drift | strong_drift`, always derived in
   TypeScript (`extensions/ce-core/drift/combine.ts`). Two soft signals, a hard
   `forbidden_work`, or a repeated mild turn is strong; a single soft signal is mild.
+  **Shipped divergence:** `forbidden_work` is strong at `0.6` with no confidence gate,
+  and `progress` counts as a soft trigger — both contradict the frozen plan and raise
+  false-positive hard blocks (review H1/H3). See the
+  [frozen-decision-table drift card](docs/solutions/workflow/frozen-decision-tables-drift-from-implemented-constants.md).
 - **Drift correction** — the one-shot, in-session message delivered on the next
   `before_agent_start` for a mild drift turn (enforce only). Newest overwrites; it is
   consumed exactly once and never forces a model continuation.
 - **Unresolved drift** — a persisted `strong_drift` verdict for the current stage and
   session that has not been cleared. It blocks a cross-stage `context_handoff save` in
-  `enforce`; `shadow` only warns. It clears on a Jev `no_drift` turn that writes the
-  stage artifact, or after two consecutive Jev `no_drift` turns.
+  `enforce`; `shadow` writes no record, so it only warns when a prior `enforce` run
+  left one. It clears on a Jev `no_drift` turn that writes the stage artifact, or after
+  two consecutive Jev `no_drift` turns.
 - **Turn signature** — the hash of the compact turn state (stage, mandate, actions,
   excerpt). An unchanged signature reuses the last judged outcome without a second Jev
   call (`source: "deterministic"`, reason `unchanged turn`).
@@ -196,6 +201,9 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   means `schema`, `stage`, `sessionKey`, and `thresholdsVersion` match, `source` is
   `jev`, and the record is within the TTL. Only a `source === "jev"` verdict writes or
   clears it; degraded/deterministic turns log only, and `shadow` writes no record.
+- **Fail-closed gap** — `PEDSTACK_DRIFT_GUARD_FAILCLOSED=1` blocks on “no fresh record”,
+  which conflates a degraded run, a never-judged stage, and a TTL-expired record
+  (review H2/M1); the fix needs a persisted per-execution status marker.
 - **Shadow promotion** — the documented gate before setting `enforce`: at least 100
   judged turns over a representative multi-stage run, a mild-correction rate below 20%,
   zero false-positive strong verdicts on a labeled in-scope set, and a degraded rate
