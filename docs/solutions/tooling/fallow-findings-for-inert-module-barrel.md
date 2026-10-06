@@ -65,6 +65,53 @@ The findings are self-clearing once production code imports the barrel. Make "re
 | LOC target exceeded | plan said `≤ ~700 LOC`, actual `1 317` (`+88 %`); each file still `< 800` | Accept — validation completeness prioritized; amend the plan target so a future reader does not treat 700 as a hard gate. |
 | Live `cmd`/CommandCode sample not run | `JEV_LIVE=1` test is opt-in and was skipped | Accept explicitly for this branch; the requirement to record pass/not-run *before* consumer wiring (#4/#5) still stands. |
 
+# Recurrence (2026-10-06): a frozen signature *reserves* the export, and CRAP explains a small-function finding
+
+The same class of finding recurred in the #6 model-routing review
+([`2026-10-06-model-roles-default-review-sota-jev-routing.md`](../../reviews/2026-10-06-model-roles-default-review-sota-jev-routing.md)), but the resolution flipped: here suppression **is** the right call. Two refinements to the advice above.
+
+## 1. "No suppression pragma" is conditional, not absolute
+
+The earlier recommendation ("do not add suppression pragmas to satisfy a gate that does not exist") assumed the unused symbol was *expected to become used* once wiring landed. That is not the same as a symbol the plan **mandates stay exported** for a future issue.
+
+In #6, the plan's Frozen signatures mandate `export type ModelRole = "default" | "review" | "sota"` for issue #7, so `fallow_audit` flags it as `unused-type` while removal would violate the plan. Suppress with a comment that names the reservation and the issue that lifts it:
+
+```typescript
+// fallow-ignore-next-line unused-type
+// Reserved by the #6 frozen signature for #7 model-role selection. Remove the pragma when #7 consumes it.
+export type ModelRole = "default" | "review" | "sota";
+```
+
+Decision rule — check the plan before reaching for either move:
+
+| Situation | Action |
+| --- | --- |
+| Symbol will be imported once wiring lands (this issue) | Accept deviation, re-check at wiring time (section above) |
+| Plan *freezes* the export for a named future issue | `fallow-ignore` pragma + comment naming the reservation |
+| Symbol is genuinely needed | Remove the symbol (never suppress real dead code) |
+
+A comment on the pragma is mandatory: an unexplained `fallow-ignore` is indistinguishable from a blanket suppression that hides future real findings.
+
+## 2. A ~20-line function can still exceed the complexity gate (CRAP, not LOC)
+
+`fallow_audit` flagged `switchStageConfig` (`pedstack.ts:552`) as `introduced: true` with
+`cyclomatic: 10`, `line_count: 20`, `crap: 31.6`, `coverage_tier: partial`. A reviewer called this
+an "impossible complexity citation" for a 20-line function; the claim was **rebutted** with the
+verbatim tool output and the CRAP formula:
+
+```text
+CRAP = cyclomatic² × (1 − coverage) + cyclomatic
+```
+
+Complexity gates score *branch structure × coverage*, not line count. Do not dismiss a small-function
+finding as impossible — read the `crap`/`coverage_tier` fields before challenging it. Conversely, a
+short function is the *cheapest* kind to refactor: folding a duplicated predicate into its single
+owner removed the complexity finding **and** the sibling "config read twice" finding in one edit.
+
+**Related:** the guard-scope gap found in the same review is captured in
+[`../workflow/independence-guards-must-enumerate-every-execution-model-source.md`](../workflow/independence-guards-must-enumerate-every-execution-model-source.md)
+(Moderate — same review, different root cause).
+
 # Why this works
 
 - **Fallow is syntactic and has no type information**, so a type that is only re-exported looks unused until an importer exists. This is a known property of dead-code analysis on barrels, not a bug.
