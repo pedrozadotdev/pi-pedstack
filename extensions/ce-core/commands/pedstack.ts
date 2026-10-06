@@ -9,7 +9,11 @@ import * as path from "node:path";
 import {
 	readPiPedstackConfig,
 	getConfigKeyForSkill,
+	type StepConfig,
 } from "../utils/config-types";
+import { resolveStageRouting } from "../utils/model-routing";
+import { createJevRuntime } from "../jev/runtime";
+import type { JevRuntime } from "../jev/types";
 import {
 	loadAllAppendContext,
 	loadAppendContext,
@@ -478,18 +482,91 @@ async function loadStageAppend(
 	}
 }
 
+/**
+ * Test seam: allows tests to inject a fake routing Jev runtime without
+ * spawning `cmd`. Mirrors `__setStageGuardJevFactory` in index.ts.
+ */
+let modelRoutingJevFactory: (() => JevRuntime) | null = null;
+
+/** @internal Test-only injection seam for the routing Jev runtime. */
+export function __setModelRoutingJevFactory(
+	factory: (() => JevRuntime) | null,
+): void {
+	modelRoutingJevFactory = factory;
+}
+
+function getRoutingJevRuntime(): JevRuntime {
+	try {
+		return modelRoutingJevFactory ? modelRoutingJevFactory() : createJevRuntime();
+	} catch {
+		// ponytail: a broken factory degrades to fallback, never aborts stage entry.
+		return {
+			decide: async () => {
+				throw new Error("routing Jev factory failed");
+			},
+		};
+	}
+}
+
+/** Apply the resolved role model/thinking level, shadow-safe and non-fatal. */
+async function applyRoleModel(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	stageKey: PipelineStageKey,
+	stepConfig: StepConfig | null,
+	prompt?: string,
+): Promise<void> {
+	try {
+		const result = await resolveStageRouting({
+			repoRoot: ctx.cwd,
+			stage: stageKey,
+			override: stepConfig,
+			prompt: prompt ?? null,
+			jev: getRoutingJevRuntime(),
+		});
+
+		if (result.shadow) {
+			if (ctx.hasUI) {
+				ctx.ui.notify(
+					`[routing] ${stageKey}: ${result.decision.role} (${result.decision.reason}) — shadow mode, not applied`,
+					"info",
+				);
+			}
+			return;
+		}
+
+		if (result.appliedModel) {
+			await switchModel(pi, ctx, stageKey, { model: result.appliedModel });
+		}
+		if (result.appliedThinkingLevel) {
+			switchThinkingLevel(pi, ctx, stageKey, {
+				thinkingLevel: result.appliedThinkingLevel,
+			});
+		}
+	} catch {
+		// Routing must never abort stage entry; legacy behavior stands.
+	}
+}
+
 /** Orchestrate model, thinking, and APPEND.md switching for a pipeline stage. */
 async function switchStageConfig(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	stageKey: PipelineStageKey,
+	prompt?: string,
 ): Promise<void> {
 	const config = await readPiPedstackConfig(ctx.cwd);
 	const configKey = getConfigKeyForSkill(stageKey);
 	const stepConfig = configKey ? config?.[configKey] : null;
+	// AD-6: unconfigured operators get byte-identical legacy behavior.
+	const routingConfigured =
+		config?.models !== undefined || config?.routing !== undefined;
 
 	await switchModel(pi, ctx, stageKey, stepConfig ?? {});
 	switchThinkingLevel(pi, ctx, stageKey, stepConfig ?? {});
+	if (routingConfigured) {
+		await applyRoleModel(pi, ctx, stageKey, stepConfig ?? null, prompt);
+	}
 	await loadStageAppend(ctx, stageKey);
 }
 
@@ -550,7 +627,7 @@ async function beginStageTransition(
 		...(entryPrompt ? { prompt: entryPrompt } : {}),
 	});
 
-	await switchStageConfig(pi, ctx, stageKey);
+	await switchStageConfig(pi, ctx, stageKey, entryPrompt);
 	setPendingSkillPath(computeSkillPath(stageKey));
 	pi.sendUserMessage(message);
 	return true;
@@ -684,7 +761,7 @@ export function cmdPedStart(
 				stage: stageKey,
 			});
 
-			await switchStageConfig(pi, ctx, stageKey);
+			await switchStageConfig(pi, ctx, stageKey, prompt);
 
 			// Store the skill path for the model to read itself — clean UX, no content injection
 			setPendingSkillPath(computeSkillPath(stageKey));

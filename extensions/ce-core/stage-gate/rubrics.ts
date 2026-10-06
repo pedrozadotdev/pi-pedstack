@@ -235,6 +235,35 @@ function dimension(
 	return { id, weight, description };
 }
 
+// D2: proportionate protected-complexity exemption, shared by every
+// overengineering question so no protected category is penalized.
+const PROPORTIONALITY_NOTE =
+	"Complexity that implements a stated requirement or proportionately serves a " +
+	"protected category (validation, security, observability, migration, error " +
+	"handling, tests) is correct and must not lower this score.";
+
+/** The four floor-only overengineering dimensions, appended to plan/work/review. */
+function overengineeringDimensions(): SemanticDimension[] {
+	return [
+		dimension(
+			"no_unrequested_abstraction",
+			`No abstraction beyond what the requirement asks for. ${PROPORTIONALITY_NOTE} Judged against both baselines.`,
+		),
+		dimension(
+			"scope_fidelity",
+			`The change stays within the baseline scope. ${PROPORTIONALITY_NOTE} Judged against the requirements baseline.`,
+		),
+		dimension(
+			"complexity_proportionality",
+			`The amount of complexity is proportional to the requirement at hand. ${PROPORTIONALITY_NOTE} Judged against the plan baseline.`,
+		),
+		dimension(
+			"dependency_justification",
+			"Every added dependency is justified; built-ins and already-installed dependencies are preferred. Judged against the plan baseline.",
+		),
+	];
+}
+
 // --- 01-brainstorm ---------------------------------------------------------
 
 const brainstormRubric: StageRubric = {
@@ -320,6 +349,7 @@ const planRubric: StageRubric = {
 		dimension("file_targets_specific", "File targets are specific."),
 		dimension("failure_modes_covered", "Failure/error modes are covered."),
 		dimension("test_plan_coherent", "The test plan is coherent."),
+		...overengineeringDimensions(),
 	],
 };
 
@@ -342,6 +372,7 @@ const workRubric: StageRubric = {
 		dimension("plan_scope_adherence", "Work adheres to the planned scope."),
 		dimension("tests_meaningful", "Tests are meaningful, not trivial."),
 		dimension("error_handling_covered", "Error handling is covered."),
+		...overengineeringDimensions(),
 	],
 };
 
@@ -360,6 +391,7 @@ const reviewRubric: StageRubric = {
 		dimension("evidence_first_findings", "Findings are evidence-first."),
 		dimension("coverage_across_axes", "Coverage spans the review axes."),
 		dimension("actionable_recommendations", "Recommendations are actionable."),
+		...overengineeringDimensions(),
 	],
 };
 

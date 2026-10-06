@@ -52,6 +52,26 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Overlap detection** — reusing `rankSolutions` with a newly written solution card
   as the query to surface semantically overlapping existing cards (`05-learn`).
 
+## Model roles & routing (#6)
+
+- **Model role** — one of `default` (cheap normal-execution workhorse), `review`
+  (independent stronger reviewer), or `sota` (highest-capability escalation), declared once
+  in the optional top-level `models` block.
+- **Execution role** — the role actually applied to a stage turn: `default | sota` only.
+  `review` is never an execution target.
+- **Routing decision** — the persisted `{ role, reason, source, scores, weighted, confidence,
+  attempts, escalations }` produced at stage entry. `reason` is one of
+  `override | gate_escalate | jev | budget_exhausted | fallback`; `source` is one of
+  `override | deterministic | jev | budget | fallback`.
+- **Deterministic escalation** — a `sota` choice justified by the newest stage-gate
+  `escalate` verdict, independent of Jev; it short-circuits any Jev call.
+- **Escalation budget** — `routing.maxEscalationsPerStage` (default 1). A Jev judgment that
+  would select `sota` after the budget is spent is recorded as `budget_exhausted`/`budget`,
+  never `fallback`, so a spend cap is distinguishable from an outage.
+- **Shadow-first routing** — `routing.shadow` defaults `true`: the decision is computed and
+  persisted while the legacy per-stage model is still applied. Routing runs at all only when
+  a `models` or `routing` block exists.
+
 ## Semantic file scouting (#14)
 
 - **Semantic read** — the `semantic_read` tool: one repo-relative file, one bounded
@@ -143,3 +163,60 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Mode** — `PEDSTACK_DOCS_VERIFICATION = off | shadow | enforce` (default `shadow`);
   `PEDSTACK_DOCS_VERIFICATION_FAILCLOSED=1` opts into blocking in `enforce` on a degraded
   semantic layer (default `0`, fail-open).
+
+## Stage drift (#8)
+
+- **Stage drift** — a turn that stops honoring the active stage's mandate **without
+  making a forbidden tool call** (e.g. `02-plan` starts implementing, `04-review` edits
+  the code it reviews). Detected at each `turn_end` from the turn's own facts; distinct
+  from the deterministic capability matrix (#3) and the bash stage guard (#4), which
+  only act on a specific call's effect.
+- **Drift dimension** — one of the four independent `noul` judgments:
+  `in_stage_scope`, `forbidden_work`, `scope_drift`, `progress`. Jev answers the
+  dimensions; TypeScript derives the verdict. `forbidden_work` is a **hard** signal and
+  is excluded from the soft-signal count so one observation never counts twice.
+- **Drift verdict** — `no_drift | mild_drift | strong_drift`, always derived in
+  TypeScript (`extensions/ce-core/drift/combine.ts`). Two soft signals, a hard
+  `forbidden_work`, or a repeated mild turn is strong; a single soft signal is mild.
+- **Drift correction** — the one-shot, in-session message delivered on the next
+  `before_agent_start` for a mild drift turn (enforce only). Newest overwrites; it is
+  consumed exactly once and never forces a model continuation.
+- **Unresolved drift** — a persisted `strong_drift` verdict for the current stage and
+  session that has not been cleared. It blocks a cross-stage `context_handoff save` in
+  `enforce`; `shadow` only warns. It clears on a Jev `no_drift` turn that writes the
+  stage artifact, or after two consecutive Jev `no_drift` turns.
+- **Turn signature** — the hash of the compact turn state (stage, mandate, actions,
+  excerpt). An unchanged signature reuses the last judged outcome without a second Jev
+  call (`source: "deterministic"`, reason `unchanged turn`).
+- **Drift mode** — `off | shadow | enforce`, resolved from `PEDSTACK_DRIFT_GUARD` once
+  at init; default and any invalid value resolve to `shadow`. Only `enforce` blocks or
+  injects.
+- **Drift record** — the latest **state** (not a hash-fresh judgment) written by a Jev
+  verdict for one stage, at `.context/compound-engineering/drift/<stage>.json`. Fresh
+  means `schema`, `stage`, `sessionKey`, and `thresholdsVersion` match, `source` is
+  `jev`, and the record is within the TTL. Only a `source === "jev"` verdict writes or
+  clears it; degraded/deterministic turns log only, and `shadow` writes no record.
+- **Shadow promotion** — the documented gate before setting `enforce`: at least 100
+  judged turns over a representative multi-stage run, a mild-correction rate below 20%,
+  zero false-positive strong verdicts on a labeled in-scope set, and a degraded rate
+  below 5%. Promotion is calibrated from the shadow log
+  `.context/compound-engineering/drift.jsonl`.
+
+## Overengineering signal (#16)
+
+- **Overengineering signal** — four floor-only semantic dimensions that check whether an
+  artifact added only justified complexity. They ride the existing stage-gate Jev request
+  (`StageGateAttempt.schema = 2`) and are never a second gate.
+- **Dimension** — one of the four ids: `no_unrequested_abstraction`, `scope_fidelity`,
+  `complexity_proportionality`, `dependency_justification`.
+- **OVERENGINEERING_FLOOR** — `0.5`; any present overengineering dimension below it
+  prevents `accept` and routes to `review`/`revise`. The dimensions are excluded from
+  `weightedAverage` (floor-only), so a high base average cannot mask them.
+- **Baseline** — the per-stage normative excerpt: requirements for `02-plan`, the plan (with
+  a contamination guard) for `03-work`, and both for `04-review`. Resolution is file-based;
+  the terminal fallback is `unavailable` (never a network fetch).
+- **Source** — `jev | unavailable`; `unavailable` means no baseline, all dimensions skipped,
+  or a `request_too_large` trim. A skipped dimension is absent from `sem` with a reason in
+  `skippedDimensions[]` — never a sentinel score.
+- **Shadow mode** — compute, persist, and log the dimensions without changing
+  `weightedScore` or `verdict` (the default). `PEDSTACK_OVERENGINEERING = off | shadow | enforce`.

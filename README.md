@@ -23,10 +23,12 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Knowledge compounding** — solved problems become searchable solution artifacts
 - **Semantic solution search** — the `solution_search` tool and stage auto-injection rank `docs/solutions/` cards with a Jev semantic layer over a deterministic, never-weaker fallback; ships shadow-first (inert until `solutionRanking.shadow=false`)
 - **Cheap semantic file reads** — `semantic_read` (one file) and `semantic_scout` (files/dirs/globs) return typed per-path answers plus byte facts — **never file bodies** — so the agent opens only the files it truly needs; a Jev outage degrades to explicit `read`/`grep` guidance
+- **Model roles & task-shaped routing** — declare three roles once (`models.default` cheap workhorse, `models.review` independent reviewer, `models.sota` escalation) and let stage entry resolve the execution role with a fixed precedence (explicit override → stage-gate `escalate` → Jev judgment → cheap fallback); ships shadow-first (`routing.shadow` defaults `true`)
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
 - **Bash stage guard (shadow by default)** — an indirect-surface guard classifies `bash` commands by effect (writes, deletes, installs, package runners, pipes) and logs verdicts to `.context/compound-engineering/jev-stage-guard.jsonl`; set `PEDSTACK_JEV_STAGE_GUARD=enforce` to block
 - **Stage completion gate** — every stage scores the artifact it produced before its cross-stage handoff. Deterministic per-stage predicates (artifact present, required headings, no placeholders, persisted review findings) block in **both** `shadow` and `enforce`; CommandCode `typesafe/jev` adds a bounded semantic score via the `stage_gate` tool. `PEDSTACK_STAGE_GATE=off|shadow|enforce` (default `shadow`)
+- **Semantic overengineering signal (shadow-first)** — four floor-only dimensions (`no_unrequested_abstraction`, `scope_fidelity`, `complexity_proportionality`, `dependency_justification`) ride the existing stage-gate Jev request and judge whether an artifact added only *justified* complexity. They are excluded from `weightedAverage` and can only lower a verdict via `OVERENGINEERING_FLOOR = 0.5`. Ships inert (`PEDSTACK_OVERENGINEERING=off|shadow|enforce`, default `shadow`), independent of `PEDSTACK_STAGE_GATE`
 - **Untrusted injection screen** — a two-phase `tool_result` screen classifies provenance (HTTP, `gh` reads, external paths) and asks Jev one bounded question; `enforce` prepends a deterministic warning wrapper around flagged content without rewriting it. Ships shadow-first (`PEDSTACK_INJECTION_SCREEN=off|shadow|enforce`, default `shadow`), fails open on Jev failure and wrap-miss
 - **Failure triage** — a failed `test`/`typecheck`/`lint`/`build` command during `03-work` or `04-5-debug` gains an inline, bounded advisory TRIAGE block (category, relation to recent change, root-cause clarity) and a record under `.context/compound-engineering/triage/`; Jev degrades to a deterministic heuristic on outage, and triage never auto-fixes or changes the exit status
 - **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
@@ -110,6 +112,46 @@ Model and thinking level switching is handled automatically by the ce-core exten
 
 All pipeline skills declare `disable-model-invocation: true` in their frontmatter to ensure they can only be invoked by the user via explicit commands, strictly guaranteeing that model routing rules are enforced.
 
+#### Model roles & task-shaped routing (Jev)
+
+Instead of maintaining a model per stage, you can declare **three roles once** and let Pedstack route each stage entry to the right one. Roles are opt-in: nothing changes until a `models` or `routing` block exists.
+
+```json
+{
+  "models": {
+    "default": { "model": "anthropic/claude-haiku-3-5-20241022", "thinkingLevel": "medium" },
+    "review":  { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" },
+    "sota":    { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" }
+  },
+  "routing": {
+    "shadow": true,
+    "sotaMinScore": 0.6,
+    "sotaMinConfidence": 0.5,
+    "maxEscalationsPerStage": 1
+  }
+}
+```
+
+- **`models.default`** — the cheap normal-execution workhorse.
+- **`models.review`** — the independent reviewer, used only when a stage has no explicit `reviewers[]` and never when it equals `models.default`/`models.sota`.
+- **`models.sota`** — the escalation model, reached only through deterministic evidence or a qualifying Jev judgment.
+- **`routing.shadow`** — when `true` (default) routing computes and persists a decision but keeps applying the legacy per-stage model.
+- **`routing.sotaMinScore` / `sotaMinConfidence`** — deterministic thresholds (`[0, 1]`) a Jev judgment must clear before it may select `sota`.
+- **`routing.maxEscalationsPerStage`** — spend cap (`>= 1`) on applied `sota` escalations per stage.
+
+**Precedence at stage entry** (deterministic before semantic):
+
+1. An explicit per-stage `"model"` override wins verbatim.
+2. A stage-gate `escalate` verdict for the stage → `sota` (no Jev call).
+3. Otherwise Jev answers five bounded `noul` questions (`complexity`, `risk`, `cross_cutting`, `deep_reasoning`, `ambiguity`); TypeScript combines them with fixed weights and thresholds. Cleared with budget available → `sota`; threshold cleared but budget spent → `budget_exhausted`.
+4. Anything else — including a Jev outage or invalid answer → `default`.
+
+Every decision is persisted to `.context/compound-engineering/routing/<stage>.json` with its `role`, `reason` (`override | gate_escalate | jev | budget_exhausted | fallback`), `source`, and (for Jev) the atomic scores.
+
+**Migration strategy:** roles coexist with per-stage config. Run the default **shadow phase** first (`routing.shadow = true`; legacy models still apply, decisions are logged and persisted), then set `routing.shadow = false` to enforce, and eventually fold per-stage keys into `models` with a codemod (not shipped here). Operators with neither `models` nor `routing` configured keep byte-identical behavior and spawn no Jev subprocess.
+
+**Known limitation:** the review-independence guard compares `models.review` only against `models.default`/`models.sota`, not against a per-stage `review.model` override, so a config that sets both to the same id can still review itself. Tracked in the [independence-guard solution card](docs/solutions/workflow/independence-guards-must-enumerate-every-execution-model-source.md).
+
 Here is a complete configuration schema example:
 
 ```json
@@ -169,6 +211,17 @@ Here is a complete configuration schema example:
     "selectLimit": 12,
     "deadlineMs": 45000,
     "select": true
+  },
+  "models": {
+    "default": { "model": "anthropic/claude-haiku-3-5-20241022", "thinkingLevel": "medium" },
+    "review":  { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" },
+    "sota":    { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" }
+  },
+  "routing": {
+    "shadow": true,
+    "sotaMinScore": 0.6,
+    "sotaMinConfidence": 0.5,
+    "maxEscalationsPerStage": 1
   }
 }
 ```
@@ -189,6 +242,11 @@ Here is a complete configuration schema example:
   - `selectLimit` — maximum candidates in the second-pass Choice, capped at 20 (integer `>= 1`).
   - `deadlineMs` — total scout deadline in milliseconds (integer `>= 1`).
   - `select` — when `true` (default), `semantic_scout` runs the second-pass Choice recommendation. Unknown keys warn and are ignored; invalid values throw.
+- **`models`**: Named model roles (`default`, `review`, `sota`). Each role takes `{ "model": string, "thinkingLevel"?: string }`; all three keys are optional. Unknown keys warn and are ignored; invalid values throw. See [Model roles & task-shaped routing](#model-roles--task-shaped-routing-jev).
+- **`routing`**: Tunables for role resolution. All keys are optional and fall back to the defaults shown above.
+  - `shadow` — when `true` (default), routing computes and persists a decision but keeps applying the legacy per-stage model. Set to `false` to enforce role-based switching.
+  - `sotaMinScore` / `sotaMinConfidence` — a Jev judgment must reach both (`weighted >= sotaMinScore` and `confidence >= sotaMinConfidence`) before it may select `sota`; numbers in `[0, 1]`.
+  - `maxEscalationsPerStage` — cap on applied `sota` escalations per stage (integer `>= 1`).
 
 ### Dynamic Append Instructions
 
@@ -280,6 +338,17 @@ Records are persisted per stage under `.context/compound-engineering/stage-gates
 
 **Known limitations:** the semantic scorer needs CommandCode to be available — when the runtime is unavailable the score is marked `jev unavailable` and the deterministic floor still decides. The placeholder predicate currently rejects normal schema notation (`<string>`, `<sha256>`) and the shared `stage-reports/` fallback can resolve the wrong stage's report; both confirmed defects are recorded in the [stage-gate solution card](docs/solutions/workflow/stage-artifact-completion-gate-shadow-first-rubrics.md).
 
+### Overengineering signal (shadow-first)
+
+The Ponytail/YAGNI discipline is injected as prompt prose into `02-plan`, `03-work`, `04-review`, and `04-5-debug`. The overengineering signal (`extensions/ce-core/overengineering/`) gives the stage gate four semantic dimensions that check whether the artifact added only *justified* complexity — `no_unrequested_abstraction`, `scope_fidelity`, `complexity_proportionality`, and `dependency_justification`.
+
+- **Floor-only, never averageable.** The four dimensions are excluded from `weightedAverage`, so they cannot move a historical verdict boundary. They can only lower a verdict: any present dimension below `OVERENGINEERING_FLOOR = 0.5` blocks `accept` when enforcement is on. A skipped dimension is absent from `sem` with a reason in `skippedDimensions[]` — never a sentinel score.
+- **Independent shadow flag.** `PEDSTACK_OVERENGINEERING = off | shadow | enforce` (default `shadow`) is read once at init and is independent of `PEDSTACK_STAGE_GATE`, so calibrating one judgment cannot force the other. An invalid value resolves to `shadow`, never `off`.
+- **Deterministic baseline first.** Each stage's normative excerpt (requirements for `02-plan`, the plan for `03-work`, both for `04-review`) is resolved from files — never a network fetch. A missing baseline short-circuits to `unavailable` with no git call; `off` performs no reads.
+- **Exact evidence, injected I/O.** `facts.ts` extracts diff, manifest, and untracked-file facts behind an injected `runGit`; a git failure degrades to empty facts plus skip reasons. The record's `source` separates a real reading (`jev`) from an outage or a size trim, so the calibration log never counts an outage as a reading.
+
+**Enforcement checkpoint:** flip `PEDSTACK_OVERENGINEERING` to `enforce` only after the D10 calibration data exists. The `04-review` pass confirmed the feature and found 1 high + 2 moderate + 4 low findings, all in the deterministic evidence path: H1 treats a directory with *no* `package.json` as unreadable (permanently skipping `dependency_justification`), M1 extracts script/nested manifest keys as dependencies, and M2 stamps a Jev outage as `source: "jev"`. None change a verdict while the signal is inert; they are deferred to an on-demand `04-5-debug` pass and recorded in the [floor-only semantic dimensions card](docs/solutions/architecture/floor-only-semantic-dimensions-with-exact-evidence.md).
+
 ### Handoff readiness (#10)
 
 A handoff can pass every structural probe and still be semantically empty — a bare `/ped-next` next step, `verification: ran tests` with no command or result, stale active files, blocking open decisions, or missing history. The save-side readiness guard (`extensions/ce-core/handoff-readiness/`) is layered **on top of** the deterministic floor, which stays authoritative: Jev can only add a block, never override a deterministic one.
@@ -294,6 +363,23 @@ A handoff can pass every structural probe and still be semantically empty — a 
 - `PEDSTACK_DOCS_VERIFICATION = off | shadow | enforce` (default `shadow`) gates the docs-verification runtime trigger; `PEDSTACK_DOCS_VERIFICATION_FAILCLOSED=1` blocks in `enforce` on a degraded layer (default `0`, fail-open).
 
 **Known limitations (deferred to an on-demand `04-5-debug` pass):** the deterministic pre-pass checks `activeFiles` only, not the union with `recentlyAccessedFiles`, so a deleted recent-only file can still be judged `continue`; and `validate`'s surfacing matches on pair + thresholds version alone, so it can return a stale or degraded record instead of the required “never a stale one”. The fix is to reuse the single exported freshness predicate at every read site — recorded in the [read-site freshness card](docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md).
+
+### Turn-level stage drift detection (#8)
+
+The capability matrix (#3) and the bash stage guard (#4) only act on a specific `write`/`edit`/`bash` call whose *effect* is forbidden. A cheap worker can still stop honoring a stage's mandate **without making a forbidden call** — `02-plan` starts implementing, `04-review` edits the code it reviews. The drift guard (`extensions/ce-core/drift/`) closes that gap at the turn boundary.
+
+- **Turn-side detection.** At each `turn_end`, TypeScript builds a compact, redacted turn state from the event itself (no cross-event accumulator), runs a deterministic pre-pass, and asks CommandCode `typesafe/jev` one bounded `noul` request over four dimensions: `in_stage_scope`, `forbidden_work`, `scope_drift`, `progress`. TypeScript derives `no_drift | mild_drift | strong_drift`; Jev never decides the verdict.
+- **One-shot correction (enforce).** A mild turn stores at most one correction; the single existing `before_agent_start` handler appends it once (`## 🧭 Stage Drift Correction`) and clears it. No forced continuation, so no loop. `shadow` never injects.
+- **Strong block (enforce).** A fresh `strong_drift` record for the current stage **and** session blocks a cross-stage `context_handoff save` in its deterministic floor (after the stage gate, before the readiness guard). A blocked save writes no handoff artifact. `shadow` only warns.
+- **Never weaker than today.** `off`, an unknown/absent stage, a trivial turn, an unchanged turn signature, or a Jev outage all fail open (deterministic `no_drift`). A degraded or deterministic turn never writes or clears a record, so it can never clobber a strong one.
+- `PEDSTACK_DRIFT_GUARD = off | shadow | enforce` (default `shadow`) is read once at extension init. Missing/empty/invalid values fall back to `shadow` with a one-time warning and never silently resolve to `off`; changing it requires a restart.
+- `PEDSTACK_DRIFT_GUARD_FAILCLOSED=1` blocks in `enforce` when there is **no fresh Jev record** (semantic drift layer degraded or never run); the default is fail-open.
+
+Records are persisted per stage at `.context/compound-engineering/drift/<stage>.json`. The block message **names this path**: delete `.context/compound-engineering/drift/<stage>.json` to clear the block (a missing file means no block), or set `PEDSTACK_DRIFT_GUARD=off` (restart required). A session only honors records whose `sessionKey` matches the current session, so a fresh session starts clean.
+
+**Shadow is not free.** The default `shadow` mode still calls Jev on the awaited `turn_end` handler — up to 24 distinct non-trivial turns per session, 8 s timeout each — so it adds latency even though it never blocks or injects. See the [shadow-mode-is-not-free card](docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md).
+
+**Stay in `shadow` and calibrate first.** Shadow computes and logs every judgment (including `dimensions`, `triggered`, and `jevCalled`) to `.context/compound-engineering/drift.jsonl` (rotated at 1 MiB) while blocking nothing. **Promote to `enforce` only after** at least 100 judged turns over a representative multi-stage run, a mild-correction rate below 20% of non-trivial turns, zero false-positive strong verdicts on a manually labeled in-scope set, a degraded rate below 5%, and no drift-caused blocked save with a false positive.
 
 ### Deterministic stage guard
 
@@ -429,7 +515,11 @@ your-project/
         ├── active-stage.json  # Guard's persisted active stage
         ├── stage-reports/     # Per-stage completion reports
         ├── stage-gates/       # Stage-gate verdict records (content-hashed)
+        ├── routing/           # Per-stage model-routing decisions (role, reason, scores)
         ├── handoff-readiness/ # Per-pair readiness records + shadow log (content-hashed)
+        ├── drift/             # Per-stage drift verdict records (latest state)
+        ├── drift.jsonl        # Drift shadow-judgment log (rotated at 1 MiB)
+        ├── injection-screens.jsonl # Untrusted-tool-result provenance records
         └── jev-stage-guard.jsonl # Bash guard shadow verdict log (rotated at 1 MiB)
 ```
 
@@ -444,8 +534,8 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 16 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~38,281 |
-| Tests | 1111 (1109 pass + 2 opt-in skip) (3,494 assertions) |
+| TypeScript lines | ~43,386 |
+| Tests | 1251 (1249 pass + 2 opt-in skip) (4,053 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -463,7 +553,8 @@ save-side guard that `context_handoff save` consults on cross-stage completion s
 `typesafe/jev` decision model (Noul / Choice / Score questions over stdin). It registers
 **no Pi tool** of its own and adds **no dependency**; it is consumed by the stage gate, by
 the solution-ranking engine behind the `solution_search` tool and optional stage
-auto-injection, by the bash stage guard
+auto-injection, by the model-role routing resolver at stage entry
+(`extensions/ce-core/utils/model-routing.ts`), by the bash stage guard
 (`extensions/ce-core/utils/stage-guard-runtime.ts`) for the bounded semantic fallback on
 commands the deterministic classifier cannot prove, by the handoff-readiness save
 guard (`extensions/ce-core/handoff-readiness/guard.ts`), and by the failure-triage
@@ -481,6 +572,16 @@ then Jev — with all I/O injected. `context_handoff save` consults it on
 cross-stage completion saves and `context_handoff validate` reads a record back
 advisorily, never calling Jev (issue
 [#10](https://github.com/pedrozadotdev/pi-pedstack/issues/10)).
+
+The overengineering subsystem (`extensions/ce-core/overengineering/`) supplies the stage
+gate with the two things it lacked — a per-stage baseline and deterministic complexity
+facts — for four floor-only semantic dimensions. `baseline.ts` resolves the per-stage
+normative excerpt from files only; `facts.ts` is pure diff/manifest/untracked extraction
+behind an injected git runner; `compose.ts` resolves the mode and baseline first, then
+degrades to `unavailable` rather than throwing; `shadow-log.ts` appends the D10
+calibration records. The four dimensions are excluded from `weightedAverage` and can only
+lower a verdict through `OVERENGINEERING_FLOOR = 0.5` (issue
+[#16](https://github.com/pedrozadotdev/pi-pedstack/issues/16)).
 
 The failure-triage subsystem (`extensions/ce-core/tools/failure-triage.ts`,
 `failure-triage-runner.ts`, `triage-store.ts`) registers no Pi tool either. It runs as a

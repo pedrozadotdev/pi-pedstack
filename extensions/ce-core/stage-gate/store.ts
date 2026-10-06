@@ -123,15 +123,30 @@ export async function appendRecord(
 	return filePath;
 }
 
+/** Baseline paths recorded on a schema-2 attempt; malformed values read as []. */
+function baselinePathsOf(record: StageGateAttempt): string[] {
+	const overengineering = record.overengineering;
+	if (!overengineering || typeof overengineering !== "object") return [];
+	const paths = (overengineering as { baselinePaths?: unknown }).baselinePaths;
+	if (!Array.isArray(paths)) return [];
+	return paths.filter((entry): entry is string => typeof entry === "string");
+}
+
 /**
- * Recomputes the hash over the currently resolved artifact set and compares it
- * with the record. Edits, additions, removals, and renames all invalidate (R7).
+ * Recomputes the hash over the currently resolved artifact set plus the
+ * record's baseline paths and compares it with the record. Edits, additions,
+ * removals, and renames all invalidate (R7); a changed/removed baseline does
+ * too. A malformed `overengineering` field is treated as absent (schema-1
+ * tolerance).
  */
 export async function isRecordFresh(
 	repoRoot: string,
 	record: StageGateAttempt,
 ): Promise<boolean> {
 	const resolved = await resolveArtifactPaths(repoRoot, record.stage);
-	const hash = await computeArtifactsHash(repoRoot, resolved.paths);
+	const hash = await computeArtifactsHash(repoRoot, [
+		...resolved.paths,
+		...baselinePathsOf(record),
+	]);
 	return hash === record.artifactsHash;
 }

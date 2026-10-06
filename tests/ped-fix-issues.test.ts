@@ -744,6 +744,7 @@ describe("public exports", () => {
 			"filterReadOutput",
 			"COMPACTION_FOCUS_INSTRUCTIONS",
 			"__setStageGuardJevFactory",
+			"__setDriftJevFactory",
 		];
 
 		expect(exportNames.sort()).toEqual(expectedExports.sort());

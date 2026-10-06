@@ -1,0 +1,3 @@
+{
+	"note": "Untracked-file guard fixture: facts.test.ts copies this tree into a temp repo and asserts every entry is excluded (path deny-list, size, binary, extension)."
+}

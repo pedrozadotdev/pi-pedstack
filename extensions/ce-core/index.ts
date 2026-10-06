@@ -38,6 +38,7 @@ import { createPatternExtractorTool } from "./tools/pattern-extractor";
 import { createContextHandoffTool } from "./tools/context-handoff";
 import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
 import { resolveStageGateMode } from "./stage-gate/store";
+import { resolveOverengineeringMode } from "./overengineering/compose";
 import {
 	resolveDocsVerificationFailClosed,
 	resolveDocsVerificationMode,
@@ -47,6 +48,18 @@ import {
 	resolveReadinessFailClosed,
 	resolveReadinessMode,
 } from "./handoff-readiness/store";
+import {
+	resolveDriftFailClosed,
+	resolveDriftMode,
+	resolveSessionKey,
+	setCurrentDriftSessionKey,
+	getCurrentDriftSessionKey,
+} from "./drift/store";
+import {
+	createDriftGuard,
+	type DriftGuard,
+} from "./drift/guard";
+import { formatDriftCorrection } from "./drift/combine";
 import { filterBashOutput } from "./tools/bash-output-filter";
 import { filterReadOutput } from "./tools/read-output-filter";
 import { registerInjectionScreen } from "./injection-screen/handlers";
@@ -381,6 +394,16 @@ export function __setStageGuardJevFactory(
 	stageGuardJevFactory = factory;
 }
 
+// Test seam: the drift guard's Jev runtime (separate from the bash guard).
+let driftJevFactory: (() => JevRuntime) | null = null;
+
+/** @internal Test-only injection seam for the drift Jev runtime. */
+export function __setDriftJevFactory(
+	factory: (() => JevRuntime) | null,
+): void {
+	driftJevFactory = factory;
+}
+
 export default function ceCoreExtension(pi: ExtensionAPI) {
 	const artifactHelper = createArtifactHelperTool();
 	const workflowState = createWorkflowStateTool();
@@ -393,12 +416,23 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const patternExtractor = createPatternExtractorTool();
 	// ponytail: operator-only gate mode, resolved once at init like the guard.
 	const gateMode = resolveStageGateMode(process.env);
+	// ponytail: the overengineering mode is a separate shadow-first knob.
+	const overengineeringMode = resolveOverengineeringMode(process.env);
 	// ponytail: handoff-readiness mode/fail-closed are also resolved once.
 	// ponytail: docs-verification mode/fail-closed resolved once at init.
 	const docsWiring = createDocsVerificationWiring({
 		mode: resolveDocsVerificationMode(process.env),
 		failClosed: resolveDocsVerificationFailClosed(process.env),
 	});
+	// Drift mode/fail-closed are read once too; invalid values fail safe to shadow.
+	const driftModeRaw = process.env.PEDSTACK_DRIFT_GUARD;
+	const driftMode = resolveDriftMode(process.env);
+	const driftModeInvalid =
+		driftModeRaw !== undefined &&
+		driftModeRaw !== "off" &&
+		driftModeRaw !== "shadow" &&
+		driftModeRaw !== "enforce";
+	const driftFailClosed = resolveDriftFailClosed(process.env);
 	const contextHandoff = createContextHandoffTool({
 		gateMode,
 		readiness: {
@@ -406,8 +440,13 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			failClosed: resolveReadinessFailClosed(process.env),
 		},
 		docsVerification: docsWiring,
+		drift: {
+			mode: driftMode,
+			failClosed: driftFailClosed,
+			sessionKey: getCurrentDriftSessionKey,
+		},
 	});
-	const stageGate = createStageGateTool({ mode: gateMode });
+	const stageGate = createStageGateTool({ mode: gateMode, overengineeringMode });
 	const multiReviewer = createMultiReviewerTool();
 	const checklistAdd = createChecklistAddTool();
 	const checklistShow = createChecklistShowTool();
@@ -445,6 +484,11 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED === "1";
 	let guardModeNotified = false;
 	let stageGuard: StageGuard | null = null;
+
+	// ponytail: drift guard state, resolved once at init; the Jev runtime is
+	// created lazily on the first evaluated turn.
+	let driftModeNotified = false;
+	let driftGuard: DriftGuard | null = null;
 
 	pi.registerTool({
 		name: artifactHelper.name,
@@ -808,6 +852,31 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		}
 	}
 
+	/** Lazily build the drift guard, memoizing the Jev runtime on first use. */
+	function getDriftGuard(): DriftGuard {
+		driftGuard ??= createDriftGuard({
+			mode: driftMode,
+			failClosed: driftFailClosed,
+			sessionKey: () => getCurrentDriftSessionKey(),
+			createJev: () =>
+				driftJevFactory ? driftJevFactory() : createJevRuntime(),
+		});
+		return driftGuard;
+	}
+
+	/** Warn once when `PEDSTACK_DRIFT_GUARD` is not a known mode. */
+	function notifyInvalidDriftModeOnce(ctx: ExtensionContext): void {
+		if (!driftModeInvalid || driftModeNotified) return;
+		driftModeNotified = true;
+		if (ctx.hasUI) {
+			ctx.ui.notify(
+				`Pedstack drift guard: invalid PEDSTACK_DRIFT_GUARD value ` +
+					`"${driftModeRaw}"; using shadow mode.`,
+				"warning",
+			);
+		}
+	}
+
 	pi.on("tool_call", async (event, ctx) => {
 		if (guardDisabled) return undefined;
 
@@ -853,6 +922,28 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		}
 	});
 
+	// Turn-level drift detection (AD-1/AD-5): additive, fail-open, never blocks.
+	pi.on("turn_end", async (event, ctx) => {
+		try {
+			if (driftMode === "off") return undefined;
+			notifyInvalidDriftModeOnce(ctx);
+
+			const sessionKey = resolveSessionKey(ctx.sessionManager);
+			setCurrentDriftSessionKey(sessionKey);
+			const stage = await resolveGuardStage(ctx);
+			await getDriftGuard().evaluate({
+				repoRoot: ctx.cwd,
+				stage,
+				message: event.message,
+				toolResults: event.toolResults,
+				turnIndex: event.turnIndex,
+			});
+		} catch {
+			// ponytail: additive handler — a drift bug must never break a turn.
+		}
+		return undefined;
+	});
+
 	// Capture skills and inject pending skill path into system prompt
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (event.systemPromptOptions?.skills?.length) {
@@ -863,19 +954,24 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		const fixIssues = getAndClearPendingFixIssues();
 
 		const append = buildSystemPromptAppend(skillPath, fixIssues);
+		// One-shot drift correction: after pipeline discipline, before solutions.
+		const driftBlock =
+			driftMode === "off"
+				? undefined
+				: formatDriftCorrection(getDriftGuard().getAndClearCorrection());
 		const solutionsBlock = ctx?.cwd
 			? await buildSolutionsAppend({ repoRoot: ctx.cwd, skillPath })
 			: undefined;
 		const docsBlock = ctx?.cwd
 			? await docsWiring.buildAppend({ repoRoot: ctx.cwd, skillPath })
 			: undefined;
-		const injected = [solutionsBlock, docsBlock]
+		const injectedSolutions = [solutionsBlock, docsBlock]
 			.filter((block): block is string => Boolean(block))
 			.join("");
 		return composeSolutionSystemPrompt(
 			event.systemPrompt,
-			append,
-			injected || undefined,
+			append + (driftBlock ?? ""),
+			injectedSolutions || undefined,
 		);
 	});
 
@@ -1281,10 +1377,20 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return undefined;
 	});
 
+	pi.on("session_start", async () => {
+		// Fresh session: reset per-session drift state (record files untouched).
+		driftGuard?.reset();
+		setCurrentDriftSessionKey("");
+		return undefined;
+	});
+
 	pi.on("session_shutdown", async () => {
 		pendingAutoAdvance = null;
 		clearRememberedCommandContext();
 		clearActiveStage();
+		// In-memory only: record files stay on disk (AD-6).
+		driftGuard?.reset();
+		setCurrentDriftSessionKey("");
 		return undefined;
 	});
 
