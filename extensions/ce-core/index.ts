@@ -39,6 +39,7 @@ import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
 import { resolveStageGateMode } from "./stage-gate/store";
 import { filterBashOutput } from "./tools/bash-output-filter";
 import { filterReadOutput } from "./tools/read-output-filter";
+import { registerInjectionScreen } from "./injection-screen/handlers";
 import { COMPACTION_FOCUS_INSTRUCTIONS } from "./tools/compaction-optimizer";
 import { createMultiReviewerTool } from "./tools/multi-reviewer";
 import { createWorkflowStateTool } from "./tools/workflow-state";
@@ -784,6 +785,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	// Semantic solution ranking: model-facing tool + auto-injection (one handler above).
 	registerSolutionSearch(pi);
 
+	// Injection screen phase 1 — screens raw untrusted results before the size
+	// filters compress them (registered first; phase 2 below runs last).
+	const injectionScreen = registerInjectionScreen(pi);
+
 	// Bash output smart filter — reduces context waste from verbose command output
 	pi.on("tool_result", async (event, _ctx) => {
 		if (event.toolName !== "bash") return undefined;
@@ -868,6 +873,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			},
 		};
 	});
+
+	// Injection screen phase 2 — wraps final post-compression content when
+	// enforce+flagged, plus the turn_end sweep and session_shutdown cleanup.
+	injectionScreen.registerFinalPhase();
 
 	// ponytail: Auto-advance handler — intercepts context_handoff save and queues
 	// /ped-next for non-gated transitions. Additive to existing bash/read filters.

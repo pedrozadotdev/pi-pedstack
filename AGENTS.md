@@ -73,6 +73,7 @@ extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt inje
   ce-core/utils/ # Pure helpers: auto-advance, active-stage store, capability matrix, solution ranking
   ce-core/tools/ # Registerable Pi tools
   ce-core/stage-gate/ # Stage artifact rubrics, evidence, record store, save-side completion guard
+  ce-core/injection-screen/ # Two-phase tool_result provenance screen (shadow-first)
   ce-core/jev/   # Typed transport + runtime for CommandCode headless decisions (consumed by solution ranking and the stage gate; no direct Pi tool surface)
 tests/           # Test files
 docs/            # Documentation, brainstorms, plans, reviews, solutions
@@ -104,6 +105,8 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 **Stage completion gate:** `extensions/ce-core/stage-gate/` scores a stage's produced artifact (via the `stage_gate` tool) and persists content-hashed records under `.context/compound-engineering/stage-gates/`. `context_handoff save` re-runs the deterministic floor on every cross-stage completion save and consults the record for the semantic verdict. Deterministic failures block in both `shadow` and `enforce`; `PEDSTACK_STAGE_GATE` (default `shadow`) is resolved once at init in `extensions/ce-core/stage-gate/store.ts`.
 
 **Solution ranking:** `extensions/ce-core/utils/solution-ranking.ts` exposes `rankSolutions()`, the single entry point used by the `solution_search` tool, by stage auto-injection (`02-plan`, `04-review`, `04-5-debug`, `05-learn`) and by `05-learn` overlap detection. It ships shadow-first: `solutionRanking.shadow` defaults to `true`, so auto-injection computes and logs but stays inert until enforcement is enabled. A Jev outage returns the deterministic `prior` ranking (`status: "degraded"`), never an empty list. Auto-injection is composed inside the single existing `before_agent_start` handler (`extensions/ce-core/utils/solution-wiring.ts`).
+
+**Injection screen:** `extensions/ce-core/injection-screen/` runs a two-phase `tool_result` screen around the bash/read size filters. Phase 1 (registered first) classifies provenance deterministically (`http`, `gh-issue`, `gh-pr`, `gh-api`, `external-path`) and, for untrusted sources only, asks Jev one bounded `noul` question; phase 2 (registered last) prepends a fixed warning wrapper around the final content only in `enforce`+`flagged` mode. It never blocks and never rewrites (the wrapper surrounds verbatim content). `PEDSTACK_INJECTION_SCREEN=off|shadow|enforce` (default `shadow`) is resolved once at init; missing/invalid values fall back to `shadow` with a one-time warning and never silently resolve to `off`. Jev outages are `degraded`, an unwrapped verdict is a `wrap-miss`; both pass content through unchanged. Sanitized metadata-only records go to `.context/compound-engineering/injection-screens.jsonl` (at most 128 verdicts per turn).
 
 ## Code Style
 
