@@ -323,6 +323,20 @@ Records are persisted per stage under `.context/compound-engineering/stage-gates
 
 **Known limitations:** the semantic scorer needs CommandCode to be available — when the runtime is unavailable the score is marked `jev unavailable` and the deterministic floor still decides. The placeholder predicate currently rejects normal schema notation (`<string>`, `<sha256>`) and the shared `stage-reports/` fallback can resolve the wrong stage's report; both confirmed defects are recorded in the [stage-gate solution card](docs/solutions/workflow/stage-artifact-completion-gate-shadow-first-rubrics.md).
 
+### Handoff readiness (#10)
+
+A handoff can pass every structural probe and still be semantically empty — a bare `/ped-next` next step, `verification: ran tests` with no command or result, stale active files, blocking open decisions, or missing history. The save-side readiness guard (`extensions/ce-core/handoff-readiness/`) is layered **on top of** the deterministic floor, which stays authoritative: Jev can only add a block, never override a deterministic one.
+
+- **Five bounded `noul` judgments** — `continuation_sufficiency`, `next_step_clarity`, `verification_support`, `blocking_open_decisions`, and `history_need`. Jev answers the signals; TypeScript derives the verdict.
+- **Verdict** — `continue | improve_handoff | preserve_current_session`, derived in `combine.ts`. Only `enforce` blocks; `shadow` records and warns. A non-`continue` verdict blocks with the per-dimension **corrections** named, and a blocked save writes **no handoff artifact** (the readiness record and shadow log are still written).
+- **Deterministic pre-pass first.** Empty verification, a bare/placeholder next step, empty open decisions, and any missing active file force the relevant dimension without a Jev call; a forced non-`continue` short-circuits with `source: "deterministic"`.
+- **Never-weaker fallback.** A Jev outage degrades (`source: "degraded"`) to an `improve_handoff` advisory; a degraded or deterministic record is **never** reused as fresh, so an outage cannot disable later recomputation.
+- **Advisory read-back.** `context_handoff validate` returns the latest record for the resolved pair without ever calling Jev.
+- `PEDSTACK_HANDOFF_READINESS = off | shadow | enforce` (default `shadow`) is read once at extension init.
+- `PEDSTACK_HANDOFF_READINESS_FAILCLOSED=1` blocks in `enforce` when the semantic layer is **degraded**; the default is fail-open.
+
+**Known limitations (deferred to an on-demand `04-5-debug` pass):** the deterministic pre-pass checks `activeFiles` only, not the union with `recentlyAccessedFiles`, so a deleted recent-only file can still be judged `continue`; and `validate`'s surfacing matches on pair + thresholds version alone, so it can return a stale or degraded record instead of the required “never a stale one”. The fix is to reuse the single exported freshness predicate at every read site — recorded in the [read-site freshness card](docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md).
+
 ### Deterministic stage guard
 
 Stage discipline is not just prompt text. The ce-core extension hooks tool calls and checks them against the active stage's capability matrix before they execute.
@@ -458,6 +472,7 @@ your-project/
         ├── stage-reports/     # Per-stage completion reports
         ├── stage-gates/       # Stage-gate verdict records (content-hashed)
         ├── routing/           # Per-stage model-routing decisions (role, reason, scores)
+        ├── handoff-readiness/ # Per-pair readiness records + shadow log (content-hashed)
         └── jev-stage-guard.jsonl # Bash guard shadow verdict log (rotated at 1 MiB)
 ```
 
@@ -472,8 +487,8 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 16 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~37,300 |
-| Tests | 1,087 (1,085 pass + 2 opt-in skips) (3,418 assertions) |
+| TypeScript lines | ~40,300 |
+| Tests | 1,168 (1,166 pass + 2 opt-in skips) (3,689 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -494,10 +509,22 @@ the solution-ranking engine behind the `solution_search` tool and optional stage
 auto-injection, by the model-role routing resolver at stage entry
 (`extensions/ce-core/utils/model-routing.ts`), by the bash stage guard
 (`extensions/ce-core/utils/stage-guard-runtime.ts`) for the bounded semantic fallback on
-commands the deterministic classifier cannot prove, and by the failure-triage
+commands the deterministic classifier cannot prove, by the handoff-readiness save
+guard (`extensions/ce-core/handoff-readiness/guard.ts`), and by the failure-triage
 `tool_result` handler — all through an injected runtime so its validated
 spawn/parse/error path is shared and testable (issue
 [#2](https://github.com/pedrozadotdev/pi-pedstack/issues/2)).
+
+The handoff-readiness subsystem (`extensions/ce-core/handoff-readiness/`) is a
+parallel save-side guard to the stage-gate one. `combine.ts` holds the frozen
+types, the deterministic pre-pass, the byte-bounded Jev request, and the verdict
+derivation; `store.ts` persists one content-hashed record per stage pair and the
+shadow log under `.context/compound-engineering/`; `guard.ts` orchestrates the
+authoritative order — deterministic floor, then pre-pass, then freshness reuse,
+then Jev — with all I/O injected. `context_handoff save` consults it on
+cross-stage completion saves and `context_handoff validate` reads a record back
+advisorily, never calling Jev (issue
+[#10](https://github.com/pedrozadotdev/pi-pedstack/issues/10)).
 
 The failure-triage subsystem (`extensions/ce-core/tools/failure-triage.ts`,
 `failure-triage-runner.ts`, `triage-store.ts`) registers no Pi tool either. It runs as a
