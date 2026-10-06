@@ -199,7 +199,7 @@ per record type; see the related cards below rather than re-deriving them here.
 ## Recurrence (2026-10-06, correction review)
 
 The same class recurred in the drift-correction review
-(`docs/reviews/2026-10-06-turn-level-stage-drift-correction.md`, Finding H2), and the
+(`docs/reviews/2026-10-06-turn-level-stage-drift-corrections.md`, Finding H2), and the
 first-pass fix above was insufficient because it assumed the degraded state would be
 visible in the verdict record.
 
@@ -237,6 +237,12 @@ visible in the verdict record.
 - [`./one-freshness-predicate-reused-at-every-read-site.md`](./one-freshness-predicate-reused-at-every-read-site.md)
   and [`./sanitize-untrusted-provenance-at-one-boundary-before-every-egress.md`](./sanitize-untrusted-provenance-at-one-boundary-before-every-egress.md)
   — the reuse rules the drift guard should have followed for freshness and redaction.
+- [`../testing/enforce-only-branch-tests-must-run-in-enforce.md`](../testing/enforce-only-branch-tests-must-run-in-enforce.md)
+  — the test-side counterpart: shadow must not be the mode used to verify an enforce-only
+  persistence write, or the negative assertion is vacuous.
+- [`../workflow/frozen-spec-can-contradict-its-own-normative-pseudocode.md`](../workflow/frozen-spec-can-contradict-its-own-normative-pseudocode.md)
+  — the spec-internal conflict surfaced by this feature's correction review (matrix row 8
+  vs VD-4).
 - [`../workflow/deterministic-first-semantic-guard-for-indirect-bash-tool-actions.md`](../workflow/deterministic-first-semantic-guard-for-indirect-bash-tool-actions.md)
   — deterministic-first ordering to keep the semantic call off the common path.
 

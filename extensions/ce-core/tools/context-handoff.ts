@@ -8,10 +8,14 @@ import type { StageGateMode } from "../stage-gate/types";
 import { THRESHOLDS_VERSION } from "../handoff-readiness/combine";
 import {
 	DRIFT_DIR,
+	driftStatusRelPath,
 	isDriftRecordFresh,
+	isDriftStatusFresh,
 	readDriftRecord,
+	readDriftStatus,
 	shouldBlockCompletion,
 	type DriftRecord,
+	type DriftStatus,
 } from "../drift/store";
 import type {
 	DriftDimensionId,
@@ -401,6 +405,11 @@ export interface ContextHandoffDriftOptions {
 		repoRoot: string,
 		stage: string,
 	) => Promise<DriftRecord | null>;
+	/** Test injection; defaults to the shared drift-status reader. */
+	readStatus?: (
+		repoRoot: string,
+		stage: string,
+	) => Promise<DriftStatus | null>;
 }
 
 /** Advisory (no-Jev) drift summary surfaced from `validate` (AD-4). */
@@ -664,7 +673,7 @@ function degradedDriftBlocker(stage: string): string {
 		`Cannot save cross-stage handoff: drift status is unknown for stage ` +
 		`"${stage}" (semantic drift layer degraded) and ` +
 		`PEDSTACK_DRIFT_GUARD_FAILCLOSED=1. Re-run in-scope work, delete ` +
-		`${driftRecordRelPath(stage)} to clear, or set PEDSTACK_DRIFT_GUARD=off ` +
+		`${driftStatusRelPath(stage)} to clear, or set PEDSTACK_DRIFT_GUARD=off ` +
 		`(restart required).`
 	);
 }
@@ -683,10 +692,26 @@ async function readDriftRecordSafe(
 	}
 }
 
+/** Shared read of the isolated drift status; a reader failure is absent. */
+async function readDriftStatusSafe(
+	drift: ContextHandoffDriftOptions,
+	repoRoot: string,
+	stage: string,
+): Promise<DriftStatus | null> {
+	try {
+		const read = drift.readStatus ?? readDriftStatus;
+		return await read(repoRoot, stage);
+	} catch {
+		return null;
+	}
+}
+
 /**
- * AD-5 completion rule. Off/same-stage are not gated; shadow warns only;
- * enforce blocks a fresh `jev` strong record and (with failClosed) an unknown
- * drift status. Every read goes through the shared freshness predicate.
+ * AD-5 completion rule (FC-1..FC-3). Off/same-stage are not gated; shadow warns
+ * only; enforce blocks a fresh `jev` strong record (FC-1) and, with
+ * `FAILCLOSED=1`, a fresh degraded status marker (FC-2). Never-judged stages,
+ * expired/mismatched statuses, and non-degraded last evaluations do not block
+ * (FC-3). Every read goes through the shared freshness predicates.
  */
 async function runDriftCompletion(
 	drift: ContextHandoffDriftOptions | undefined,
@@ -711,12 +736,18 @@ async function runDriftCompletion(
 				advice,
 			};
 		}
-		if (drift.failClosed && !fresh) {
-			return {
-				blocked: true,
-				blocker: degradedDriftBlocker(currentStage),
-				advice,
-			};
+		if (drift.failClosed) {
+			const status = await readDriftStatusSafe(drift, repoRoot, currentStage);
+			if (
+				status?.degraded === true &&
+				isDriftStatusFresh(status, currentStage, sessionKey, now)
+			) {
+				return {
+					blocked: true,
+					blocker: degradedDriftBlocker(currentStage),
+					advice,
+				};
+			}
 		}
 		return { blocked: false, advice };
 	}

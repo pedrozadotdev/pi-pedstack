@@ -82,6 +82,32 @@ export function driftRecordPath(repoRoot: string, stage: string): string {
 	return path.join(repoRoot, DRIFT_DIR, `${slug}.json`);
 }
 
+/**
+ * Per-stage last-evaluation health marker (D2). Distinct from `DriftRecord`
+ * (the verdict state) and `DriftLogRecord` (shadow telemetry). Written only by
+ * the guard in `enforce` for `jev`/`degraded` outcomes.
+ */
+export interface DriftStatus {
+	schema: 1;
+	stage: string;
+	sessionKey: string;
+	thresholdsVersion: number;
+	degraded: boolean;
+	updatedAt: string;
+}
+
+/** Single source of truth for the drift-status path (D2). */
+export function driftStatusPath(repoRoot: string, stage: string): string {
+	const slug = normalizeSlug(stage) || "unknown";
+	return path.join(repoRoot, DRIFT_DIR, `${slug}.status.json`);
+}
+
+/** Repo-relative status path for operator-facing messages. */
+export function driftStatusRelPath(stage: string): string {
+	const slug = normalizeSlug(stage) || "unknown";
+	return `${DRIFT_DIR}/${slug}.status.json`;
+}
+
 // ponytail: Module-level session key for the live session; the handoff tool has
 // no `ctx`, so it reads this mirror (same pattern as active-stage.ts).
 let currentSessionKey = "";
@@ -215,6 +241,48 @@ export async function writeDriftRecord(
 	return filePath;
 }
 
+/** Element-by-element validation; any mismatch is a corrupt status (null). */
+function validateStatus(parsed: unknown): DriftStatus | null {
+	if (!isRecord(parsed)) return null;
+	const status = parsed;
+	if (
+		status.schema !== 1 ||
+		!isNonEmptyString(status.stage) ||
+		!isNonEmptyString(status.sessionKey) ||
+		typeof status.thresholdsVersion !== "number" ||
+		typeof status.degraded !== "boolean" ||
+		typeof status.updatedAt !== "string"
+	) {
+		return null;
+	}
+	// SAFETY: every field above was checked element-by-element; the shape now
+	// matches DriftStatus and no unchecked field is exposed.
+	return status as unknown as DriftStatus;
+}
+
+/** Corrupt-safe read; any failure is a missing status (fail-open). */
+export async function readDriftStatus(
+	repoRoot: string,
+	stage: string,
+): Promise<DriftStatus | null> {
+	try {
+		const content = await readFile(driftStatusPath(repoRoot, stage), "utf8");
+		return validateStatus(JSON.parse(content));
+	} catch {
+		return null;
+	}
+}
+
+export async function writeDriftStatus(
+	repoRoot: string,
+	status: DriftStatus,
+): Promise<string> {
+	const filePath = driftStatusPath(repoRoot, status.stage);
+	await mkdir(path.dirname(filePath), { recursive: true });
+	await writeFile(filePath, JSON.stringify(status, null, 2), "utf8");
+	return filePath;
+}
+
 /** Best-effort delete; a missing file is a no-op. */
 export async function clearDriftRecord(
 	repoRoot: string,
@@ -260,6 +328,27 @@ export function shouldBlockCompletion(
 		isDriftRecordFresh(record, stage, sessionKey, now) &&
 		record?.verdict === "strong_drift"
 	);
+}
+
+/**
+ * The only drift-status freshness predicate (freshness card). Fresh iff
+ * schema/stage/session/version match, the session key is resolved, and the
+ * status is within the shared 6 h TTL. Degraded state is not a freshness input.
+ */
+export function isDriftStatusFresh(
+	status: DriftStatus | null,
+	stage: string,
+	sessionKey: string,
+	now: Date = new Date(),
+): boolean {
+	if (!status) return false;
+	if (status.schema !== 1 || status.stage !== stage) return false;
+	if (status.sessionKey !== sessionKey) return false;
+	if (sessionKey === "" || sessionKey === "unknown-session") return false;
+	if (status.thresholdsVersion !== THRESHOLDS_VERSION) return false;
+	const updatedAt = Date.parse(status.updatedAt);
+	if (Number.isNaN(updatedAt)) return false;
+	return now.getTime() - updatedAt <= DRIFT_RECORD_TTL_MS;
 }
 
 // ponytail: one serialized chain; the guard writes at most one record per turn.

@@ -21,11 +21,14 @@ import {
 	isDriftRecordFresh,
 	readDriftRecord,
 	writeDriftRecord,
+	writeDriftStatus,
 	type DriftLogRecord,
 	type DriftRecord,
+	type DriftStatus,
 } from "./store";
 import { buildTurnState, type BuildTurnStateInput } from "./turn-state";
 import type {
+	CorrectionDimensionId,
 	DerivedVerdict,
 	DriftDimension,
 	DriftDimensionId,
@@ -60,6 +63,14 @@ export interface DriftGuardDeps {
 		record: DriftRecord,
 	) => Promise<string> | string;
 	clearRecord?: (repoRoot: string, stage: string) => Promise<void> | void;
+	/**
+	 * Per-stage last-evaluation health marker (D2). Written only in `enforce`
+	 * for `jev`/`degraded` outcomes; defaults to the shared store writer.
+	 */
+	writeStatus?: (
+		repoRoot: string,
+		status: DriftStatus,
+	) => Promise<void> | void;
 	logRecord?: (repoRoot: string, record: DriftLogRecord) => void | Promise<void>;
 	getStage?: (stage: string) => StageDiscipline | null;
 	getTurnState?: (input: BuildTurnStateInput) => DriftTurnState | null;
@@ -120,12 +131,14 @@ function outcomeToResult(
 	};
 }
 
-/** One-shot correction copy for a mild verdict (first triggered dimension). */
+/** One-shot correction copy for a mild verdict (first soft trigger). */
 function correctionFor(
 	triggered: DriftDimensionId[],
 	stage: string,
 ): string | undefined {
-	const dimension = triggered.find((id) => id !== "forbidden_work") ?? triggered[0];
+	// A mild verdict has exactly one soft signal (VD-3), and `progress` is
+	// never in `triggered` (FT-5), so the first trigger is always correctable.
+	const dimension = triggered[0] as CorrectionDimensionId | undefined;
 	return dimension ? correctionMessage(dimension, stage) : undefined;
 }
 
@@ -188,6 +201,20 @@ async function logOutcome(
 		else await appendDriftLog(repoRoot, record);
 	} catch {
 		// ponytail: swallowed — the sink is best-effort telemetry.
+	}
+}
+
+/** Best-effort status marker write; never fails the turn (D2). */
+async function writeStatusSafe(
+	repoRoot: string,
+	deps: DriftGuardDeps,
+	status: DriftStatus,
+): Promise<void> {
+	try {
+		if (deps.writeStatus) await deps.writeStatus(repoRoot, status);
+		else await writeDriftStatus(repoRoot, status);
+	} catch {
+		// ponytail: swallowed — the marker is best-effort; the log already ran.
 	}
 }
 
@@ -396,6 +423,19 @@ async function runJevJudgment(
 		state,
 		context,
 	);
+	if (
+		deps.mode === "enforce" &&
+		(outcome.source === "jev" || outcome.source === "degraded")
+	) {
+		await writeStatusSafe(input.repoRoot, deps, {
+			schema: 1,
+			stage: context.stage,
+			sessionKey: context.sessionKey,
+			thresholdsVersion: THRESHOLDS_VERSION,
+			degraded: outcome.source === "degraded",
+			updatedAt: context.now.toISOString(),
+		});
+	}
 	if (
 		deps.mode === "enforce" &&
 		outcome.source === "jev" &&

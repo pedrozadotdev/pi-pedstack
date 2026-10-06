@@ -184,6 +184,9 @@ a constant with no reader is a frozen knob that has already been silently replac
 
 ## Related solutions
 
+- [`./frozen-spec-can-contradict-its-own-normative-pseudocode.md`](./frozen-spec-can-contradict-its-own-normative-pseudocode.md)
+  — the table-versus-its-own-pseudocode half (a frozen spec that contradicts itself, and a
+  test that rewrites the table row to stay green).
 - [`./requirements-vs-plan-signature-divergence.md`](./requirements-vs-plan-signature-divergence.md)
   — the type/signature/field-set/input-set half of the same class. This card is the
   numeric half (values, comparators, confidence gates).
@@ -197,12 +200,12 @@ a constant with no reader is a frozen knob that has already been silently replac
 ## Provenance
 
 - **Issue:** [#8 — Detect turn-level stage drift and inject correction](https://github.com/pedrozadotdev/pi-pedstack/issues/8)
-- **Source review:** `docs/reviews/2026-10-06-turn-level-stage-drift-correction.md`
+- **Source review:** `docs/reviews/2026-10-06-turn-level-stage-drift-corrections.md`
   (Findings H1, H3, L3, M5)
 - **Source handoff:** `.context/compound-engineering/handoffs/2026-10-06T15-21-10-752Z-04-review-to-05-learn.md`
-- **Requirements:** `docs/brainstorms/2026-10-06-turn-level-stage-drift-correction-requirements.md`
+- **Requirements:** `docs/brainstorms/2026-10-06-turn-level-stage-drift-corrections-requirements.md`
   (resolution #13 supporting-only; #7 fail-closed narrow to transport/partial)
-- **Plan:** `docs/plans/2026-10-06-turn-level-stage-drift-correction-plan.md` (§6.2/§6.3 threshold table)
+- **Plan:** `docs/plans/2026-10-06-turn-level-stage-drift-corrections-plan.md` (§6.2/§6.3 threshold table)
 - **Source files:**
   - `extensions/ce-core/drift/combine.ts` — `FORBIDDEN_STRONG`, `computeSignals`, `deriveVerdict`, `readAnswers`, `MILD_REPEAT_LIMIT`
   - `tests/drift-combine.test.ts:140` / `:179` — tests that codify the collapsed table
@@ -215,8 +218,8 @@ a constant with no reader is a frozen knob that has already been silently replac
 - **Handoff:** `.context/compound-engineering/handoffs/latest.md`
 - **Active files:** `docs/solutions/workflow/frozen-decision-tables-drift-from-implemented-constants.md`,
   `extensions/ce-core/drift/combine.ts`,
-  `docs/plans/2026-10-06-turn-level-stage-drift-correction-plan.md`,
-  `docs/reviews/2026-10-06-turn-level-stage-drift-correction.md`
+  `docs/plans/2026-10-06-turn-level-stage-drift-corrections-plan.md`,
+  `docs/reviews/2026-10-06-turn-level-stage-drift-corrections.md`
 - **Recommendation for `06-docsync`:** link this card from the drift feature docs and the
   requirements/plan follow-up list; if the single-threshold semantics are kept, bump
   `THRESHOLDS_VERSION` and amend §6.2 rather than leaving the plan table normative.
