@@ -4,6 +4,24 @@ import path from "node:path";
 import { normalizeSlug } from "../utils/name-utils";
 import { evaluateCompletionGate } from "../stage-gate/guard";
 import type { StageGateMode } from "../stage-gate/types";
+import { THRESHOLDS_VERSION } from "../handoff-readiness/combine";
+import {
+	createReadinessGuard,
+	type ReadinessGuard,
+} from "../handoff-readiness/guard";
+import {
+	pairSlug,
+	readReadinessRecord,
+	stagePairFromHandoffPath,
+} from "../handoff-readiness/store";
+import { createJevRuntime } from "../jev/runtime";
+import type { JevRuntime } from "../jev/types";
+import type {
+	ReadinessMode,
+	ReadinessOutcome,
+	ReadinessResult,
+	ReadinessState,
+} from "../handoff-readiness/types";
 import { readChecklist } from "./checklist";
 
 type ContextHealth = "good" | "watch" | "heavy" | "critical";
@@ -88,6 +106,7 @@ export interface ContextHandoffResult {
 	activeRules?: string[];
 	updatedAt?: string;
 	gateWarning?: string;
+	readiness?: ReadinessOutcome;
 	// Validation fields
 	ok?: boolean;
 	probes?: ContextHandoffValidationProbes;
@@ -336,16 +355,38 @@ async function writeState(
 	await writeFile(filePath, JSON.stringify(state, null, 2), "utf8");
 }
 
+export interface ContextHandoffReadinessOptions {
+	mode: ReadinessMode;
+	failClosed: boolean;
+	/** Test injection; a lazy `createJevRuntime` is used otherwise. */
+	runtime?: JevRuntime;
+	now?: () => Date;
+	fileExists?: (repoRoot: string, relPath: string) => boolean;
+}
+
 export function createContextHandoffTool(
-	options: { gateMode?: StageGateMode } = {},
+	options: {
+		gateMode?: StageGateMode;
+		readiness?: ContextHandoffReadinessOptions;
+	} = {},
 ) {
 	const gateMode = options.gateMode ?? "off";
+	const readiness = options.readiness;
+	const readinessGuard = readiness
+		? createReadinessGuard({
+				mode: readiness.mode,
+				failClosed: readiness.failClosed,
+				createJev: () => readiness.runtime ?? createJevRuntime(),
+				now: readiness.now,
+				fileExists: readiness.fileExists,
+			})
+		: null;
 	return {
 		name: "context_handoff",
 		async execute(input: ContextHandoffInput): Promise<ContextHandoffResult> {
 			switch (input.operation) {
 				case "save":
-					return save(input, gateMode);
+					return save(input, gateMode, readinessGuard);
 				case "load":
 					return load(input);
 				case "latest":
@@ -353,7 +394,7 @@ export function createContextHandoffTool(
 				case "status":
 					return status(input);
 				case "validate":
-					return validate(input);
+					return validate(input, readiness);
 				default:
 					throw new Error(`Unknown operation: ${input.operation}`);
 			}
@@ -384,9 +425,147 @@ async function runCompletionGate(
 	}
 }
 
+interface ReadinessRunParams {
+	repoRoot: string;
+	currentStage: string;
+	nextStage?: string;
+	handoffMarkdown: string;
+	blocker?: string;
+	verification?: string;
+	activeFiles: string[];
+	artifacts: Record<string, string | undefined>;
+	currentTruth: string[];
+	invalidatedAssumptions: string[];
+	openDecisions: string[];
+	recentlyAccessedFiles: string[];
+	activeRules: string[];
+	guard: ReadinessGuard | null;
+}
+
+interface ReadinessRun {
+	blocked: boolean;
+	blocker?: string;
+	warning?: string;
+	outcome?: ReadinessOutcome;
+}
+
+function cleanArtifacts(
+	artifacts: Record<string, string | undefined>,
+): Record<string, string> {
+	const clean: Record<string, string> = {};
+	for (const [key, value] of Object.entries(artifacts)) {
+		if (typeof value === "string") clean[key] = value;
+	}
+	return clean;
+}
+
+/** Exact Jev `state` shape, built from the save's normalized fields. */
+function buildReadinessState(params: ReadinessRunParams): ReadinessState {
+	return {
+		currentStage: params.currentStage,
+		nextStage: params.nextStage ?? "",
+		handoffMarkdown: params.handoffMarkdown,
+		currentTask: extractSection(params.handoffMarkdown, "Current Task"),
+		nextMinimalStep: extractSection(
+			params.handoffMarkdown,
+			"Next Minimal Step",
+		),
+		verification:
+			params.verification ??
+			extractSection(params.handoffMarkdown, "Verification"),
+		blocker: params.blocker ?? "",
+		openDecisions: params.openDecisions,
+		currentTruth: params.currentTruth,
+		invalidatedAssumptions: params.invalidatedAssumptions,
+		activeFiles: params.activeFiles,
+		recentlyAccessedFiles: params.recentlyAccessedFiles,
+		artifacts: cleanArtifacts(params.artifacts),
+		activeRules: params.activeRules,
+	};
+}
+
+function toReadinessOutcome(
+	result: ReadinessResult,
+): ReadinessOutcome | undefined {
+	if (!result.verdict || !result.source) return undefined;
+	return {
+		verdict: result.verdict,
+		source: result.source,
+		dimensions: result.dimensions ?? [],
+		corrections: result.corrections ?? [],
+		...(result.reason ? { reason: result.reason } : {}),
+	};
+}
+
+/** Runs the readiness guard when configured; a block returns before any write. */
+async function runReadinessGuard(
+	params: ReadinessRunParams,
+): Promise<ReadinessRun> {
+	if (!params.guard) return { blocked: false };
+	const result = await params.guard.evaluate({
+		repoRoot: params.repoRoot,
+		currentStage: params.currentStage,
+		nextStage: params.nextStage ?? "",
+		state: buildReadinessState(params),
+	});
+	const outcome = toReadinessOutcome(result);
+	if (result.gated && !result.allowed && result.blocker) {
+		return { blocked: true, blocker: result.blocker, outcome };
+	}
+	return { blocked: false, warning: result.warning, outcome };
+}
+
+function resolveReadinessPair(
+	input: ContextHandoffInput,
+	state: ContextStateEntry | null,
+	handoffFile: string,
+): string | null {
+	if (isMeaningfulStage(input.currentStage)) {
+		return pairSlug(input.currentStage, input.nextStage);
+	}
+	if (state && isMeaningfulStage(state.currentStage)) {
+		return pairSlug(state.currentStage, state.nextStage);
+	}
+	const fromPath = stagePairFromHandoffPath(input.handoffPath ?? handoffFile);
+	if (fromPath) return pairSlug(fromPath.currentStage, fromPath.nextStage);
+	return null;
+}
+
+/**
+ * Advisory surfacing for `validate`. Never calls Jev. Keyed on the resolved
+ * pair + thresholds version so a record written by a blocked save (which leaves
+ * no handoff artifact) is still readable.
+ */
+async function surfaceReadiness(
+	input: ContextHandoffInput,
+	readiness: ContextHandoffReadinessOptions | undefined,
+	state: ContextStateEntry | null,
+	handoffFile: string,
+): Promise<ReadinessOutcome | undefined> {
+	if (!readiness || readiness.mode === "off") return undefined;
+	const pair = resolveReadinessPair(input, state, handoffFile);
+	if (!pair) return undefined;
+	const record = await readReadinessRecord(input.repoRoot, pair);
+	if (
+		!record ||
+		record.pair !== pair ||
+		record.thresholdsVersion !== THRESHOLDS_VERSION
+	) {
+		return undefined;
+	}
+	return {
+		verdict: record.verdict,
+		source: record.source,
+		dimensions: record.dimensions,
+		corrections: record.corrections,
+		...(record.reason ? { reason: record.reason } : {}),
+	};
+}
+
 async function save(
 	input: ContextHandoffInput,
 	gateMode: StageGateMode,
+	readinessGuard: ReadinessGuard | null,
 ): Promise<ContextHandoffResult> {
 	const currentStage = input.currentStage ?? "unknown";
 	const nextStage = input.nextStage;
@@ -466,6 +645,34 @@ async function save(
 				activeRules,
 			});
 
+	const readinessRun = await runReadinessGuard({
+		repoRoot: input.repoRoot,
+		currentStage,
+		nextStage,
+		handoffMarkdown,
+		blocker,
+		verification,
+		activeFiles,
+		artifacts,
+		currentTruth,
+		invalidatedAssumptions,
+		openDecisions,
+		recentlyAccessedFiles,
+		activeRules,
+		guard: readinessGuard,
+	});
+	if (readinessRun.blocked) {
+		return {
+			operation: "save",
+			found: true,
+			currentStage,
+			nextStage,
+			contextHealth,
+			blocker: readinessRun.blocker,
+			readiness: readinessRun.outcome,
+		};
+	}
+
 	const recommendNewSession = computeRecommendNewSession(
 		currentStage,
 		nextStage,
@@ -506,6 +713,11 @@ async function save(
 
 	await writeState(input.repoRoot, state);
 
+	const combinedWarning =
+		[gateWarning, readinessRun.warning]
+			.filter((entry): entry is string => Boolean(entry))
+			.join(" ") || undefined;
+
 	return {
 		operation: "save",
 		found: true,
@@ -526,7 +738,8 @@ async function save(
 		activeRules,
 		recommendNewSession,
 		updatedAt: state.updatedAt,
-		gateWarning,
+		gateWarning: combinedWarning,
+		readiness: readinessRun.outcome,
 	};
 }
 
@@ -693,6 +906,7 @@ function isMeaningfulStage(value?: string): boolean {
 
 async function validate(
 	input: ContextHandoffInput,
+	readiness?: ContextHandoffReadinessOptions,
 ): Promise<ContextHandoffResult> {
 	const checks: ContextHandoffValidationCheck[] = [];
 	const missing: string[] = [];
@@ -966,6 +1180,13 @@ async function validate(
 		recommendedAction = "continue";
 	}
 
+	const readinessOutcome = await surfaceReadiness(
+		input,
+		readiness,
+		state,
+		handoffFile,
+	);
+
 	return {
 		operation: "validate",
 		found,
@@ -985,6 +1206,7 @@ async function validate(
 		nextStage: state?.nextStage,
 		contextHealth: state?.contextHealth,
 		updatedAt: state?.updatedAt,
+		readiness: readinessOutcome,
 	};
 }
 

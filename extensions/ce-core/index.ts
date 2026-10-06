@@ -38,6 +38,10 @@ import { createPatternExtractorTool } from "./tools/pattern-extractor";
 import { createContextHandoffTool } from "./tools/context-handoff";
 import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
 import { resolveStageGateMode } from "./stage-gate/store";
+import {
+	resolveReadinessFailClosed,
+	resolveReadinessMode,
+} from "./handoff-readiness/store";
 import { filterBashOutput } from "./tools/bash-output-filter";
 import { filterReadOutput } from "./tools/read-output-filter";
 import { registerInjectionScreen } from "./injection-screen/handlers";
@@ -384,7 +388,14 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const patternExtractor = createPatternExtractorTool();
 	// ponytail: operator-only gate mode, resolved once at init like the guard.
 	const gateMode = resolveStageGateMode(process.env);
-	const contextHandoff = createContextHandoffTool({ gateMode });
+	// ponytail: handoff-readiness mode/fail-closed are also resolved once.
+	const contextHandoff = createContextHandoffTool({
+		gateMode,
+		readiness: {
+			mode: resolveReadinessMode(process.env),
+			failClosed: resolveReadinessFailClosed(process.env),
+		},
+	});
 	const stageGate = createStageGateTool({ mode: gateMode });
 	const multiReviewer = createMultiReviewerTool();
 	const checklistAdd = createChecklistAddTool();

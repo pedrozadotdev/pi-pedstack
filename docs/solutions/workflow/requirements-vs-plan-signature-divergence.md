@@ -14,12 +14,17 @@ tags:
   - schema
   - validation
   - frozen-signature
+  - reachability
+  - field-set
+  - recently-accessed-files
 applies_when:
   - A plan freezes concrete type signatures derived from a requirements table
   - The requirements permit a wider type than the implementation validates
   - Local validation must never be stricter than an upstream/external contract
   - Running the 02-plan Strict Review or the 04-review requirements cross-check
   - A validation layer rejects input that the spec says is valid
+  - A requirement names a set of inputs (e.g. two file lists) but the plan/implementation checks only one
+  - The implementation adds parameters to a frozen signature without a recorded deviation
 ---
 
 # Problem
@@ -130,6 +135,36 @@ versioned wrapper), or (c) **the field set of a record promised wholesale in the
 This is the implementation-side twin of the type-narrowing variant above; the sibling signal-semantics
 learning from the same review is [`../architecture/keep-degraded-fallbacks-out-of-primary-signal-state.md`](../architecture/keep-degraded-fallbacks-out-of-primary-signal-state.md).
 
+## Recurrence (2026-10-06): input-set narrowing and unrecorded signature growth
+
+The class recurred a third time in the handoff-readiness review
+([`2026-10-06-semantic-handoff-readiness-validation.md`](../../reviews/2026-10-06-semantic-handoff-readiness-validation.md)),
+again with the earlier prevention notes already sitting in `docs/solutions/`.
+
+| Finding | Status | Divergence | Why the diff looked green |
+|---|---|---|---|
+| H1 | Open decision (autofixable) | Requirements: **`activeFiles` / `recentlyAccessedFiles`** entries that do not exist force `continuation_sufficiency` insufficient. Plan Unit 2 narrowed this to "a missing **active** file". `guard.ts` `computeReadiness` calls `missingActiveFiles(repoRoot, normalized, …)` and ignores `recentlyAccessedFiles`. | Every test supplied a missing *active* file; no test made recent-only files deleted. The plan's D-1..D-4 table does not record the narrowing. |
+| L2 | Open decision | Plan's `## Frozen signatures` still shows `deriveOutcome(dimensions)`, `buildReadinessRequest(state)`, `readAnswers(result)`, exported `extractSection(...)`; the code adds optional `context`, `asked`, `forced` parameters and keeps `extractSection` private. | The signature block was never re-diffed against the implementation; the changes were justified in handoff prose, not the deviations table. |
+
+**Root cause:** the two earlier detection rules were applied to *types and unions*, but not to
+(a) **input sets named in a requirement** — "X **and** Y" must both be walked, and a plan that
+checks only X is a narrowing; or (b) **added or removed parameters** on an otherwise matching
+frozen signature. "The implementation matches the plan" stayed true; neither matched the requirement.
+
+**Detection added (extends the checklist above):**
+
+- When a requirement enumerates inputs with *and* / a list ("`activeFiles` / `recentlyAccessedFiles`"),
+  write the loop over the **union** and add a test where the non-obvious member is the only one
+  present. A narrowing to one member is a finding even if the other is usually populated.
+- Diff the plan's frozen signatures against the final implementation **parameter-by-parameter**, not
+  just type-by-type. Any added optional parameter, widened arity, or de-exported symbol belongs in
+  the approved-deviations table with a reason.
+- Treat the deviations table as the artifact that must be complete: a change justified only in a
+  handoff or commit message is still an unrecorded divergence.
+
+The read-site sibling signal from the same review is
+[`../architecture/one-freshness-predicate-reused-at-every-read-site.md`](../architecture/one-freshness-predicate-reused-at-every-read-site.md).
+
 ## Downstream Impact
 
 ### For 02-plan
@@ -149,7 +184,8 @@ learning from the same review is [`../architecture/keep-degraded-fallbacks-out-o
 - **Requirements:** `docs/brainstorms/2026-10-05-jev-commandcode-headless-runtime-requirements.md` (R2, limits table)
 - **Plan:** `docs/plans/2026-10-05-jev-commandcode-headless-runtime.md` (frozen signature block)
 - **Source files:** `extensions/ce-core/jev/types.ts`, `extensions/ce-core/jev/validate.ts`
-- **Status:** finding identified in review; fix deferred to `04-5-debug` or consumer wiring (#4/#5). Accepted deviations from the same review are recorded in [`../tooling/fallow-findings-for-inert-module-barrel.md`](../tooling/fallow-findings-for-inert-module-barrel.md).
+- **Recurrence source files:** `extensions/ce-core/handoff-readiness/guard.ts`, `docs/plans/2026-10-06-semantic-handoff-readiness-validation.md`
+- **Status:** finding identified in review; fix deferred to `04-5-debug` or consumer wiring (#4/#5). Accepted deviations from the same review are recorded in [`../tooling/fallow-findings-for-inert-module-barrel.md`](../tooling/fallow-findings-for-inert-module-barrel.md). The 2026-10-06 recurrence is autofixable (union the two file lists; add D-5..D-8 rows).
 
 ## 🧠 Context Status
 

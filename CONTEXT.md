@@ -93,3 +93,25 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   (e.g. a `tool_result` lookup miss); logged and counted, and it fails open.
 - **Provisional thresholds** — `noul >= 0.60` and `confidence >= 0.50`, hardcoded in
   TypeScript until shadow calibration justifies changing or externalizing them.
+
+## Handoff readiness (#10)
+
+- **Handoff readiness** — the TypeScript-derived verdict on whether a fresh model can
+  continue from a handoff without reconstructing major history. Layered on top of the
+  deterministic save floor, which stays authoritative; Jev never overrides a
+  deterministic block.
+- **Dimension** — one of the five independent `noul` judgments:
+  `continuation_sufficiency`, `next_step_clarity`, `verification_support`,
+  `blocking_open_decisions`, `history_need` (distinct from the stage gate's
+  `SemanticDimension`).
+- **Verdict** — `continue | improve_handoff | preserve_current_session`, always derived
+  in TypeScript (`extensions/ce-core/handoff-readiness/combine.ts`); only `enforce`
+  blocks, `shadow` warns (distinct from the stage gate's `StageGateVerdict`).
+- **Correction** — a targeted, in-session-fixable handoff edit addressed to the writer;
+  attached only to `improve_handoff` (`preserve_current_session` is not a correction).
+- **Thresholds version** — the tag that invalidates every persisted readiness record
+  when the value/confidence thresholds change.
+- **Degraded** — the fail-open source recorded when Jev is unavailable or returns an
+  unusable answer set; non-blocking unless `FAILCLOSED` is set in `enforce`.
+- **Shadow mode** — compute, record, and log the readiness verdict without blocking
+  (the default). `PEDSTACK_HANDOFF_READINESS = off | shadow | enforce`.
