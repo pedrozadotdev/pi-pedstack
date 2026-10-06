@@ -114,7 +114,7 @@ describe("stage capability guard", () => {
 		ceCoreExtension(pi as never);
 
 		expect(eventHandlers.get("tool_call")?.length).toBe(1);
-		expect(eventHandlers.get("tool_result")?.length).toBe(4);
+		expect(eventHandlers.get("tool_result")?.length).toBe(6);
 		expect(registeredNames).toContain("stage_gate");
 		expect(registeredNames).toContain("solution_search");
 		expect(registeredNames.length).toBe(16);

@@ -26,6 +26,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
 - **Bash stage guard (shadow by default)** — an indirect-surface guard classifies `bash` commands by effect (writes, deletes, installs, package runners, pipes) and logs verdicts to `.context/compound-engineering/jev-stage-guard.jsonl`; set `PEDSTACK_JEV_STAGE_GUARD=enforce` to block
 - **Stage completion gate** — every stage scores the artifact it produced before its cross-stage handoff. Deterministic per-stage predicates (artifact present, required headings, no placeholders, persisted review findings) block in **both** `shadow` and `enforce`; CommandCode `typesafe/jev` adds a bounded semantic score via the `stage_gate` tool. `PEDSTACK_STAGE_GATE=off|shadow|enforce` (default `shadow`)
+- **Untrusted injection screen** — a two-phase `tool_result` screen classifies provenance (HTTP, `gh` reads, external paths) and asks Jev one bounded question; `enforce` prepends a deterministic warning wrapper around flagged content without rewriting it. Ships shadow-first (`PEDSTACK_INJECTION_SCREEN=off|shadow|enforce`, default `shadow`), fails open on Jev failure and wrap-miss
 - **Failure triage** — a failed `test`/`typecheck`/`lint`/`build` command during `03-work` or `04-5-debug` gains an inline, bounded advisory TRIAGE block (category, relation to recent change, root-cause clarity) and a record under `.context/compound-engineering/triage/`; Jev degrades to a deterministic heuristic on outage, and triage never auto-fixes or changes the exit status
 - **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
 - **Token-efficient** — ~3,700 tokens new-conversation overhead; progressive loading
@@ -280,6 +281,23 @@ Stage discipline is not just prompt text. The ce-core extension hooks tool calls
 - **Untrusted content:** injected card bodies are reference data, not instructions.
 
 **Enforcement checkpoint:** before setting `solutionRanking.shadow=false`, resolve the deferred findings (M1 request-cap byte-bounding of every serialized frontmatter field, M2 silent catch, M3 module-singleton reset) recorded in the [shadow-first solution card](docs/solutions/architecture/shadow-first-semantic-ranking-with-deterministic-fallback.md) via a `04-5-debug` pass. None block merge while the feature is inert.
+
+### Untrusted tool-result injection screen (shadow-first)
+
+The agent reads content it does not control — remote HTTP fetches, `gh` issue/PR reads, and files outside the repo. Before the size filters compress those results, the ce-core extension runs a two-phase provenance screen (`extensions/ce-core/injection-screen/`):
+
+- **Phase 1 (raw, first `tool_result` handler)** classifies provenance deterministically (`http`, `gh-issue`, `gh-pr`, `gh-api`, `external-path`) and, for untrusted sources only, asks Jev exactly one bounded `noul` question. Local/in-repo results and `off` mode make zero Jev calls and write no log line.
+- **Phase 2 (final, last `tool_result` handler)** consumes the stored verdict by `toolCallId` and, in `enforce` mode only, prepends a deterministic warning wrapper around the flagged content.
+- **Never blocks, never rewrites.** The wrapper is prepended around the verbatim payload; in `shadow` the content is untouched.
+- **Fail-open.** A Jev outage or malformed answer is `degraded`; a verdict phase 2 never sees is a `wrap-miss`. Both pass content through unchanged (with a one-time operator notice in `enforce` when a UI is present).
+- **Bounded and metadata-only.** At most 128 verdicts are retained for the current turn; sanitized one-line records (no content, source ref stripped of credentials/query/fragment) are appended to `.context/compound-engineering/injection-screens.jsonl`.
+
+- `PEDSTACK_INJECTION_SCREEN = off | shadow | enforce` (default `shadow`). Missing/empty/invalid values fall back to `shadow` with a one-time warning; the screen never silently resolves to `off`.
+- **Shadow-first:** `shadow` computes and logs verdicts but leaves every result unchanged; `enforce` is opt-in and wraps only `flagged` results.
+
+**Enforcement checkpoint:** flip the default to `enforce` only after shadow calibration shows a non-trivial flagged rate that has been reviewed. The thresholds (`noul ≥ 0.60` and `confidence ≥ 0.50`) stay provisional until that data exists.
+
+**Known limitations (v1):** middle-only payloads beyond the 16 KiB sample window, content the bash tool truncated out of `event.content` (`fullOutputPath`), and in-repo copies of untrusted content are not screened.
 
 ---
 

@@ -612,11 +612,11 @@ describe("auto-advance tool_result wiring", () => {
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
 
-	test("registers 4 tool_result handlers and an agent_end handler", () => {
+	test("registers 6 tool_result handlers and an agent_end handler", () => {
 		const { pi, eventHandlers } = createPiMock();
 		ceCoreExtension(pi as never);
 
-		expect(eventHandlers.get("tool_result")?.length).toBe(4);
+		expect(eventHandlers.get("tool_result")?.length).toBe(6);
 		expect(eventHandlers.get("tool_call")?.length).toBe(1);
 		expect(eventHandlers.get("agent_end")?.length).toBe(1);
 	});
@@ -625,7 +625,7 @@ describe("auto-advance tool_result wiring", () => {
 		const { pi, eventHandlers, makeEventCtx } = createPiMock();
 		ceCoreExtension(pi as never);
 
-		const triageHandler = eventHandlers.get("tool_result")![3];
+		const triageHandler = eventHandlers.get("tool_result")!.at(-1)!;
 		const result = await triageHandler(
 			{
 				toolName: "read",
@@ -645,7 +645,7 @@ describe("auto-advance tool_result wiring", () => {
 		ceCoreExtension(pi as never);
 		clearActiveStage();
 
-		const triageHandler = eventHandlers.get("tool_result")![3];
+		const triageHandler = eventHandlers.get("tool_result")!.at(-1)!;
 		const result = await triageHandler(
 			{
 				toolName: "bash",
@@ -667,7 +667,7 @@ describe("auto-advance tool_result wiring", () => {
 		setActiveStage("03-work");
 
 		try {
-			const triageHandler = eventHandlers.get("tool_result")![3];
+			const triageHandler = eventHandlers.get("tool_result")!.at(-1)!;
 			const result = await triageHandler(
 				{
 					toolName: "bash",
@@ -704,7 +704,8 @@ describe("auto-advance tool_result wiring", () => {
 		ceCoreExtension(pi as never);
 		setActiveStage("03-work");
 
-		const shutdown = eventHandlers.get("session_shutdown")![0];
+		// Index 1 is the injection-screen cleanup; the stage-clear handler is last.
+		const shutdown = eventHandlers.get("session_shutdown")!.at(-1)!;
 		await shutdown({ type: "session_shutdown" }, makeEventCtx());
 
 		expect(getActiveStage()).toBeNull();
@@ -724,7 +725,7 @@ describe("auto-advance tool_result wiring", () => {
 			createPiMock();
 		ceCoreExtension(pi as never);
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const result = await autoAdvanceHandler(
 			makeEvent({ toolName: "bash" }),
 			makeEventCtx(),
@@ -770,7 +771,7 @@ describe("auto-advance tool_result wiring", () => {
 		setModelCalls.length = 0;
 		setThinkingLevelCalls.length = 0;
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const agentEndHandler = eventHandlers.get("agent_end")![0];
 
 		await autoAdvanceHandler(makeEvent(), makeEventCtx());
@@ -811,7 +812,7 @@ describe("auto-advance tool_result wiring", () => {
 			.handler("brainstorm the bug", ctx);
 		sendUserMessageCalls.length = 0;
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const agentEndHandler = eventHandlers.get("agent_end")![0];
 		const gatedEvent = makeEvent({
 			content: [
@@ -853,7 +854,7 @@ describe("auto-advance tool_result wiring", () => {
 			.handler("brainstorm the bug", ctx);
 		sendUserMessageCalls.length = 0;
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const agentEndHandler = eventHandlers.get("agent_end")![0];
 		let idle = false;
 		setTimeout(() => {
@@ -875,7 +876,7 @@ describe("auto-advance tool_result wiring", () => {
 		const { pi, eventHandlers, notifyCalls, makeEventCtx } = createPiMock();
 		ceCoreExtension(pi as never);
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const agentEndHandler = eventHandlers.get("agent_end")![0];
 
 		await autoAdvanceHandler(makeEvent(), makeEventCtx());
@@ -894,7 +895,7 @@ describe("auto-advance tool_result wiring", () => {
 			createPiMock();
 		ceCoreExtension(pi as never);
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const result = await autoAdvanceHandler(
 			makeEvent({ content: null }),
 			makeEventCtx(),

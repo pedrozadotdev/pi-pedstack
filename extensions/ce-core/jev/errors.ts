@@ -69,7 +69,7 @@ export function mapExitCodeToReason(exitCode: number): JevExitReason {
 const MAX_STDERR_EXCERPT_BYTES = 2048;
 const REDACTED_BODY = "[redacted-body]";
 
-function truncateToBytes(input: string, maxBytes: number): string {
+export function truncateToBytes(input: string, maxBytes: number): string {
 	const buffer = Buffer.from(input, "utf8");
 	if (buffer.byteLength <= maxBytes) return input;
 
