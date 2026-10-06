@@ -111,6 +111,7 @@ function evidenceWith(txt: string): Evidence {
 		gitDiff: null,
 		truncated: false,
 		obligations: null,
+		priorGate: null,
 	};
 }
 

@@ -56,6 +56,7 @@ Every unit follows **RED → GREEN → REFACTOR**:
     - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
     - `review` → invoke **`multi_reviewer`** with `stepName: "02-plan"` and `mode: "single"`, then re-run `stage_gate`. This runs **after** the Strict Review so multi_reviewer inspects an already-reviewed plan.
     - `escalate` → do not loop; proceed to escalated execution.
+    A missing `action` (unknown stage or a tool regression) is treated as `none`; advance.
     Use `mode: "deep"` only on an explicit user request.
 12. Handoff to `03-work` via the standard pipeline handoff.
 

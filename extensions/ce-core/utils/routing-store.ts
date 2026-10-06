@@ -23,6 +23,10 @@ export interface RoutingRecord {
 	confidence: number | null;
 	attempts: number;
 	escalations: number;
+	/** Retained attempts with verdict `revise` (bounded by the stage-gate ATTEMPT_CAP). */
+	revisions: number;
+	/** Retained attempts with verdict `review` (bounded by the stage-gate ATTEMPT_CAP). */
+	reviews: number;
 	updatedAt: string;
 }
 
@@ -60,7 +64,12 @@ export async function readRoutingRecord(
 		return null;
 	}
 	if (!isRoutingRecord(parsed)) return null;
-	return parsed;
+	// Counters added after schema 1; a legacy record reads as zero counts.
+	return {
+		...parsed,
+		revisions: typeof parsed.revisions === "number" ? parsed.revisions : 0,
+		reviews: typeof parsed.reviews === "number" ? parsed.reviews : 0,
+	};
 }
 
 /** Persist a record (creating parent directories) and return its path. */

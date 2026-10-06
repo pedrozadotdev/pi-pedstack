@@ -81,7 +81,29 @@ export function collectExecutionModels(
 }
 
 /**
- * True when the stage has a non-empty explicit `reviewers[]`, or a
+ * Splits explicit reviewers into those independent from every execution-model
+ * writer and the colliding models that must be dropped. Pure; no I/O.
+ */
+export function filterIndependentReviewers<T extends { model: string }>(
+	reviewers: readonly T[],
+	config: PiPedstackConfig | null,
+	configKey: StepConfigKey | null,
+): { reviewers: T[]; dropped: string[] } {
+	const executionModels = collectExecutionModels(config, configKey);
+	const kept: T[] = [];
+	const dropped: string[] = [];
+	for (const reviewer of reviewers) {
+		if (executionModels.includes(reviewer.model)) {
+			dropped.push(reviewer.model);
+		} else {
+			kept.push(reviewer);
+		}
+	}
+	return { reviewers: kept, dropped };
+}
+
+/**
+ * True when the stage has an independent explicit `reviewers[]` entry, or a
  * `models.review` that is independent from every execution-model writer.
  */
 export function hasIndependentReviewer(
@@ -91,7 +113,14 @@ export function hasIndependentReviewer(
 	const stage = config?.[configKey];
 	if (stage && "reviewers" in stage) {
 		const reviewers = stage.reviewers;
-		if (Array.isArray(reviewers) && reviewers.length > 0) return true;
+		if (Array.isArray(reviewers) && reviewers.length > 0) {
+			const { reviewers: independent } = filterIndependentReviewers(
+				reviewers,
+				config,
+				configKey,
+			);
+			if (independent.length > 0) return true;
+		}
 	}
 	const reviewModel = config?.models?.review?.model;
 	if (typeof reviewModel !== "string" || reviewModel.length === 0) return false;

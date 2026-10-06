@@ -32,6 +32,8 @@ export interface ReviewFindingsFile {
 	path: string;
 	findings: ReviewFinding[];
 	count?: number;
+	/** Sidecar `generatedAt` when valid, else the file mtime (Unit 5). */
+	observedAt?: string;
 }
 
 export interface CheckpointRecord {
@@ -62,7 +64,12 @@ export interface Evidence {
 	/** Docs-verification summary; null means the check passes (Unit 6). */
 	obligations: EvidenceObligations | null;
 	/** Prior fresh gate decision for this stage; null when absent/stale (Unit 4). */
-	priorGate: { verdict: StageGateVerdict; action: ReviewAction } | null;
+	priorGate: {
+		verdict: StageGateVerdict;
+		action: ReviewAction;
+		/** The demanding record's `updatedAt`, the findings-freshness floor (Unit 5). */
+		updatedAt: string;
+	} | null;
 }
 
 export interface DeterministicCheckResult {

@@ -1,6 +1,8 @@
 # Strict Review Mode (required for 02-plan)
 
-`02-plan` **always** runs a Strict Review of the plan artifact before handing off to `03-work`. There is no "Just go" / "CEO Review" / "Strict Review" choice — the full Strict Review is a mandatory step in the planning flow. It runs **before** the `multi_reviewer` tool so that the multi-reviewer pass inspects an already stress-tested plan.
+`02-plan` **always** runs a Strict Review of the plan artifact before handing off to `03-work`. There is no "Just go" / "CEO Review" / "Strict Review" choice — the full Strict Review is a mandatory step in the planning flow. Strict Review is self-review: it never invokes the `multi_reviewer` tool.
+
+The independent-review pass that follows Strict Review is **conditional on the gate `action`**: `review` runs exactly one reviewer via `multi_reviewer mode: "single"`; `accept` / `none` skips it; `escalate` does not loop. See "When to run" below for the branch.
 
 The review has two layers:
 
@@ -11,12 +13,18 @@ All seven steps run on every plan. Do not skip any.
 
 ## When to run
 
-After the plan artifact is written to `docs/plans/`, before invoking the `multi_reviewer` tool. The full flow is:
+Strict Review runs on every plan, after the plan artifact is written to `docs/plans/`. The full flow is:
 
 1. Run steps 1–7 below against the current plan artifact.
 2. Update the plan artifact with any changes identified.
 3. Note the review mode (Strict Review) and key decisions in the plan.
-4. Proceed to the `multi_reviewer` tool with `stepName: "02-plan"`.
+4. Run `stage_gate` for `02-plan` and act on its `action`:
+   - `review` → invoke `multi_reviewer` with `stepName: "02-plan"` and `mode: "single"`, then re-run `stage_gate`. This conditional pass runs **after** Strict Review.
+   - `accept` / `none` → skip the independent-review pass.
+   - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
+   - `escalate` → do not loop; proceed to escalated execution.
+   A missing `action` (unknown stage or a tool regression) is treated as `none`.
+5. Proceed to the `03-work` handoff via `references/handoff.md`.
 
 ## 1. Premise Challenge
 
@@ -130,5 +138,5 @@ After Strict Review:
 
 1. Update the plan artifact with any changes identified during the review.
 2. Note the review mode (`Strict Review`) and the key decisions/changes in the plan.
-3. Proceed to the `multi_reviewer` tool with `stepName: "02-plan"` (this is the **next** step in `02-plan` SKILL.md).
-4. After `multi_reviewer` completes, proceed to the `03-work` handoff via `references/handoff.md`.
+3. Run `stage_gate` for `02-plan` and branch on its `action` as described in "When to run": `review` → `multi_reviewer` with `stepName: "02-plan"` and `mode: "single"`; `accept` / `none` → skip; `escalate` → no loop.
+4. Proceed to the `03-work` handoff via `references/handoff.md`.

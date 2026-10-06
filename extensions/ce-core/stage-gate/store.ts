@@ -116,16 +116,21 @@ export async function readAcceptRecord(
 export async function resolvePriorGate(
 	repoRoot: string,
 	stage: StageKey,
-): Promise<{ verdict: StageGateVerdict; action: ReviewAction } | null> {
+): Promise<{
+	verdict: StageGateVerdict;
+	action: ReviewAction;
+	updatedAt: string;
+} | null> {
 	const record = await readLatestRecord(repoRoot, stage);
 	const action = record?.review?.action;
-	if (!record || !action) return null;
+	const updatedAt = record?.updatedAt;
+	if (!record || !action || typeof updatedAt !== "string") return null;
 	try {
 		if (!(await isRecordFresh(repoRoot, record))) return null;
 	} catch {
 		return null;
 	}
-	return { verdict: record.verdict, action };
+	return { verdict: record.verdict, action, updatedAt };
 }
 
 /** Appends an attempt, keeping only the newest `ATTEMPT_CAP` records. */

@@ -148,7 +148,28 @@ Instead of maintaining a model per stage, you can declare **three roles once** a
 
 Every decision is persisted to `.context/compound-engineering/routing/<stage>.json` with its `role`, `reason` (`override | gate_escalate | jev | budget_exhausted | fallback`), `source`, and (for Jev) the atomic scores.
 
-**Migration strategy:** roles coexist with per-stage config. Run the default **shadow phase** first (`routing.shadow = true`; legacy models still apply, decisions are logged and persisted), then set `routing.shadow = false` to enforce, and eventually fold per-stage keys into `models` with a codemod (not shipped here). Operators with neither `models` nor `routing` configured keep byte-identical behavior and spawn no Jev subprocess.
+**Promotion to enforce (`routing.shadow = false`):** the default stays `true` until the calibration criteria below are met on a representative multi-stage run:
+
+- At least one `sota` escalation and one `budget_exhausted` decision in `.context/compound-engineering/routing/*.json`.
+- At least 80% of persisted decisions have `role: "default"` ("most work starts on the cheap model").
+- Zero `fallback` decisions attributable to a Jev outage in the last run.
+- No stage exceeds `routing.maxEscalationsPerStage`.
+- A normal `accept`/`none` stage pays for zero independent-review calls.
+
+The persisted record now carries `revisions` and `reviews` counts (retained stage-gate attempts with those verdicts, bounded by the stage-gate `ATTEMPT_CAP = 3`) beside `attempts` and `escalations`, so the review budget is auditable without re-reading the attempt log.
+
+**Acceptance-check recipe (no extra code):**
+
+```bash
+# Decision share by role
+for f in .context/compound-engineering/routing/*.json; do jq -r .role "$f"; done | sort | uniq -c
+# Review demand by gate action
+jq -r '.review.action // "none"' .context/compound-engineering/stage-gates/*.json | sort | uniq -c
+```
+
+The flip is reversible: set `routing.shadow = true` again to recompute and log decisions without applying roles.
+
+**Migration strategy:** roles coexist with per-stage config. Run the default **shadow phase** first (`routing.shadow = true`; legacy models still apply, decisions are logged and persisted), then set `routing.shadow = false` to enforce, and finally fold per-stage keys into `models` with the dry-run-first migration helper — `bun run migrate:roles` (`scripts/migrate-roles.ts` over the pure `buildRoleMigration` in `extensions/ce-core/utils/role-migration.ts`). The helper never guesses model strength: it reports `not_migratable` and writes nothing when more than three distinct per-stage models exist, and it writes only with `--write`, only when it reports the mapping as lossless. The CLI wrapper lives in `scripts/`, which is not part of the published package, so the helper is a repo-local operator tool. Operators with neither `models` nor `routing` configured keep byte-identical behavior and spawn no Jev subprocess.
 
 **Independence guard completeness:** the review-independence guard compares `models.review` against the union of **every** execution-model writer — `models.default`, `models.sota`, and the per-stage `config[<stage>].model` override (`collectExecutionModels`) — so a review model that would equal any execution model is ignored with a warning. See the [independence-guard solution card](docs/solutions/workflow/independence-guards-must-enumerate-every-execution-model-source.md).
 
@@ -169,7 +190,7 @@ A strong artifact no longer pays for a reviewer. The `stage_gate` result carries
 - **Conditional findings predicates.** The two critical findings predicates (`multi_reviewer_findings`, `review_findings_persisted`) require a findings sidecar only when the prior **fresh** gate action is `review`. A well-formed zero-finding sidecar (`count: 0`) satisfies them, and the tool persists that empty sidecar, so a clean review is auditable and cannot deadlock the gate. A malformed sidecar (`count !== findings.length`) always fails, and a stale record contributes no review demand.
 - **Stage-entry routing.** The decision is persisted on the attempt (`review`) and returned as `action`/`actionReason`; routing treats a persisted `escalate` action exactly like an `escalate` verdict.
 
-**Known limitations (confirmed by this change's `04-review`, deferred to an on-demand `04-5-debug` pass):** `PEDSTACK_STAGE_GATE=off` returns a `skipped` result with no `action`, so a skill that branches on `action` has no defined next step on that escape hatch; a findings sidecar is matched by stage suffix alone, so one left from an earlier stage loop can satisfy a new `review` demand without a fresh reviewer run; an explicit `reviewers[]` is trusted as independent without comparing its models against the execution-model union; and an explicit reviewer that omits `thinkingLevel` now defaults to `high` instead of passing `undefined` through. Separately, making `Evidence.priorGate` required left one hand-built `Evidence` literal (`tests/overengineering-engine.test.ts`) without the field: `bun test` stays green because Bun transpiles without type-checking, and CI runs only `bun test`, so `bun x tsc --noEmit` reports exactly one `TS2741` until the one-line fixture fix lands. The durable fix (a CI type-check step) and the reasoning are in the [transpile-only runner card](docs/solutions/testing/green-test-runner-is-not-a-type-check.md).
+**Known limitations (confirmed by this change's `04-review`, deferred to an on-demand `04-5-debug` pass):** the role-migration helper is dry-run-first but not yet fully lossless. It keys its fold on the bare `model` name while preserving one stage's `thinkingLevel`, so two stages that share a model with *different* thinking levels (for example `work max` + `learn high`) still report `migratable` and silently pick one level; and it overwrites a pre-existing `models` block instead of folding it in, so an operator-configured `models.review` can be lost. Separately, `--config` with a missing value falls back to the project/global path, so `--write` can mutate the wrong file. These are latent defects in an operator tool that does not run in the pipeline; the deterministic fixes and RED tests are recorded in the [lossless-config-migration card](docs/solutions/architecture/lossless-config-migration-must-key-on-every-preserved-field.md) and the [operator-CLI card](docs/solutions/tooling/operator-cli-shipping-surface-four-checks.md).
 
 Here is a complete configuration schema example:
 
@@ -572,10 +593,23 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 17 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~52,600 |
-| Tests | 1,504 (1,502 pass + 2 opt-in skips) (4,599 assertions) |
+| TypeScript lines | ~58,760 |
+| Tests | 1,737 (1,735 pass + 2 opt-in skips) (5,178 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
+
+---
+
+## Development
+
+```bash
+bun install           # install dependencies
+bun test              # run the suite (transpile-only — it does NOT type-check)
+bun run typecheck     # bun x tsc --noEmit (strict); CI runs this after bun install
+bun run migrate:roles # dry-run role migration for an existing per-stage config
+```
+
+A green `bun test` is not a type-safety verdict: Bun transpiles without type-checking, so the CI job runs `bun x tsc --noEmit` after `bun install` (`.github/workflows/test.yml`), and `scripts/**` is included in the `tsconfig` `include` so operator CLIs are type-checked too. The reasoning is in the [transpile-only runner card](docs/solutions/testing/green-test-runner-is-not-a-type-check.md).
 
 ---
 

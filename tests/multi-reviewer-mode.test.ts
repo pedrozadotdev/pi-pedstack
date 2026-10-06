@@ -70,6 +70,13 @@ function spawnedModels(): string[] {
 		.filter((model): model is string => typeof model === "string");
 }
 
+function spawnedThinking(): (string | undefined)[] {
+	return mockState.spawnArgs.map((args) => {
+		const index = args.indexOf("--thinking");
+		return index >= 0 ? args[index + 1] : undefined;
+	});
+}
+
 async function writeConfig(repoRoot: string, payload: Record<string, unknown>) {
 	await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
 	await writeFile(
@@ -215,5 +222,155 @@ describe("multi_reviewer mode selector (Unit 3)", () => {
 		} finally {
 			console.warn = originalWarn;
 		}
+	});
+});
+
+describe("multi_reviewer explicit reviewer independence (Unit 3)", () => {
+	test("drops a colliding explicit reviewer and keeps the independent one", async () => {
+		const warnings: string[] = [];
+		const originalWarn = console.warn;
+		console.warn = (...args: unknown[]) => {
+			warnings.push(args.map((arg) => String(arg)).join(" "));
+		};
+
+		try {
+			await withRepo(
+				{
+					plan: {
+						model: "stage/plan",
+						reviewers: [
+							{ model: "stage/plan", thinkingLevel: "high" },
+							{ model: "explicit/one", thinkingLevel: "high" },
+						],
+					},
+				},
+				async (repoRoot) => {
+					await createMultiReviewerTool().execute({
+						stepName: "02-plan",
+						primaryOutput: "const x = 1",
+						repoRoot,
+						mode: "deep",
+					});
+					expect(spawnedModels()).toEqual(["explicit/one"]);
+					expect(warnings.some((w) => w.includes("stage/plan"))).toBe(true);
+				},
+			);
+		} finally {
+			console.warn = originalWarn;
+		}
+	});
+
+	test("reports no reviewers when every explicit reviewer collides", async () => {
+		const warnings: string[] = [];
+		const originalWarn = console.warn;
+		console.warn = (...args: unknown[]) => {
+			warnings.push(args.map((arg) => String(arg)).join(" "));
+		};
+
+		try {
+			await withRepo(
+				{
+					plan: {
+						model: "stage/plan",
+						reviewers: [{ model: "stage/plan", thinkingLevel: "high" }],
+					},
+				},
+				async (repoRoot) => {
+					const result = await createMultiReviewerTool().execute({
+						stepName: "02-plan",
+						primaryOutput: "const x = 1",
+						repoRoot,
+					});
+					expect(spawnedModels()).toEqual([]);
+					expect(result.compiledSummary).toBe("No reviewers configured.");
+					expect(warnings.some((w) => w.includes("stage/plan"))).toBe(true);
+				},
+			);
+		} finally {
+			console.warn = originalWarn;
+		}
+	});
+
+	test("falls back to an independent models.review when all explicit reviewers are dropped", async () => {
+		await withRepo(
+			{
+				plan: {
+					model: "stage/plan",
+					reviewers: [{ model: "stage/plan", thinkingLevel: "high" }],
+				},
+				models: {
+					default: { model: "role/default" },
+					review: { model: "role/review", thinkingLevel: "high" },
+				},
+			},
+			async (repoRoot) => {
+				await createMultiReviewerTool().execute({
+					stepName: "02-plan",
+					primaryOutput: "const x = 1",
+					repoRoot,
+				});
+				expect(spawnedModels()).toEqual(["role/review"]);
+			},
+		);
+	});
+});
+
+describe("multi_reviewer thinkingLevel passthrough (Unit 4)", () => {
+	test("passes an explicit reviewer thinkingLevel through unchanged", async () => {
+		await withRepo(
+			{
+				plan: {
+					model: "stage/plan",
+					reviewers: [{ model: "explicit/one", thinkingLevel: "low" }],
+				},
+			},
+			async (repoRoot) => {
+				await createMultiReviewerTool().execute({
+					stepName: "02-plan",
+					primaryOutput: "const x = 1",
+					repoRoot,
+				});
+				expect(spawnedThinking()).toEqual(["low"]);
+			},
+		);
+	});
+
+	test("omits --thinking when an explicit reviewer does not set a level", async () => {
+		await withRepo(
+			{
+				plan: {
+					model: "stage/plan",
+					reviewers: [{ model: "explicit/one" }],
+				},
+			},
+			async (repoRoot) => {
+				await createMultiReviewerTool().execute({
+					stepName: "02-plan",
+					primaryOutput: "const x = 1",
+					repoRoot,
+				});
+				expect(spawnedThinking()).toEqual([undefined]);
+			},
+		);
+	});
+
+	test("keeps the high default for the models.review role", async () => {
+		await withRepo(
+			{
+				plan: { model: "stage/plan" },
+				models: {
+					default: { model: "role/default" },
+					review: { model: "role/review" },
+				},
+			},
+			async (repoRoot) => {
+				await createMultiReviewerTool().execute({
+					stepName: "02-plan",
+					primaryOutput: "const x = 1",
+					repoRoot,
+				});
+				expect(spawnedThinking()).toEqual(["high"]);
+			},
+		);
 	});
 });

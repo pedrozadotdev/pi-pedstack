@@ -402,6 +402,21 @@ describe("stage gate skill wiring (Unit 8)", () => {
 		}
 	});
 
+	test("gate branch docs treat a missing action as none", () => {
+		for (const skill of ["01-brainstorm", "02-plan", "04-review", "05-learn"]) {
+			const content = readFileSync(
+				path.join(repoRoot, "skills", skill, "SKILL.md"),
+				"utf8",
+			);
+			expect({
+				skill,
+				hasDefault:
+					content.includes("missing `action`") &&
+					content.includes("treated as `none`"),
+			}).toEqual({ skill, hasDefault: true });
+		}
+	});
+
 	test("work/debug/docsync docs reference their stage report path", () => {
 		for (const stage of ["03-work", "04-5-debug", "06-docsync"]) {
 			const content = readFileSync(path.join(repoRoot, stageDocs[stage]), "utf8");
@@ -410,6 +425,31 @@ describe("stage gate skill wiring (Unit 8)", () => {
 				hasReports: true,
 			});
 		}
+	});
+});
+
+describe("02-plan strict review reference (Unit 7)", () => {
+	const refPath = path.join(
+		repoRoot,
+		"skills",
+		"02-plan",
+		"references",
+		"ceo-review-mode.md",
+	);
+
+	test("describes the independent-review pass as conditional on the gate action", () => {
+		const content = readFileSync(refPath, "utf8");
+		expect(content).toContain("`action`");
+		expect(content).toContain('mode: "single"');
+		expect(content).toContain("`review`");
+		expect(content).toContain("`accept`");
+		expect(content).toContain("`escalate`");
+		expect(content.toLowerCase()).toContain("conditional");
+	});
+
+	test("does not claim the reviewer pass is unconditional", () => {
+		const content = readFileSync(refPath, "utf8");
+		expect(content).not.toContain("runs **before** the `multi_reviewer` tool");
 	});
 });
 

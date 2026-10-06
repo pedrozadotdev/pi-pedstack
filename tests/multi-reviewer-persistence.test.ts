@@ -118,7 +118,7 @@ describe("multi_reviewer findings persistence", () => {
 				model: "anthropic/claude-3-opus",
 				thinkingLevel: "high",
 				reviewers: [
-					{ model: "anthropic/claude-3-opus", thinkingLevel: "high" },
+					{ model: "anthropic/claude-3-sonnet", thinkingLevel: "high" },
 				],
 			},
 		});
@@ -172,7 +172,7 @@ describe("multi_reviewer findings persistence", () => {
 				model: "anthropic/claude-3-opus",
 				thinkingLevel: "high",
 				reviewers: [
-					{ model: "anthropic/claude-3-opus", thinkingLevel: "high" },
+					{ model: "anthropic/claude-3-sonnet", thinkingLevel: "high" },
 				],
 			},
 		});

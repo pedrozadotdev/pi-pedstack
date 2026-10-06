@@ -327,15 +327,27 @@ async function latestGateEscalates(
 	}
 }
 
-async function readAttemptCount(
+interface RoutingCounts {
+	attempts: number;
+	revisions: number;
+	reviews: number;
+}
+
+/** Derives attempt/revision/review counters from the retained gate attempts. */
+async function readAttemptCounts(
 	repoRoot: string,
 	stage: string,
-): Promise<number> {
-	if (!isStageKey(stage)) return 0;
+): Promise<RoutingCounts> {
+	if (!isStageKey(stage)) return { attempts: 0, revisions: 0, reviews: 0 };
 	try {
-		return (await readAttempts(repoRoot, stage)).length;
+		const attempts = await readAttempts(repoRoot, stage);
+		return {
+			attempts: attempts.length,
+			revisions: attempts.filter((entry) => entry.verdict === "revise").length,
+			reviews: attempts.filter((entry) => entry.verdict === "review").length,
+		};
 	} catch {
-		return 0;
+		return { attempts: 0, revisions: 0, reviews: 0 };
 	}
 }
 
@@ -356,7 +368,7 @@ async function askJev(input: StageRoutingInput): Promise<JevJudgment | null> {
 async function persistRoutingRecord(
 	input: StageRoutingInput,
 	decision: RoleDecision,
-	counts: { escalations: number; attempts: number },
+	counts: { escalations: number; attempts: number; revisions: number; reviews: number },
 ): Promise<void> {
 	try {
 		await writeRoutingRecord(input.repoRoot, {
@@ -370,6 +382,8 @@ async function persistRoutingRecord(
 			confidence: decision.confidence,
 			attempts: counts.attempts,
 			escalations: counts.escalations,
+			revisions: counts.revisions,
+			reviews: counts.reviews,
 			updatedAt: (input.now?.() ?? new Date()).toISOString(),
 		});
 	} catch {
@@ -417,9 +431,10 @@ export async function resolveStageRouting(
 		const shadow = routing.shadow;
 		const applied = resolveAppliedRole(decision, roles, shadow);
 		const appliedSota = applied.model !== null && decision.role === "sota";
+		const counts = await readAttemptCounts(input.repoRoot, input.stage);
 		await persistRoutingRecord(input, decision, {
 			escalations: priorEscalations + (appliedSota ? 1 : 0),
-			attempts: await readAttemptCount(input.repoRoot, input.stage),
+			...counts,
 		});
 
 		return {

@@ -31,7 +31,9 @@
     "access": "public"
   },
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "bun x tsc --noEmit",
+    "migrate:roles": "bun scripts/migrate-roles.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.74.0",

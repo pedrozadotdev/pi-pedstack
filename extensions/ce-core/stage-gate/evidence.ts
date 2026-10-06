@@ -62,7 +62,11 @@ export interface GatherEvidenceOptions {
 	/** Test seam; defaults to the resolved `..._FAILCLOSED` flag. */
 	docsVerificationFailClosed?: boolean;
 	/** Prior fresh gate decision, threaded read-only into the predicates (Unit 4). */
-	priorGate?: { verdict: StageGateVerdict; action: ReviewAction } | null;
+	priorGate?: {
+		verdict: StageGateVerdict;
+		action: ReviewAction;
+		updatedAt: string;
+	} | null;
 }
 
 /** Canonical repo-relative POSIX path (backslashes normalized, `.`/`..` collapsed). */
@@ -282,6 +286,24 @@ async function readCheckpoints(repoRoot: string): Promise<CheckpointRecord[]> {
 	return records;
 }
 
+/**
+ * The sidecar's observation time: a valid `generatedAt`, else the file mtime.
+ * An unreadable stat yields undefined, which the predicate treats as stale.
+ */
+async function resolveObservedAt(
+	abs: string,
+	generatedAt: unknown,
+): Promise<string | undefined> {
+	if (typeof generatedAt === "string" && !Number.isNaN(Date.parse(generatedAt))) {
+		return generatedAt;
+	}
+	try {
+		return (await fs.stat(abs)).mtime.toISOString();
+	} catch {
+		return undefined;
+	}
+}
+
 async function readReviewFindings(
 	repoRoot: string,
 	rubric: StageRubric,
@@ -294,12 +316,17 @@ async function readReviewFindings(
 		if (!matcher.test(path.posix.basename(rel))) continue;
 		const parsed = await readJson(abs);
 		if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
-		const value = parsed as { findings?: unknown; count?: unknown };
+		const value = parsed as {
+			findings?: unknown;
+			count?: unknown;
+			generatedAt?: unknown;
+		};
 		if (!Array.isArray(value.findings)) continue;
 		files.push({
 			path: rel,
 			findings: value.findings as ReviewFinding[],
 			count: typeof value.count === "number" ? value.count : undefined,
+			observedAt: await resolveObservedAt(abs, value.generatedAt),
 		});
 	}
 	return files;
