@@ -15,6 +15,7 @@ tags:
   - availability
   - cold-start
   - verdict-attribution
+  - persisted-status-marker
   - drift-guard
   - deterministic-pre-pass
   - fire-and-forget
@@ -23,6 +24,7 @@ applies_when:
   - Placing a model/semantic call (Jev, LLM, network) inside a hook pi awaits (turn_end, before_agent_start, tool_call, tool_result)
   - Shipping a "shadow-first" advisory layer and describing it as inert / no-op
   - Opting into fail-closed on a signal that may legitimately have no data yet (cold start, TTL expiry, wrong session)
+  - A degraded/deterministic outcome is deliberately not persisted, so "no record" cannot mean "producer failed"
   - Reusing or keeping a prior verdict instead of recomputing it (dedupe, unchanged-signature reuse, escalation hold)
   - Writing an advisory verdict to a persisted record that operators read to explain a block
 ---
@@ -112,6 +114,24 @@ A cold start is not a degraded layer. Either block only when a fresh record was
 Keep the blocker wording aligned with the actual state — do not label a cold start
 "semantic layer degraded".
 
+**The degraded state must be persisted, or fail-closed has nothing to key on.** If the
+degraded/deterministic outcome is deliberately *not* written to the record (as here —
+`persistOutcome` writes only `mode === "enforce" && source === "jev"`), then "no fresh
+record" conflates two states the gate must not treat alike:
+
+```text
+no record ever          → producer never ran         → fail open
+wrong session / expired → record exists but unusable → fail closed
+only-trivial / cap-hit  → producer chose not to run  → fail open
+degraded / deterministic→ producer ran and failed    → fail closed  ← needs a marker
+```
+
+A freshness predicate on the *verdict record* cannot separate the last row, because the
+degraded run leaves no verdict record at all. Gate fail-closed on an explicit, persisted
+status field (`lastSource`, `lastDegradedReason`, `driftStatus`) written on **every**
+execution, and reject `failClosed && !fresh` as under-specified: enumerate what `!fresh`
+covers and confirm none of those entries is a legitimate no-data state.
+
 ## 3. Preserve verdict attribution across reuse and hold
 
 Any path that re-persists or reuses a verdict without recomputing it must carry the
@@ -176,6 +196,32 @@ per record type; see the related cards below rather than re-deriving them here.
 - Confirm a kept/reused verdict cannot overwrite a populated trigger list with `[]`.
 - Flag a second egress sanitizer or freshness predicate as a single-source-of-truth defect.
 
+## Recurrence (2026-10-06, correction review)
+
+The same class recurred in the drift-correction review
+(`docs/reviews/2026-10-06-turn-level-stage-drift-corrections.md`, Finding H2), and the
+first-pass fix above was insufficient because it assumed the degraded state would be
+visible in the verdict record.
+
+- **H2:** `runDriftCompletion` blocks on `drift.failClosed && !fresh`, where `!fresh`
+  covers *no record file*, *TTL-expired*, *different `sessionKey`*, *non-`jev` source*,
+  and *`thresholdsVersion` bump*. Because `persistOutcome` returns early unless
+  `mode === "enforce" && source === "jev"`, a degraded/deterministic run writes **no
+  record**, so the completion floor cannot tell "the semantic layer was degraded" from
+  "this stage was never judged". With `enforce` + `FAILCLOSED=1`, an ordinary cross-stage
+  save on a fresh session is refused with a "semantic drift layer degraded" message that
+  is factually wrong.
+- **Refined rule:** fail-closed requires a **persisted provenance/status marker written
+  on every execution**, not a predicate over the verdict record's absence. The version
+  of this card that shipped with the feature did not go far enough; the missing piece is
+  that the producer must persist even when it degrades.
+- **Companion finding:** the requirements (res #7) had already frozen the narrow intent —
+  "transport outage / partial answers only" — so this is also a requirements↔constants
+  divergence; see
+  [`../workflow/frozen-decision-tables-drift-from-implemented-constants.md`](../workflow/frozen-decision-tables-drift-from-implemented-constants.md)
+  and
+  [`../architecture/keep-degraded-fallbacks-out-of-primary-signal-state.md`](./keep-degraded-fallbacks-out-of-primary-signal-state.md).
+
 ## Related solutions
 
 - [`./shadow-first-semantic-ranking-with-deterministic-fallback.md`](./shadow-first-semantic-ranking-with-deterministic-fallback.md)
@@ -191,6 +237,12 @@ per record type; see the related cards below rather than re-deriving them here.
 - [`./one-freshness-predicate-reused-at-every-read-site.md`](./one-freshness-predicate-reused-at-every-read-site.md)
   and [`./sanitize-untrusted-provenance-at-one-boundary-before-every-egress.md`](./sanitize-untrusted-provenance-at-one-boundary-before-every-egress.md)
   — the reuse rules the drift guard should have followed for freshness and redaction.
+- [`../testing/enforce-only-branch-tests-must-run-in-enforce.md`](../testing/enforce-only-branch-tests-must-run-in-enforce.md)
+  — the test-side counterpart: shadow must not be the mode used to verify an enforce-only
+  persistence write, or the negative assertion is vacuous.
+- [`../workflow/frozen-spec-can-contradict-its-own-normative-pseudocode.md`](../workflow/frozen-spec-can-contradict-its-own-normative-pseudocode.md)
+  — the spec-internal conflict surfaced by this feature's correction review (matrix row 8
+  vs VD-4).
 - [`../workflow/deterministic-first-semantic-guard-for-indirect-bash-tool-actions.md`](../workflow/deterministic-first-semantic-guard-for-indirect-bash-tool-actions.md)
   — deterministic-first ordering to keep the semantic call off the common path.
 

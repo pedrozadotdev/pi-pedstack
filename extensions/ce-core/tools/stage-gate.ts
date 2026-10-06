@@ -3,13 +3,16 @@
 import { Type } from "typebox";
 import { createJevRuntime } from "../jev/runtime";
 import type { JevRuntime } from "../jev/types";
+import { hasIndependentReviewer } from "../review/policy";
 import { evaluateStageGate } from "../stage-gate/evaluate";
 import type { GatherEvidenceOptions } from "../stage-gate/evidence";
 import { isStageKey } from "../stage-gate/store";
+import { getConfigKeyForSkill, readPiPedstackConfig } from "../utils/config-types";
 import type { OverengineeringMode } from "../overengineering/types";
 import type {
 	DeterministicResult,
 	Evidence,
+	ReviewAction,
 	SemanticScore,
 	StageGateMode,
 	StageGateVerdict,
@@ -50,6 +53,8 @@ interface StageGateToolResult {
 	skipped?: boolean;
 	error?: string;
 	verdict?: StageGateVerdict;
+	action?: ReviewAction;
+	actionReason?: string;
 	weightedScore?: number | null;
 	criticalFailed?: boolean;
 	enforcing?: boolean;
@@ -86,6 +91,11 @@ export function createStageGateTool(deps: StageGateToolDeps) {
 					skipped: true,
 				};
 			}
+			const config = await readPiPedstackConfig(input.repoRoot);
+			const configKey = getConfigKeyForSkill(input.stage);
+			const reviewerAvailable = configKey
+				? hasIndependentReviewer(config, configKey)
+				: true;
 			const result = await evaluateStageGate(
 				{ runtime: getRuntime(), now: deps.now, gather: deps.gather },
 				{
@@ -93,6 +103,7 @@ export function createStageGateTool(deps: StageGateToolDeps) {
 					stage: input.stage,
 					mode: deps.mode,
 					artifactPaths: input.artifactPaths,
+					reviewerAvailable,
 					overengineering: { mode: deps.overengineeringMode ?? "shadow" },
 				},
 			);

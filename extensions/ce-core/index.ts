@@ -382,6 +382,12 @@ const multiReviewerParams = Type.Object({
 		description: "Code changes or output to review",
 	}),
 	repoRoot: Type.String({ description: "Repository root path" }),
+	mode: Type.Optional(
+		Type.Union([Type.Literal("single"), Type.Literal("deep")], {
+			description:
+				"Review depth: single runs exactly one reviewer, deep runs all configured reviewers; omit for legacy behavior",
+		}),
+	),
 });
 
 const patternExtractorParams = Type.Object({
@@ -1171,6 +1177,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				stepName: params.stepName,
 				primaryOutput: params.primaryOutput,
 				repoRoot: params.repoRoot,
+				mode: params.mode,
 			});
 
 			return {

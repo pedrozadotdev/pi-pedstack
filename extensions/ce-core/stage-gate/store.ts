@@ -5,9 +5,11 @@ import path from "node:path";
 import { computeArtifactsHash, resolveArtifactPaths } from "./evidence";
 import { stageRubrics } from "./rubrics";
 import type {
+	ReviewAction,
 	StageGateAttempt,
 	StageGateMode,
 	StageGateRecord,
+	StageGateVerdict,
 	StageKey,
 } from "./types";
 
@@ -104,6 +106,26 @@ export async function readAcceptRecord(
 		return null;
 	}
 	return latest;
+}
+
+/**
+ * The prior fresh review action for a stage, or null. Consumed read-only by
+ * the evidence layer; a stale record contributes no review demand (Unit 4).
+ * Reuses the single `isRecordFresh` predicate, never a weaker check.
+ */
+export async function resolvePriorGate(
+	repoRoot: string,
+	stage: StageKey,
+): Promise<{ verdict: StageGateVerdict; action: ReviewAction } | null> {
+	const record = await readLatestRecord(repoRoot, stage);
+	const action = record?.review?.action;
+	if (!record || !action) return null;
+	try {
+		if (!(await isRecordFresh(repoRoot, record))) return null;
+	} catch {
+		return null;
+	}
+	return { verdict: record.verdict, action };
 }
 
 /** Appends an attempt, keeping only the newest `ATTEMPT_CAP` records. */

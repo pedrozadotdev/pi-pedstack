@@ -106,6 +106,21 @@ describe("stage gate store (Unit 4)", () => {
 		expect(await readAcceptRecord(root, "02-plan")).toBeNull();
 	});
 
+	test("round-trips the optional review action on an attempt", async () => {
+		await appendRecord(
+			root,
+			attempt({
+				review: { action: "escalate", reviewerCount: 0, reason: "budget exhausted" },
+			}),
+		);
+		const latest = await readLatestRecord(root, "02-plan");
+		expect(latest?.review).toEqual({
+			action: "escalate",
+			reviewerCount: 0,
+			reason: "budget exhausted",
+		});
+	});
+
 	test("isRecordFresh rejects edits, additions, removals, and renames", async () => {
 		await write("docs/plans/x.md", "hello");
 		const hash = await computeArtifactsHash(root, ["docs/plans/x.md"]);

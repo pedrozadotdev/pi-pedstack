@@ -173,18 +173,24 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   only act on a specific call's effect.
 - **Drift dimension** — one of the four independent `noul` judgments:
   `in_stage_scope`, `forbidden_work`, `scope_drift`, `progress`. Jev answers the
-  dimensions; TypeScript derives the verdict. `forbidden_work` is a **hard** signal and
-  is excluded from the soft-signal count so one observation never counts twice.
+  dimensions; TypeScript derives the verdict. `forbidden_work` is **tiered**: `>= 0.60`
+  is a mild signal (counted once), and only `>= 0.80` with confidence `>= 0.60` is
+  hard-strong. `progress` is **supporting-only** and never triggers.
 - **Drift verdict** — `no_drift | mild_drift | strong_drift`, always derived in
-  TypeScript (`extensions/ce-core/drift/combine.ts`). Two soft signals, a hard
-  `forbidden_work`, or a repeated mild turn is strong; a single soft signal is mild.
+  TypeScript (`extensions/ce-core/drift/combine.ts`). Two soft signals, a strong
+  `forbidden_work` (`>= 0.80` with confidence `>= 0.60`), or a repeated mild turn
+  (`MILD_REPEAT_LIMIT`) is strong; a single soft signal is mild. Every answer must be a
+  finite `noul` in `[0,1]` with confidence `>= MIN_CONFIDENCE` (0.50) or the whole set
+  degrades. `THRESHOLDS_VERSION = 2` invalidates every v1 record/status. See the
+  [frozen-decision-table drift card](docs/solutions/workflow/frozen-decision-tables-drift-from-implemented-constants.md).
 - **Drift correction** — the one-shot, in-session message delivered on the next
   `before_agent_start` for a mild drift turn (enforce only). Newest overwrites; it is
   consumed exactly once and never forces a model continuation.
 - **Unresolved drift** — a persisted `strong_drift` verdict for the current stage and
   session that has not been cleared. It blocks a cross-stage `context_handoff save` in
-  `enforce`; `shadow` only warns. It clears on a Jev `no_drift` turn that writes the
-  stage artifact, or after two consecutive Jev `no_drift` turns.
+  `enforce`; `shadow` writes no record, so it only warns when a prior `enforce` run
+  left one. It clears on a Jev `no_drift` turn that writes the stage artifact, or after
+  two consecutive Jev `no_drift` turns.
 - **Turn signature** — the hash of the compact turn state (stage, mandate, actions,
   excerpt). An unchanged signature reuses the last judged outcome without a second Jev
   call (`source: "deterministic"`, reason `unchanged turn`).
@@ -194,8 +200,19 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Drift record** — the latest **state** (not a hash-fresh judgment) written by a Jev
   verdict for one stage, at `.context/compound-engineering/drift/<stage>.json`. Fresh
   means `schema`, `stage`, `sessionKey`, and `thresholdsVersion` match, `source` is
-  `jev`, and the record is within the TTL. Only a `source === "jev"` verdict writes or
-  clears it; degraded/deterministic turns log only, and `shadow` writes no record.
+  `jev`, and the record is within the **6 h TTL**. Only a `source === "jev"` verdict
+  writes or clears it; degraded/deterministic turns log only, and `shadow` writes no
+  record.
+- **Drift status** — the per-stage last-evaluation health marker written only by an
+  `enforce` turn with a `jev` or `degraded` outcome, at
+  `.context/compound-engineering/drift/<stage>.status.json` (`degraded`, `sessionKey`,
+  `thresholdsVersion`, `updatedAt`). It is distinct from the **drift record** (verdict
+  state) and the shadow log, and uses the same **6 h TTL** through the one shared
+  `isDriftStatusFresh` predicate; a corrupt or unreadable status is absent (fail-open).
+- **Narrowed fail-closed** — `PEDSTACK_DRIFT_GUARD_FAILCLOSED=1` blocks a cross-stage
+  save in `enforce` only when the status is fresh **and** `degraded === true`. A
+  never-judged stage, a session/version mismatch, a TTL-expired status, an empty
+  (`"unknown-session"`) key, or a non-degraded last evaluation does **not** block.
 - **Shadow promotion** — the documented gate before setting `enforce`: at least 100
   judged turns over a representative multi-stage run, a mild-correction rate below 20%,
   zero false-positive strong verdicts on a labeled in-scope set, and a degraded rate

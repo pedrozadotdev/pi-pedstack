@@ -20,7 +20,7 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 - Keep focused on **what** to build, not implementation details.
 - **Explicit user approval required** before handoff to `02-plan`.
 - Write result to `docs/brainstorms/` as durable requirements document.
-- For design validation, the **`multi_reviewer`** tool is required (execute this every time) with `stepName: "01-brainstorm"` to review the drafted brainstorm/requirements artifact.
+- For design validation, after the gate returns action `review`, invoke the **`multi_reviewer`** tool with `stepName: "01-brainstorm"` and `mode: "single"` to review the drafted brainstorm/requirements artifact. A strong artifact (`accept`) advances with no independent reviewer.
 
 ## Mode selection
 
@@ -95,7 +95,12 @@ Stop and ask instead of guessing when: requirements conflict, success criteria u
 8. Offer to create/update `CONTEXT.md` if domain terms emerged
 9. Use `brainstorm_dialog` `summarize` to finalize
 10. Capture requirements in `docs/brainstorms/`
-11. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "01-brainstorm"` to review the generated brainstorm/requirements artifact.
+11. Run **`stage_gate`** for `01-brainstorm` and act on its `action`:
+    - `accept` → do not run `multi_reviewer`; advance.
+    - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
+    - `review` → invoke **`multi_reviewer`** with `stepName: "01-brainstorm"` and `mode: "single"`, then re-run `stage_gate`.
+    - `escalate` → do not loop; proceed to escalated execution.
+    Use `mode: "deep"` only on an explicit user request.
 12. Get explicit user approval
 13. Handoff to `02-plan` using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/01-brainstorm/references/handoff.md`
 

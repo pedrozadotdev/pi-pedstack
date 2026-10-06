@@ -5,6 +5,7 @@ import type {
 	DeterministicCheckResult,
 	DeterministicResult,
 	Evidence,
+	ReviewFindingsFile,
 	SemanticDimension,
 	StageKey,
 	StageRubric,
@@ -26,6 +27,39 @@ function check(
 	evaluate: (evidence: Evidence) => DeterministicCheckResult,
 ): DeterministicCheck {
 	return { id, critical, evaluate };
+}
+
+/**
+ * Shared conditional findings predicate (Unit 4). A matching sidecar is
+ * malformed when its `count` does not equal `findings.length`; a malformed
+ * sidecar always fails. A sidecar is required only when the prior fresh gate
+ * action demanded `review`; a well-formed zero-finding sidecar passes, so a
+ * clean review is never a deadlock.
+ */
+function findingsPersisted(
+	id: string,
+	matches: (file: ReviewFindingsFile) => boolean,
+): DeterministicCheck {
+	return check(id, true, (e) => {
+		const files = e.reviewFindings.filter(matches);
+		const malformed = files.filter(
+			(f) => !Array.isArray(f.findings) || f.count !== f.findings.length,
+		);
+		if (malformed.length > 0) {
+			return fail(
+				`${malformed.length} malformed findings file(s): count !== findings.length`,
+			);
+		}
+		const required = e.priorGate?.action === "review";
+		if (files.length === 0) {
+			return required
+				? fail("prior gate action 'review' requires a persisted findings file")
+				: pass("no independent review demanded by the prior gate action");
+		}
+		return required
+			? pass(`${files.length} findings file(s) satisfy the prior review demand`)
+			: pass(`${files.length} findings file(s) persisted`);
+	});
 }
 
 /** True when a markdown heading starts with `name` on a word boundary. */
@@ -186,17 +220,9 @@ function unitBlocks(txt: string): string[] {
 	return txt.split(/^###\s+Unit\b[^\n]*$/im).slice(1);
 }
 
-const reviewFindingsPersisted = check(
+const reviewFindingsPersisted = findingsPersisted(
 	"review_findings_persisted",
-	true,
-	(e) => {
-		const valid = e.reviewFindings.filter(
-			(f) => Array.isArray(f.findings) && f.count === f.findings.length,
-		);
-		return valid.length >= 1
-			? pass(`${valid.length} findings file(s) persisted`)
-			: fail("no parseable findings file with count === findings.length");
-	},
+	(f) => /04-review\.json$/.test(f.path),
 );
 
 const findingsReferenceFileLine = check(
@@ -283,14 +309,9 @@ const brainstormRubric: StageRubric = {
 		]),
 		minLength("min_length", 600),
 		noPlaceholders,
-		check("multi_reviewer_findings", true, (e) => {
-			const count = e.reviewFindings
-				.filter((f) => /01-brainstorm\.json$/.test(f.path))
-				.reduce((total, f) => total + f.findings.length, 0);
-			return count >= 1
-				? pass(`${count} brainstorm finding(s) present`)
-				: fail("no *-01-brainstorm.json with >= 1 finding");
-		}),
+		findingsPersisted("multi_reviewer_findings", (f) =>
+			/01-brainstorm\.json$/.test(f.path),
+		),
 	],
 	semanticDimensions: [
 		dimension("problem_clarity", "The problem is stated concretely."),

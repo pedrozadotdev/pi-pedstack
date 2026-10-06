@@ -150,7 +150,26 @@ Every decision is persisted to `.context/compound-engineering/routing/<stage>.js
 
 **Migration strategy:** roles coexist with per-stage config. Run the default **shadow phase** first (`routing.shadow = true`; legacy models still apply, decisions are logged and persisted), then set `routing.shadow = false` to enforce, and eventually fold per-stage keys into `models` with a codemod (not shipped here). Operators with neither `models` nor `routing` configured keep byte-identical behavior and spawn no Jev subprocess.
 
-**Known limitation:** the review-independence guard compares `models.review` only against `models.default`/`models.sota`, not against a per-stage `review.model` override, so a config that sets both to the same id can still review itself. Tracked in the [independence-guard solution card](docs/solutions/workflow/independence-guards-must-enumerate-every-execution-model-source.md).
+**Independence guard completeness:** the review-independence guard compares `models.review` against the union of **every** execution-model writer — `models.default`, `models.sota`, and the per-stage `config[<stage>].model` override (`collectExecutionModels`) — so a review model that would equal any execution model is ignored with a warning. See the [independence-guard solution card](docs/solutions/workflow/independence-guards-must-enumerate-every-execution-model-source.md).
+
+#### Conditional independent review
+
+A strong artifact no longer pays for a reviewer. The `stage_gate` result carries a bounded `action` derived purely in TypeScript from the verdict, the retained review budget, and reviewer availability:
+
+| Gate verdict | Action | Independent reviewers |
+|---|---|---|
+| `accept` | `none` | 0 |
+| `revise` | `revise` | 0 |
+| `review` | `review` | 1, unless the budget is exhausted or no independent reviewer is configured → `escalate` |
+| `escalate` | `escalate` | 0 |
+
+- **Budget.** `MAX_INDEPENDENT_REVIEW = 1`: the second `review` verdict in the same stage loop maps to `escalate`. A successful `accept` ends the loop, so a later re-entry starts a fresh budget. Counts are the retained prior attempts whose verdict is `review`.
+- **No-reviewer escape.** If no independent reviewer resolves from config, a `review` verdict maps to `escalate` with an explicit reason, so an unconfigured operator cannot deadlock on an unsatisfiable review demand.
+- **`multi_reviewer mode`.** The `multi_reviewer` tool takes an optional `mode: single | deep`: `single` runs exactly one reviewer (explicit `reviewers[0]`, else `models.review`), `deep` runs the full configured `reviewers[]`. Omit `mode` for the unchanged legacy behavior; `deep` is opt-in and used only on an explicit user request.
+- **Conditional findings predicates.** The two critical findings predicates (`multi_reviewer_findings`, `review_findings_persisted`) require a findings sidecar only when the prior **fresh** gate action is `review`. A well-formed zero-finding sidecar (`count: 0`) satisfies them, and the tool persists that empty sidecar, so a clean review is auditable and cannot deadlock the gate. A malformed sidecar (`count !== findings.length`) always fails, and a stale record contributes no review demand.
+- **Stage-entry routing.** The decision is persisted on the attempt (`review`) and returned as `action`/`actionReason`; routing treats a persisted `escalate` action exactly like an `escalate` verdict.
+
+**Known limitations (confirmed by this change's `04-review`, deferred to an on-demand `04-5-debug` pass):** `PEDSTACK_STAGE_GATE=off` returns a `skipped` result with no `action`, so a skill that branches on `action` has no defined next step on that escape hatch; a findings sidecar is matched by stage suffix alone, so one left from an earlier stage loop can satisfy a new `review` demand without a fresh reviewer run; an explicit `reviewers[]` is trusted as independent without comparing its models against the execution-model union; and an explicit reviewer that omits `thinkingLevel` now defaults to `high` instead of passing `undefined` through. Separately, making `Evidence.priorGate` required left one hand-built `Evidence` literal (`tests/overengineering-engine.test.ts`) without the field: `bun test` stays green because Bun transpiles without type-checking, and CI runs only `bun test`, so `bun x tsc --noEmit` reports exactly one `TS2741` until the one-line fixture fix lands. The durable fix (a CI type-check step) and the reasoning are in the [transpile-only runner card](docs/solutions/testing/green-test-runner-is-not-a-type-check.md).
 
 Here is a complete configuration schema example:
 
@@ -329,8 +348,8 @@ All reviewers evaluate changes across: **correctness, readability, architecture,
 
 Cross-stage progression is not just "the checklist is empty": the ce-core extension scores the artifact each stage produced before allowing a completion handoff.
 
-- **Deterministic floor (blocks in `shadow` and `enforce`)** — pure per-stage predicates: the canonical artifact is present and non-empty, required headings exist, minimum length, no placeholder tokens, review findings persisted with path:line evidence, checkpoints consistent, verification recorded. A failure means: fix the artifact and re-run `stage_gate`.
-- **Semantic verdict (warns in `shadow`, blocks in `enforce`)** — the `stage_gate` tool sends the artifact and deterministic results to CommandCode `typesafe/jev`, then combines the bounded per-dimension scores with TypeScript into one of `accept | revise | review | escalate`.
+- **Deterministic floor (blocks in `shadow` and `enforce`)** — pure per-stage predicates: the canonical artifact is present and non-empty, required headings exist, minimum length, no placeholder tokens, review findings persisted with path:line evidence (only when the prior gate action demanded an independent review), checkpoints consistent, verification recorded. A failure means: fix the artifact and re-run `stage_gate`.
+- **Semantic verdict (warns in `shadow`, blocks in `enforce`)** — the `stage_gate` tool sends the artifact and deterministic results to CommandCode `typesafe/jev`, then combines the bounded per-dimension scores with TypeScript into one of `accept | revise | review | escalate`. The result also carries the conditional-review `action` (see [Conditional independent review](#conditional-independent-review)).
 - `context_handoff save` re-runs the deterministic floor on every cross-stage completion save, so a fresh `accept` record can never override a drifted artifact.
 - `PEDSTACK_STAGE_GATE = off | shadow | enforce` (default `shadow`) is read once at extension init.
 
@@ -370,16 +389,22 @@ The capability matrix (#3) and the bash stage guard (#4) only act on a specific 
 
 - **Turn-side detection.** At each `turn_end`, TypeScript builds a compact, redacted turn state from the event itself (no cross-event accumulator), runs a deterministic pre-pass, and asks CommandCode `typesafe/jev` one bounded `noul` request over four dimensions: `in_stage_scope`, `forbidden_work`, `scope_drift`, `progress`. TypeScript derives `no_drift | mild_drift | strong_drift`; Jev never decides the verdict.
 - **One-shot correction (enforce).** A mild turn stores at most one correction; the single existing `before_agent_start` handler appends it once (`## 🧭 Stage Drift Correction`) and clears it. No forced continuation, so no loop. `shadow` never injects.
-- **Strong block (enforce).** A fresh `strong_drift` record for the current stage **and** session blocks a cross-stage `context_handoff save` in its deterministic floor (after the stage gate, before the readiness guard). A blocked save writes no handoff artifact. `shadow` only warns.
+- **Strong block (enforce).** A fresh `strong_drift` record for the current stage **and** session blocks a cross-stage `context_handoff save` in its deterministic floor (after the stage gate, before the readiness guard). A blocked save writes no handoff artifact. `shadow` writes no record, so the save-side warning only fires when a prior `enforce` run left a record.
 - **Never weaker than today.** `off`, an unknown/absent stage, a trivial turn, an unchanged turn signature, or a Jev outage all fail open (deterministic `no_drift`). A degraded or deterministic turn never writes or clears a record, so it can never clobber a strong one.
 - `PEDSTACK_DRIFT_GUARD = off | shadow | enforce` (default `shadow`) is read once at extension init. Missing/empty/invalid values fall back to `shadow` with a one-time warning and never silently resolve to `off`; changing it requires a restart.
-- `PEDSTACK_DRIFT_GUARD_FAILCLOSED=1` blocks in `enforce` when there is **no fresh Jev record** (semantic drift layer degraded or never run); the default is fail-open.
+- `PEDSTACK_DRIFT_GUARD_FAILCLOSED=1` blocks in `enforce` only when the last evaluated turn left a **fresh degraded** drift status (`degraded: true` within the 6 h TTL). A never-judged stage, a session or thresholds-version mismatch, a TTL-expired status, or a non-degraded last evaluation does **not** block; the default is fail-open.
 
-Records are persisted per stage at `.context/compound-engineering/drift/<stage>.json`. The block message **names this path**: delete `.context/compound-engineering/drift/<stage>.json` to clear the block (a missing file means no block), or set `PEDSTACK_DRIFT_GUARD=off` (restart required). A session only honors records whose `sessionKey` matches the current session, so a fresh session starts clean.
+Records are persisted per stage at `.context/compound-engineering/drift/<stage>.json`, with a sibling last-evaluation health marker at `.context/compound-engineering/drift/<stage>.status.json`. Both use a **6 h TTL**. The block messages **name these paths**: delete the stage's `.json` / `.status.json` files to clear the block (a missing file means no block), or set `PEDSTACK_DRIFT_GUARD=off` (restart required). A session only honors records and statuses whose `sessionKey` matches the current session, so a fresh session starts clean.
 
 **Shadow is not free.** The default `shadow` mode still calls Jev on the awaited `turn_end` handler — up to 24 distinct non-trivial turns per session, 8 s timeout each — so it adds latency even though it never blocks or injects. See the [shadow-mode-is-not-free card](docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md).
 
 **Stay in `shadow` and calibrate first.** Shadow computes and logs every judgment (including `dimensions`, `triggered`, and `jevCalled`) to `.context/compound-engineering/drift.jsonl` (rotated at 1 MiB) while blocking nothing. **Promote to `enforce` only after** at least 100 judged turns over a representative multi-stage run, a mild-correction rate below 20% of non-trivial turns, zero false-positive strong verdicts on a manually labeled in-scope set, a degraded rate below 5%, and no drift-caused blocked save with a false positive.
+
+**Corrected verdict table (v2).** `deriveVerdict` reproduces the frozen table row-for-row: `forbidden_work` is tiered — `>= 0.60` is a mild signal, and only `>= 0.80` **with** confidence `>= 0.60` is hard-strong; `in_stage_scope < 0.50` and `scope_drift >= 0.60` are soft signals; `progress` is supporting-only and never triggers; every answer must carry a confidence `>= 0.50` or the whole set degrades. `MILD_REPEAT_LIMIT` governs recurrence. `THRESHOLDS_VERSION = 2` makes every v1 record/status not fresh, so v1 state cannot block.
+
+**Remaining deferred item (M3).** The planned per-stage correction ledger (capped-out recurrence escalates to strong) shipped without the ledger.
+
+Findings are recorded in the [review report](docs/reviews/2026-10-06-turn-level-stage-drift-corrections.md), the [frozen-decision-table drift card](docs/solutions/workflow/frozen-decision-tables-drift-from-implemented-constants.md), the [shadow-mode-is-not-free recurrence](docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md), the [frozen-spec self-contradiction card](docs/solutions/workflow/frozen-spec-can-contradict-its-own-normative-pseudocode.md), and the [enforce-only test card](docs/solutions/testing/enforce-only-branch-tests-must-run-in-enforce.md).
 
 ### Semantic compaction guard (#11)
 
@@ -499,7 +524,7 @@ New conversation overhead: **~3,700 tokens** (1.9% of 200K context).
 | Component | Tokens |
 |-----------|--------|
 | 7 pipeline skill registrations | ~850 |
-| 26 tool schemas (16 CE + 10 built-in) | ~2,860 |
+| 27 tool schemas (17 CE + 10 built-in) | ~2,860 |
 | Skill context (per user invocation) | ~300–1,200 |
 
 Progressive loading: only needed skills loaded on-demand.
@@ -545,10 +570,10 @@ Commit everything to git — these files are the project's traceable memory.
 | Component | Count |
 |-----------|------:|
 | Skills | 7 |
-| Tools | 16 CE + 10 Pi built-in |
+| Tools | 17 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~43,386 |
-| Tests | 1251 (1249 pass + 2 opt-in skip) (4,053 assertions) |
+| TypeScript lines | ~52,600 |
+| Tests | 1,504 (1,502 pass + 2 opt-in skips) (4,599 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 

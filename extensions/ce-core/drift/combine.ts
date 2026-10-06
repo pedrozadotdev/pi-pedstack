@@ -6,6 +6,7 @@ import { sha256ShortHex, stableStringify } from "../utils/canonical-json";
 import { redactSecrets } from "../utils/redact";
 import { truncateUtf8ToBytes as truncateToBytes } from "../utils/solution-recall";
 import type {
+	CorrectionDimensionId,
 	DerivedVerdict,
 	DeriveContext,
 	DriftDimension,
@@ -15,17 +16,19 @@ import type {
 } from "./types";
 
 /** Bumped whenever the question copy or thresholds change (AD-2). */
-export const THRESHOLDS_VERSION = 1;
+export const THRESHOLDS_VERSION = 2;
 /** Confidence floor applied to every Jev answer (not a value threshold). */
 export const MIN_CONFIDENCE = 0.5;
-/** `in_stage_scope` below this = out-of-scope. */
+/** `in_stage_scope` below this = out-of-scope (soft signal). */
 export const IN_SCOPE_MIN = 0.5;
-/** `forbidden_work` at/above this = hard strong. */
-export const FORBIDDEN_STRONG = 0.6;
-/** `scope_drift` at/above this = scope-change signal. */
+/** `forbidden_work` at/above this = mild signal (FT-1). */
+export const FORBIDDEN_WORK_MILD = 0.6;
+/** `forbidden_work` at/above this AND `STRONG_CONFIDENCE` = hard strong (FT-2). */
+export const FORBIDDEN_WORK_STRONG = 0.8;
+/** Confidence gate for the hard-block tier only (D5). */
+export const STRONG_CONFIDENCE = 0.6;
+/** `scope_drift` at/above this = scope-change signal (soft). */
 export const SCOPE_DRIFT_STRONG = 0.6;
-/** `progress` below this = no-progress. */
-export const PROGRESS_MIN = 0.5;
 /** Consecutive mild (jev source only) escalates to strong. */
 export const MILD_REPEAT_LIMIT = 2;
 
@@ -232,10 +235,9 @@ export function readAnswers(
 		if (!isUnitNumber(answer.noul)) {
 			return `answer for ${id} must be a finite value in [0,1]`;
 		}
-		const rawConfidence = (answer as { confidence?: unknown }).confidence;
-		const confidence = rawConfidence === undefined ? 1 : rawConfidence;
+		const confidence = (answer as { confidence?: unknown }).confidence;
 		if (!isUnitNumber(confidence) || confidence < MIN_CONFIDENCE) {
-			return `answer for ${id} is below the confidence floor (${MIN_CONFIDENCE})`;
+			return `answer for ${id} is absent or below the confidence floor (${MIN_CONFIDENCE})`;
 		}
 		answered.set(id, { id, value: answer.noul, confidence });
 	}
@@ -258,28 +260,46 @@ export function readAnswers(
 interface Signals {
 	triggered: DriftDimensionId[];
 	soft: number;
-	forbidden: boolean;
+	forbiddenStrong: boolean;
 }
 
-/** Threshold the four dimensions; `forbidden_work` counts as hard, not soft. */
+/** The D4 recurrence knob; invalid values fall back to the default of 2. */
+function resolveMildRepeatLimit(value?: number): number {
+	return Number.isFinite(value)
+		? Math.max(2, Math.floor(value as number))
+		: MILD_REPEAT_LIMIT;
+}
+
+/**
+ * Threshold the four dimensions against the frozen table (FT-1..FT-5).
+ * `forbidden_work` is tiered (mild vs strong) and only its mild tier counts as
+ * a soft signal; `progress` is supporting-only and never triggers.
+ */
 function computeSignals(dimensions: DriftDimension[]): Signals {
-	const value = (id: DriftDimensionId): number =>
-		dimensions.find((entry) => entry.id === id)?.value ?? 0;
+	const find = (id: DriftDimensionId): DriftDimension | undefined =>
+		dimensions.find((entry) => entry.id === id);
+	const value = (id: DriftDimensionId): number => find(id)?.value ?? 0;
+	const confidence = (id: DriftDimensionId): number =>
+		find(id)?.confidence ?? 0;
+
+	const forbiddenValue = value("forbidden_work");
+	const forbiddenStrong =
+		forbiddenValue >= FORBIDDEN_WORK_STRONG &&
+		confidence("forbidden_work") >= STRONG_CONFIDENCE;
+	const forbiddenMild =
+		forbiddenValue >= FORBIDDEN_WORK_MILD && !forbiddenStrong;
 
 	const triggered: DriftDimensionId[] = [];
-	if (value("in_stage_scope") < IN_SCOPE_MIN) triggered.push("in_stage_scope");
-	if (value("forbidden_work") >= FORBIDDEN_STRONG) {
-		triggered.push("forbidden_work");
-	}
-	if (value("scope_drift") >= SCOPE_DRIFT_STRONG) {
-		triggered.push("scope_drift");
-	}
-	if (value("progress") < PROGRESS_MIN) triggered.push("progress");
+	const outOfScope = value("in_stage_scope") < IN_SCOPE_MIN;
+	const scopeDrift = value("scope_drift") >= SCOPE_DRIFT_STRONG;
+	if (outOfScope) triggered.push("in_stage_scope");
+	if (forbiddenValue >= FORBIDDEN_WORK_MILD) triggered.push("forbidden_work");
+	if (scopeDrift) triggered.push("scope_drift");
 
 	return {
 		triggered,
-		soft: triggered.filter((id) => id !== "forbidden_work").length,
-		forbidden: triggered.includes("forbidden_work"),
+		soft: (outOfScope ? 1 : 0) + (scopeDrift ? 1 : 0) + (forbiddenMild ? 1 : 0),
+		forbiddenStrong,
 	};
 }
 
@@ -287,11 +307,12 @@ export function deriveVerdict(
 	dimensions: DriftDimension[],
 	context: DeriveContext = {},
 ): DerivedVerdict {
-	const { triggered, soft, forbidden } = computeSignals(dimensions);
+	const { triggered, soft, forbiddenStrong } = computeSignals(dimensions);
 	const priorMild = context.priorConsecutiveMild ?? 0;
-	const repeated = soft === 1 && priorMild >= 1;
+	const limit = resolveMildRepeatLimit(context.mildRepeatLimit);
+	const repeated = soft === 1 && priorMild >= limit - 1;
 	let rawVerdict: DriftVerdict = "no_drift";
-	if (forbidden || soft >= 2 || repeated) rawVerdict = "strong_drift";
+	if (forbiddenStrong || soft >= 2 || repeated) rawVerdict = "strong_drift";
 	else if (soft === 1) rawVerdict = "mild_drift";
 
 	if (rawVerdict === "strong_drift") {
@@ -328,9 +349,9 @@ export function deriveVerdict(
 	};
 }
 
-/** One-shot correction copy for a mild drift dimension (AD-3). */
+/** One-shot correction copy for a correctable drift dimension (AD-3). */
 export function correctionMessage(
-	dimension: DriftDimensionId,
+	dimension: CorrectionDimensionId,
 	stage: string,
 ): string {
 	switch (dimension) {
@@ -340,8 +361,6 @@ export function correctionMessage(
 			return `This turn performed an activity the ${stage} policy forbids. Stop and stay within the mandate.`;
 		case "scope_drift":
 			return `This turn changed scope that was not approved. Revert to the approved plan.`;
-		case "progress":
-			return `This turn made no progress toward the ${stage} deliverable. Produce the stage artifact next.`;
 	}
 }
 

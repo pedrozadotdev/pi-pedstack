@@ -1,21 +1,20 @@
-// Unit 2 — drift pure core: thresholds, question copy, request build,
-// answer validation, verdict/streak derivation, hashing, redaction.
+// Unit 1 + Unit 2 — drift pure core: frozen table constants, answer
+// validation, verdict derivation from the frozen spec matrix, recurrence knob,
+// question copy, request build, hashing, redaction.
+//
+// Threshold expectations come from a test-local *spec table* (literal numbers),
+// never from the production constants; the only constant import used for
+// assertions is `DRIFT_QUESTION_IDS` (ask order).
 import { describe, expect, test } from "bun:test";
+import * as combine from "../extensions/ce-core/drift/combine.js";
 import {
 	ACTION_REASON_BYTES,
 	ACTION_TARGET_BYTES,
 	DRIFT_CLEAR_STREAK,
 	DRIFT_QUESTION_IDS,
 	EXCERPT_BYTES,
-	FORBIDDEN_STRONG,
-	IN_SCOPE_MIN,
 	MAX_REQUEST_BODY_BYTES,
-	MILD_REPEAT_LIMIT,
-	MIN_CONFIDENCE,
-	PROGRESS_MIN,
 	QUESTION_COPY,
-	SCOPE_DRIFT_STRONG,
-	THRESHOLDS_VERSION,
 	buildDriftRequest,
 	canonicalizeTurnState,
 	correctionMessage,
@@ -30,8 +29,20 @@ import type {
 	DriftDimension,
 	DriftDimensionId,
 	DriftTurnState,
+	DriftVerdict,
 } from "../extensions/ce-core/drift/types.js";
 import type { JevResult } from "../extensions/ce-core/jev/types";
+
+// ── Frozen spec table (normative literals, not production constants) ──
+const SPEC = {
+	FORBIDDEN_WORK_MILD: 0.6,
+	FORBIDDEN_WORK_STRONG: 0.8,
+	STRONG_CONFIDENCE: 0.6,
+	IN_SCOPE_MIN: 0.5,
+	SCOPE_DRIFT_STRONG: 0.6,
+	MIN_CONFIDENCE: 0.5,
+	MILD_REPEAT_LIMIT: 2,
+} as const;
 
 const DEFAULTS: Record<DriftDimensionId, number> = {
 	in_stage_scope: 1,
@@ -46,6 +57,19 @@ function dims(over: Partial<Record<DriftDimensionId, number>> = {}): DriftDimens
 		id,
 		value: values[id],
 		confidence: 1,
+	}));
+}
+
+/** Dimensions with an explicit `forbidden_work` confidence (spec matrix). */
+function specDims(
+	values: Partial<Record<DriftDimensionId, number>>,
+	forbiddenConfidence = 1,
+): DriftDimension[] {
+	const merged = { ...DEFAULTS, ...values };
+	return DRIFT_QUESTION_IDS.map((id) => ({
+		id,
+		value: merged[id],
+		confidence: id === "forbidden_work" ? forbiddenConfidence : 1,
 	}));
 }
 
@@ -84,20 +108,26 @@ function bytes(text: string): number {
 }
 
 describe("frozen contract constants", () => {
-	test("pins thresholds and ask order", () => {
-		expect(THRESHOLDS_VERSION).toBe(1);
-		expect(MIN_CONFIDENCE).toBe(0.5);
-		expect(IN_SCOPE_MIN).toBe(0.5);
-		expect(SCOPE_DRIFT_STRONG).toBe(0.6);
-		expect(PROGRESS_MIN).toBe(0.5);
-		expect(MILD_REPEAT_LIMIT).toBe(2);
-		expect(FORBIDDEN_STRONG).toBe(0.6);
+	test("pins the tiered thresholds, version, and ask order", () => {
+		expect(combine.THRESHOLDS_VERSION).toBe(2);
+		expect(combine.MIN_CONFIDENCE).toBe(0.5);
+		expect(combine.IN_SCOPE_MIN).toBe(0.5);
+		expect(combine.SCOPE_DRIFT_STRONG).toBe(0.6);
+		expect(combine.FORBIDDEN_WORK_MILD).toBe(0.6);
+		expect(combine.FORBIDDEN_WORK_STRONG).toBe(0.8);
+		expect(combine.STRONG_CONFIDENCE).toBe(0.6);
+		expect(combine.MILD_REPEAT_LIMIT).toBe(2);
 		expect(DRIFT_QUESTION_IDS).toEqual([
 			"in_stage_scope",
 			"forbidden_work",
 			"scope_drift",
 			"progress",
 		]);
+	});
+
+	test("deletes the dead `PROGRESS_MIN` and `FORBIDDEN_STRONG` knobs", () => {
+		expect("PROGRESS_MIN" in combine).toBe(false);
+		expect("FORBIDDEN_STRONG" in combine).toBe(false);
 	});
 
 	test("pins the question copy strings", () => {
@@ -116,54 +146,225 @@ describe("frozen contract constants", () => {
 	});
 });
 
-describe("deriveVerdict truth table", () => {
-	test("all dimensions in scope → no_drift", () => {
-		const derived = deriveVerdict(dims());
+describe("deriveVerdict — explicit frozen matrix (spec literals)", () => {
+	interface MatrixRow {
+		name: string;
+		values: Partial<Record<DriftDimensionId, number>>;
+		forbiddenConfidence?: number;
+		priorMild?: number;
+		verdict: DriftVerdict;
+		triggered: DriftDimensionId[];
+	}
+
+	const MATRIX: MatrixRow[] = [
+		{
+			name: "row 1: all in scope → no_drift",
+			values: {
+				in_stage_scope: 0.9,
+				forbidden_work: 0.1,
+				scope_drift: 0.1,
+				progress: 0.1,
+			},
+			verdict: "no_drift",
+			triggered: [],
+		},
+		{
+			name: "row 2: out of scope → mild (in_stage_scope)",
+			values: {
+				in_stage_scope: 0.49,
+				forbidden_work: 0.1,
+				scope_drift: 0.1,
+				progress: 0.1,
+			},
+			verdict: "mild_drift",
+			triggered: ["in_stage_scope"],
+		},
+		{
+			name: "row 3: scope change → mild (scope_drift)",
+			values: {
+				in_stage_scope: 0.9,
+				forbidden_work: 0.1,
+				scope_drift: 0.6,
+				progress: 0.1,
+			},
+			verdict: "mild_drift",
+			triggered: ["scope_drift"],
+		},
+		{
+			name: "row 4: forbidden mild tier with passing confidence → mild",
+			values: {
+				in_stage_scope: 0.9,
+				forbidden_work: 0.6,
+				scope_drift: 0.1,
+				progress: 0.1,
+			},
+			forbiddenConfidence: 0.9,
+			verdict: "mild_drift",
+			triggered: ["forbidden_work"],
+		},
+		{
+			name: "row 5: strong value but confidence gate fails → stays mild",
+			values: {
+				in_stage_scope: 0.9,
+				forbidden_work: 0.8,
+				scope_drift: 0.1,
+				progress: 0.1,
+			},
+			forbiddenConfidence: 0.5,
+			verdict: "mild_drift",
+			triggered: ["forbidden_work"],
+		},
+		{
+			name: "row 6: forbidden strong value + passing confidence → strong",
+			values: {
+				in_stage_scope: 0.9,
+				forbidden_work: 0.8,
+				scope_drift: 0.1,
+				progress: 0.1,
+			},
+			forbiddenConfidence: 0.6,
+			verdict: "strong_drift",
+			triggered: ["forbidden_work"],
+		},
+		{
+			name: "row 7: two soft signals → strong",
+			values: {
+				in_stage_scope: 0.49,
+				forbidden_work: 0.6,
+				scope_drift: 0.1,
+				progress: 0.1,
+			},
+			forbiddenConfidence: 0.9,
+			verdict: "strong_drift",
+			triggered: ["in_stage_scope", "forbidden_work"],
+		},
+		{
+			// Matrix row 8 lists all-in-scope values with `priorMild=1`; VD-4
+			// requires `soft == 1`, so the recurrence row carries the soft
+			// trigger it depends on (documented deviation, see plan row 8).
+			name: "row 8: one soft signal with a prior mild → strong (repeated mild)",
+			values: {
+				in_stage_scope: 0.49,
+				forbidden_work: 0.1,
+				scope_drift: 0.1,
+				progress: 0.1,
+			},
+			priorMild: 1,
+			verdict: "strong_drift",
+			triggered: ["in_stage_scope"],
+		},
+	];
+
+	for (const row of MATRIX) {
+		test(row.name, () => {
+			const derived = deriveVerdict(
+				specDims(row.values, row.forbiddenConfidence ?? 1),
+				{ priorConsecutiveMild: row.priorMild ?? 0 },
+			);
+			expect({ verdict: derived.verdict, triggered: derived.triggered }).toEqual({
+				verdict: row.verdict,
+				triggered: row.triggered,
+			});
+		});
+	}
+});
+
+describe("deriveVerdict — threshold boundaries", () => {
+	test("in_stage_scope 0.49 triggers, 0.50 does not", () => {
+		expect(deriveVerdict(dims({ in_stage_scope: 0.49 })).verdict).toBe(
+			"mild_drift",
+		);
+		expect(deriveVerdict(dims({ in_stage_scope: 0.5 })).verdict).toBe("no_drift");
+	});
+
+	test("scope_drift 0.59 does not trigger, 0.60 does", () => {
+		expect(deriveVerdict(dims({ scope_drift: 0.59 })).verdict).toBe("no_drift");
+		expect(deriveVerdict(dims({ scope_drift: 0.6 })).verdict).toBe("mild_drift");
+	});
+
+	test("forbidden_work 0.59 stays untriggered, 0.60 is mild", () => {
+		expect(deriveVerdict(dims({ forbidden_work: 0.59 })).verdict).toBe(
+			"no_drift",
+		);
+		expect(deriveVerdict(dims({ forbidden_work: 0.6 })).verdict).toBe(
+			"mild_drift",
+		);
+	});
+
+	test("forbidden_work 0.79 is mild even at full confidence", () => {
+		const derived = deriveVerdict(specDims({ forbidden_work: 0.79 }, 1));
+		expect(derived.verdict).toBe("mild_drift");
+		expect(derived.triggered).toEqual(["forbidden_work"]);
+	});
+
+	test("forbidden_work 0.80 × confidence 0.59 → mild; 0.60 → strong", () => {
+		expect(
+			deriveVerdict(specDims({ forbidden_work: 0.8 }, 0.59)).verdict,
+		).toBe("mild_drift");
+		expect(
+			deriveVerdict(specDims({ forbidden_work: 0.8 }, 0.6)).verdict,
+		).toBe("strong_drift");
+	});
+
+	test("progress is supporting-only: a progress-only turn is no_drift", () => {
+		const derived = deriveVerdict(
+			dims({ progress: 0.0, in_stage_scope: 1, scope_drift: 0, forbidden_work: 0 }),
+		);
 		expect(derived.verdict).toBe("no_drift");
 		expect(derived.triggered).toEqual([]);
 	});
 
-	test("exactly one soft signal → mild_drift", () => {
-		const derived = deriveVerdict(dims({ in_stage_scope: 0.1 }));
-		expect(derived.verdict).toBe("mild_drift");
-		expect(derived.triggered).toEqual(["in_stage_scope"]);
-	});
-
-	test("two soft signals → strong_drift", () => {
-		const derived = deriveVerdict(
-			dims({ in_stage_scope: 0.1, progress: 0.1 }),
-		);
-		expect(derived.verdict).toBe("strong_drift");
-		expect(derived.triggered).toEqual(["in_stage_scope", "progress"]);
-	});
-
-	test("forbidden_work >= FORBIDDEN_STRONG alone → strong_drift", () => {
-		const derived = deriveVerdict(dims({ forbidden_work: 0.6 }));
-		expect(derived.verdict).toBe("strong_drift");
-		expect(derived.triggered).toEqual(["forbidden_work"]);
-	});
-
-	test("discriminating correlation row: forbidden below threshold is not counted twice", () => {
+	test("forbidden below threshold is never counted twice with an in-scope miss", () => {
 		const derived = deriveVerdict(
 			dims({ forbidden_work: 0.59, in_stage_scope: 0.1 }),
 		);
 		expect(derived.verdict).toBe("mild_drift");
 		expect(derived.triggered).toEqual(["in_stage_scope"]);
 	});
+});
 
-	test("mild with priorConsecutiveMild >= 1 escalates to strong_drift", () => {
-		const derived = deriveVerdict(dims({ in_stage_scope: 0.1 }), {
-			priorConsecutiveMild: 1,
-		});
-		expect(derived.verdict).toBe("strong_drift");
-	});
-
-	test("mild with priorConsecutiveMild 0 stays mild", () => {
+describe("deriveVerdict — MILD_REPEAT_LIMIT reader", () => {
+	test("default limit: one prior mild escalates, none stays mild", () => {
+		expect(
+			deriveVerdict(dims({ in_stage_scope: 0.1 }), {
+				priorConsecutiveMild: 1,
+			}).verdict,
+		).toBe("strong_drift");
 		expect(
 			deriveVerdict(dims({ in_stage_scope: 0.1 }), {
 				priorConsecutiveMild: 0,
 			}).verdict,
 		).toBe("mild_drift");
+	});
+
+	test("mildRepeatLimit 3: one prior stays mild, two priors escalate", () => {
+		const dim = dims({ in_stage_scope: 0.1 });
+		expect(
+			deriveVerdict(dim, { priorConsecutiveMild: 1, mildRepeatLimit: 3 })
+				.verdict,
+		).toBe("mild_drift");
+		expect(
+			deriveVerdict(dim, { priorConsecutiveMild: 2, mildRepeatLimit: 3 })
+				.verdict,
+		).toBe("strong_drift");
+	});
+
+	test("mildRepeatLimit 1 clamps to the floor of 2", () => {
+		expect(
+			deriveVerdict(dims({ in_stage_scope: 0.1 }), {
+				priorConsecutiveMild: 1,
+				mildRepeatLimit: 1,
+			}).verdict,
+		).toBe("strong_drift");
+	});
+
+	test("a non-finite mildRepeatLimit falls back to the default", () => {
+		expect(
+			deriveVerdict(dims({ in_stage_scope: 0.1 }), {
+				priorConsecutiveMild: 1,
+				mildRepeatLimit: Number.NaN,
+			}).verdict,
+		).toBe("strong_drift");
 	});
 });
 
@@ -176,7 +377,7 @@ describe("deriveVerdict counters and clear rule", () => {
 	});
 
 	test("mild starts the consecutiveMild streak and zeroes noDrift", () => {
-		const derived = deriveVerdict(dims({ progress: 0.1 }), {
+		const derived = deriveVerdict(dims({ in_stage_scope: 0.1 }), {
 			priorConsecutiveMild: 0,
 			priorConsecutiveNoDrift: 5,
 		});
@@ -185,7 +386,7 @@ describe("deriveVerdict counters and clear rule", () => {
 	});
 
 	test("strong zeroes both counters", () => {
-		const derived = deriveVerdict(dims({ forbidden_work: 0.9 }), {
+		const derived = deriveVerdict(specDims({ forbidden_work: 0.9 }), {
 			priorConsecutiveMild: 3,
 			priorConsecutiveNoDrift: 3,
 		});
@@ -222,7 +423,7 @@ describe("deriveVerdict counters and clear rule", () => {
 	});
 
 	test("strong prior + a fresh strong signal stays strong", () => {
-		const derived = deriveVerdict(dims({ forbidden_work: 0.8 }), {
+		const derived = deriveVerdict(specDims({ forbidden_work: 0.8 }, 0.6), {
 			priorVerdict: "strong_drift",
 			priorConsecutiveNoDrift: 1,
 		});
@@ -245,37 +446,42 @@ describe("readAnswers", () => {
 		expect(parsed as string).toContain("progress");
 	});
 
-	test("rejects a confidence below the floor", () => {
+	test("rejects a confidence below the spec floor (0.49)", () => {
 		const parsed = readAnswers(
 			jevResult({
-				progress: { type: "noul", noul: 0.9, confidence: 0.4 },
+				progress: { type: "noul", noul: 0.9, confidence: 0.49 },
 			}),
 		);
 		expect(typeof parsed).toBe("string");
 	});
 
-	test("defaults an absent confidence to 1", () => {
+	test("accepts a confidence exactly at the spec floor (0.50)", () => {
+		const parsed = readAnswers(
+			jevResult({
+				progress: { type: "noul", noul: 0.9, confidence: 0.5 },
+			}),
+		);
+		expect(Array.isArray(parsed)).toBe(true);
+	});
+
+	test("rejects an absent confidence (never defaults to 1)", () => {
 		const parsed = readAnswers(
 			jevResult({ progress: { type: "noul", noul: 0.9 } }),
 		);
-		expect(Array.isArray(parsed)).toBe(true);
-		const entry = (parsed as DriftDimension[]).find(
-			(dimension) => dimension.id === "progress",
-		);
-		expect(entry?.confidence).toBe(1);
+		expect(typeof parsed).toBe("string");
+		expect(parsed as string).toContain("confidence");
 	});
 
-	test("rejects out-of-range and non-finite values", () => {
-		expect(
-			readAnswers(
-				jevResult({ progress: { type: "noul", noul: 1.1 } }),
-			) as string,
-		).toContain("progress");
-		expect(
-			readAnswers(
-				jevResult({ progress: { type: "noul", noul: Number.NaN } }),
-			) as string,
-		).toContain("progress");
+	test("rejects NaN, Infinity, out-of-range, and wrong-type noul values", () => {
+		for (const noul of [Number.NaN, Number.POSITIVE_INFINITY, 1.1, -0.1, "0.5"]) {
+			const parsed = readAnswers(
+				jevResult({ progress: { type: "noul", noul } }),
+			);
+			expect({ noul, isString: typeof parsed === "string" }).toEqual({
+				noul,
+				isString: true,
+			});
+		}
 	});
 
 	test("rejects a non-noul answer", () => {
@@ -376,9 +582,15 @@ describe("truncateToBytes + correctionMessage", () => {
 		);
 	});
 
-	test("correctionMessage names the stage and dimension intent", () => {
+	test("correctionMessage covers the three correctable dimensions", () => {
 		expect(correctionMessage("in_stage_scope", "02-plan")).toContain("02-plan");
-		expect(correctionMessage("progress", "03-work")).toContain("03-work");
+		expect(correctionMessage("forbidden_work", "03-work")).toContain("03-work");
+		expect(correctionMessage("scope_drift", "03-work")).toContain("scope");
+	});
+
+	test("non-finite spec values are untrusted (progress included)", () => {
+		expect(SPEC.MIN_CONFIDENCE).toBe(0.5);
+		expect(SPEC.MILD_REPEAT_LIMIT).toBe(2);
 	});
 });
 

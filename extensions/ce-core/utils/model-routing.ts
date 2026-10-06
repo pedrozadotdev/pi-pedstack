@@ -321,7 +321,7 @@ async function latestGateEscalates(
 	if (!isStageKey(stage)) return false;
 	try {
 		const latest = await readLatestRecord(repoRoot, stage);
-		return latest?.verdict === "escalate";
+		return latest?.verdict === "escalate" || latest?.review?.action === "escalate";
 	} catch {
 		return false;
 	}
