@@ -412,3 +412,58 @@ describe("stage gate skill wiring (Unit 8)", () => {
 		}
 	});
 });
+
+describe("docs-verification wiring (Unit 9)", () => {
+	const read = (rel: string): string => readFileSync(path.join(repoRoot, rel), "utf8");
+
+	test("every edited doc names the PEDSTACK_DOCS_VERIFICATION mode switch", () => {
+		for (const rel of ["AGENTS.md", "README.md", "CONTEXT.md"]) {
+			const content = read(rel);
+			expect({ rel, has: content.includes("PEDSTACK_DOCS_VERIFICATION") }).toEqual({
+				rel,
+				has: true,
+			});
+		}
+	});
+
+	test("AGENTS.md and README.md document the fail-closed default", () => {
+		for (const rel of ["AGENTS.md", "README.md"]) {
+			const content = read(rel);
+			expect({
+				rel,
+				has: content.includes("PEDSTACK_DOCS_VERIFICATION_FAILCLOSED"),
+			}).toEqual({ rel, has: true });
+		}
+	});
+
+	test("02-plan, 03-work, and the rules document the docs-verified grammar", () => {
+		for (const rel of [
+			"skills/02-plan/SKILL.md",
+			"skills/03-work/SKILL.md",
+			"rules/common/development-workflow.md",
+		]) {
+			const content = read(rel);
+			expect({ rel, has: content.includes("docs-verified:") }).toEqual({
+				rel,
+				has: true,
+			});
+		}
+	});
+
+	test("AGENTS.md and README.md document the obligation lifecycle", () => {
+		for (const rel of ["AGENTS.md", "README.md"]) {
+			const content = read(rel);
+			expect({
+				rel,
+				hasLifecycle: content.includes("satisfied") && content.includes("waived"),
+				hasTool: content.includes("docs_verification"),
+			}).toEqual({ rel, hasLifecycle: true, hasTool: true });
+		}
+	});
+
+	test("CONTEXT.md defines the docs-verification obligation vocabulary", () => {
+		const content = read("CONTEXT.md");
+		expect(content).toContain("docs-verified:");
+		expect(content.toLowerCase()).toContain("docs-verification obligation");
+	});
+});

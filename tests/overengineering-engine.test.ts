@@ -110,6 +110,7 @@ function evidenceWith(txt: string): Evidence {
 		planText: null,
 		gitDiff: null,
 		truncated: false,
+		obligations: null,
 	};
 }
 

@@ -40,6 +40,11 @@ import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
 import { resolveStageGateMode } from "./stage-gate/store";
 import { resolveOverengineeringMode } from "./overengineering/compose";
 import {
+	resolveDocsVerificationFailClosed,
+	resolveDocsVerificationMode,
+} from "./docs-verification/store";
+import { createDocsVerificationWiring } from "./utils/docs-verification-wiring";
+import {
 	resolveReadinessFailClosed,
 	resolveReadinessMode,
 } from "./handoff-readiness/store";
@@ -414,6 +419,11 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	// ponytail: the overengineering mode is a separate shadow-first knob.
 	const overengineeringMode = resolveOverengineeringMode(process.env);
 	// ponytail: handoff-readiness mode/fail-closed are also resolved once.
+	// ponytail: docs-verification mode/fail-closed resolved once at init.
+	const docsWiring = createDocsVerificationWiring({
+		mode: resolveDocsVerificationMode(process.env),
+		failClosed: resolveDocsVerificationFailClosed(process.env),
+	});
 	// Drift mode/fail-closed are read once too; invalid values fail safe to shadow.
 	const driftModeRaw = process.env.PEDSTACK_DRIFT_GUARD;
 	const driftMode = resolveDriftMode(process.env);
@@ -429,6 +439,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			mode: resolveReadinessMode(process.env),
 			failClosed: resolveReadinessFailClosed(process.env),
 		},
+		docsVerification: docsWiring,
 		drift: {
 			mode: driftMode,
 			failClosed: driftFailClosed,
@@ -951,10 +962,16 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		const solutionsBlock = ctx?.cwd
 			? await buildSolutionsAppend({ repoRoot: ctx.cwd, skillPath })
 			: undefined;
+		const docsBlock = ctx?.cwd
+			? await docsWiring.buildAppend({ repoRoot: ctx.cwd, skillPath })
+			: undefined;
+		const injectedSolutions = [solutionsBlock, docsBlock]
+			.filter((block): block is string => Boolean(block))
+			.join("");
 		return composeSolutionSystemPrompt(
 			event.systemPrompt,
 			append + (driftBlock ?? ""),
-			solutionsBlock,
+			injectedSolutions || undefined,
 		);
 	});
 
@@ -980,6 +997,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
 	// Semantic solution ranking: model-facing tool + auto-injection (one handler above).
 	registerSolutionSearch(pi);
+
+	// Docs verification: model-facing tool (injection ran in the one handler above).
+	docsWiring.register(pi);
 
 	// Injection screen phase 1 — screens raw untrusted results before the size
 	// filters compress them (registered first; phase 2 below runs last).
