@@ -187,12 +187,12 @@ afterEach(() => {
 });
 
 describe("index.ts wiring order", () => {
-	test("registers five tool_result handlers", () => {
+	test("registers six tool_result handlers", () => {
 		process.env.PEDSTACK_INJECTION_SCREEN = "shadow";
 		const { pi, handlers } = createPi();
 		ceCoreExtension(pi as never);
 
-		expect(handlers.get("tool_result")?.length).toBe(5);
+		expect(handlers.get("tool_result")?.length).toBe(6);
 	});
 
 	test("declares phase 1 before the bash filter and phase 2 after the read filter", () => {

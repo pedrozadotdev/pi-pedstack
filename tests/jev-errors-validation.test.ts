@@ -529,3 +529,49 @@ describe("jev criteria widening (Unit 0: H1)", () => {
 	});
 });
 
+describe("jev criteria widening: response-path coverage (Unit 0)", () => {
+	test("accepts object and array choice criteria through validateResponse", () => {
+		const request: JevRequest = {
+			state: "s",
+			questions: {
+				q1: {
+					type: "choice",
+					instructions: "pick",
+					criteria: { a: { description: "A" }, b: ["B"] },
+				},
+			},
+		};
+
+		const validated = validateRequest(request);
+		expect(validated.body).toBeString();
+
+		const response = validateResponse(
+			{
+				answers: {
+					q1: {
+						type: "choice",
+						choice: "a",
+						probabilities: { a: 1, b: 0 },
+						confidence: 0.9,
+					},
+				},
+			},
+			validated.request,
+		);
+		expect(response.answers.q1.type).toBe("choice");
+	});
+
+	test("still rejects bare boolean criteria values", () => {
+		expectInvalidRequest(
+			() =>
+				validateRequest({
+					state: "s",
+					questions: {
+						q1: { type: "score", instructions: "x", criteria: ["a", true] },
+					},
+				}),
+			"questions.q1.criteria",
+		);
+	});
+});
+
