@@ -25,7 +25,10 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Cheap semantic file reads** — `semantic_read` (one file) and `semantic_scout` (files/dirs/globs) return typed per-path answers plus byte facts — **never file bodies** — so the agent opens only the files it truly needs; a Jev outage degrades to explicit `read`/`grep` guidance
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
+- **Bash stage guard (shadow by default)** — an indirect-surface guard classifies `bash` commands by effect (writes, deletes, installs, package runners, pipes) and logs verdicts to `.context/compound-engineering/jev-stage-guard.jsonl`; set `PEDSTACK_JEV_STAGE_GUARD=enforce` to block
 - **Stage completion gate** — every stage scores the artifact it produced before its cross-stage handoff. Deterministic per-stage predicates (artifact present, required headings, no placeholders, persisted review findings) block in **both** `shadow` and `enforce`; CommandCode `typesafe/jev` adds a bounded semantic score via the `stage_gate` tool. `PEDSTACK_STAGE_GATE=off|shadow|enforce` (default `shadow`)
+- **Untrusted injection screen** — a two-phase `tool_result` screen classifies provenance (HTTP, `gh` reads, external paths) and asks Jev one bounded question; `enforce` prepends a deterministic warning wrapper around flagged content without rewriting it. Ships shadow-first (`PEDSTACK_INJECTION_SCREEN=off|shadow|enforce`, default `shadow`), fails open on Jev failure and wrap-miss
+- **Failure triage** — a failed `test`/`typecheck`/`lint`/`build` command during `03-work` or `04-5-debug` gains an inline, bounded advisory TRIAGE block (category, relation to recent change, root-cause clarity) and a record under `.context/compound-engineering/triage/`; Jev degrades to a deterministic heuristic on outage, and triage never auto-fixes or changes the exit status
 - **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
 - **Token-efficient** — ~3,700 tokens new-conversation overhead; progressive loading
 
@@ -265,14 +268,23 @@ Records are persisted per stage under `.context/compound-engineering/stage-gates
 
 ### Deterministic stage guard
 
-Stage discipline is not just prompt text. The ce-core extension hooks the `write`/`edit` tools and classifies each target path against the active stage's capability matrix before the write executes. A call that targets a foreign class is blocked with a deterministic reason — for example, a `02-plan` session cannot edit `extensions/` source, and no stage may write `.context/` workflow state directly (it is managed by extension tools).
+Stage discipline is not just prompt text. The ce-core extension hooks tool calls and checks them against the active stage's capability matrix before they execute.
+
+**`write`/`edit` (path-based).** Each target path is classified before the write executes. A call that targets a foreign class is blocked with a deterministic reason — for example, a `02-plan` session cannot edit `extensions/` source, and no stage may write `.context/` workflow state directly (it is managed by extension tools).
 
 - Paths classify into 11 classes (brainstorm, plan, review, solution, docs, tests, source, config, deps, workflow-state, unknown).
+- The `workflow-state` invariant is evaluated first, so `.context/**` is always blocked regardless of basename.
 - `unknown` paths always pass (fail-open) so third-party or unclassified files are never trapped.
 - The guard fails open on any internal error and reports at most once per session.
-- Set `PEDSTACK_DISABLE_GUARD=1` to bypass the guard entirely.
 
-**Known limitations:** the guard covers only the path-classifiable `write`/`edit` surface — `bash`, redirection, `git`, `sed -i`, `rm`/`mv`/`cp`, subagents, and symlink aliasing bypass it by design. The `config` class is an exact-basename allowlist (`package.json`, `tsconfig.json`, `bunfig.toml`, `.github/`), so other config files (`.eslintrc.json`, `biome.json`, `tsconfig.build.json`) classify as `unknown` and are writable in every stage. Two confirmed but unfixed issues are recorded in the [guard solution card](docs/solutions/workflow/deterministic-path-classification-guard-for-stage-scoped-tool-calls.md): activation can persist the wrong stage on a cancelled navigation (H1), and `.context/**` paths with conflicting basenames escape the always-blocked `workflow-state` rule (M1).
+**`bash` (indirect surface).** A deterministic shell-effect classifier splits a command (quote-aware), classifies each segment by effect (`read_only`, `mutates_workspace`, `deletes_or_destructive`, `installs_dependencies`, `runs_tests_or_builds`, `package_runner`, `pipe_to_shell`, `container_or_remote`, `ambiguous`), and reuses the same path classifier for literal targets. Commands the classifier cannot prove are routed to the local Jev semantic layer for a bounded effect/intent answer. The deterministic verdict always wins — a model answer can only add a block, never weaken one.
+
+- Default mode is **shadow**: verdicts are recorded to `.context/compound-engineering/jev-stage-guard.jsonl` (rotated at 1 MiB) but nothing is blocked, so you can calibrate before enforcing.
+- `PEDSTACK_JEV_STAGE_GUARD=enforce` blocks forbidden/ambiguous commands; `off` disables the bash guard; any other or absent value fails safe to `shadow`.
+- When the semantic layer is unavailable, ambiguous commands **fail open** by default. Set `PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED=1` (with `enforce`) to block instead; a one-time degraded notice is shown.
+- Set `PEDSTACK_DISABLE_GUARD=1` to bypass both guards entirely.
+
+**Threat model:** deterrence against a drifting or careless agent, not a sandbox. Accepted bypasses are `$VAR`/globs/symlinks, `eval`, `curl | sh`, heredocs, and any command the classifier cannot prove. The `config` class is an exact-basename allowlist (`package.json`, `tsconfig.json`, `bunfig.toml`, `.github/`), so other config files (`.eslintrc.json`, `biome.json`, `tsconfig.build.json`) classify as `unknown` and are writable in every stage. Reusable lessons are recorded in the [path-classification card](docs/solutions/workflow/deterministic-path-classification-guard-for-stage-scoped-tool-calls.md) and the [bash guard card](docs/solutions/workflow/deterministic-first-semantic-guard-for-indirect-bash-tool-actions.md). One confirmed but unfixed issue remains in the path guard: activation can persist the wrong stage on a cancelled navigation (H1).
 
 ### Semantic solution ranking (shadow-first)
 
@@ -302,6 +314,23 @@ Stage discipline is not just prompt text. The ce-core extension hooks the `write
 - **Never-weaker degraded fallback:** a full Jev outage returns `status: "degraded"` with explicit `read`/`grep` guidance — the engine never throws and never returns an unexplained empty list.
 
 **Known limitations (deferred to an on-demand `04-5-debug` pass):** the #14 review found that pruning and containment are enforced inside the child loop but not at every expansion entry point — an explicitly named pruned directory (`node_modules`) and a directory-symlink glob base are still walked, a zero-answer batch is reported as `partial` without explanation, and a file named `__proto__` is dropped from the second-pass Choice (M1, M2, M4, L6). Content is still protected by the downstream realpath check before any read, so this is a policy/semantics deviation, not a body leak. Findings are recorded in the [traversal-policy solution card](docs/solutions/architecture/apply-traversal-policy-to-expansion-roots.md).
+
+### Untrusted tool-result injection screen (shadow-first)
+
+The agent reads content it does not control — remote HTTP fetches, `gh` issue/PR reads, and files outside the repo. Before the size filters compress those results, the ce-core extension runs a two-phase provenance screen (`extensions/ce-core/injection-screen/`):
+
+- **Phase 1 (raw, first `tool_result` handler)** classifies provenance deterministically (`http`, `gh-issue`, `gh-pr`, `gh-api`, `external-path`) and, for untrusted sources only, asks Jev exactly one bounded `noul` question. Local/in-repo results and `off` mode make zero Jev calls and write no log line.
+- **Phase 2 (final, last `tool_result` handler)** consumes the stored verdict by `toolCallId` and, in `enforce` mode only, prepends a deterministic warning wrapper around the flagged content.
+- **Never blocks, never rewrites.** The wrapper is prepended around the verbatim payload; in `shadow` the content is untouched.
+- **Fail-open.** A Jev outage or malformed answer is `degraded`; a verdict phase 2 never sees is a `wrap-miss`. Both pass content through unchanged (with a one-time operator notice in `enforce` when a UI is present).
+- **Bounded and metadata-only.** At most 128 verdicts are retained for the current turn; sanitized one-line records (no content, source ref stripped of credentials/query/fragment) are appended to `.context/compound-engineering/injection-screens.jsonl`.
+
+- `PEDSTACK_INJECTION_SCREEN = off | shadow | enforce` (default `shadow`). Missing/empty/invalid values fall back to `shadow` with a one-time warning; the screen never silently resolves to `off`.
+- **Shadow-first:** `shadow` computes and logs verdicts but leaves every result unchanged; `enforce` is opt-in and wraps only `flagged` results.
+
+**Enforcement checkpoint:** flip the default to `enforce` only after shadow calibration shows a non-trivial flagged rate that has been reviewed. The thresholds (`noul ≥ 0.60` and `confidence ≥ 0.50`) stay provisional until that data exists.
+
+**Known limitations (v1):** middle-only payloads beyond the 16 KiB sample window, content the bash tool truncated out of `event.content` (`fullOutputPath`), and in-repo copies of untrusted content are not screened.
 
 ---
 
@@ -365,11 +394,13 @@ your-project/
         ├── checkpoints/       # Breakpoint files
         ├── handoffs/          # Cross-stage context
         ├── history/           # Execution history
+        ├── triage/            # Failure triage records (latest.json + history.jsonl)
         ├── checklist.json     # Persistent task list
         ├── context-state.json # Current workflow stage
         ├── active-stage.json  # Guard's persisted active stage
         ├── stage-reports/     # Per-stage completion reports
-        └── stage-gates/       # Stage-gate verdict records (content-hashed)
+        ├── stage-gates/       # Stage-gate verdict records (content-hashed)
+        └── jev-stage-guard.jsonl # Bash guard shadow verdict log (rotated at 1 MiB)
 ```
 
 Commit everything to git — these files are the project's traceable memory.
@@ -383,8 +414,8 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 16 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~25,700 |
-| Tests | 733 (+1 opt-in skip) (2,427 assertions) |
+| TypeScript lines | ~30,041 |
+| Tests | 883 (882 pass + 1 opt-in skip) (2,857 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -400,11 +431,22 @@ save-side guard that `context_handoff save` consults on cross-stage completion s
 
 `extensions/ce-core/jev/` is the typed transport and runtime for CommandCode's headless
 `typesafe/jev` decision model (Noul / Choice / Score questions over stdin). It registers
-**no Pi tool** of its own and adds **no dependency**; it is consumed by the stage gate and
-by the solution-ranking engine behind the `solution_search` tool and optional stage
-auto-injection, through an injected runtime so its validated spawn/parse/error path is
-shared and testable (issue
+**no Pi tool** of its own and adds **no dependency**; it is consumed by the stage gate, by
+the solution-ranking engine behind the `solution_search` tool and optional stage
+auto-injection, by the bash stage guard
+(`extensions/ce-core/utils/stage-guard-runtime.ts`) for the bounded semantic fallback on
+commands the deterministic classifier cannot prove, and by the failure-triage
+`tool_result` handler — all through an injected runtime so its validated
+spawn/parse/error path is shared and testable (issue
 [#2](https://github.com/pedrozadotdev/pi-pedstack/issues/2)).
+
+The failure-triage subsystem (`extensions/ce-core/tools/failure-triage.ts`,
+`failure-triage-runner.ts`, `triage-store.ts`) registers no Pi tool either. It runs as a
+fourth `tool_result` handler: on a failed verification command it bounds the failure
+excerpt, classifies it with Jev (2.5 s cap), degrades to a keyword heuristic on outage or
+abstention, annotates the result in place, and persists the record. It is advisory only —
+it never returns `isError`, mutates code, or changes the command's exit status, and it
+fails open on any internal error.
 
 ## Commands
 

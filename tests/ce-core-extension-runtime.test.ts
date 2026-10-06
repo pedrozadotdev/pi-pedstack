@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach, mock } from "bun:test";
 import * as path from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
 
 mock.module("@earendil-works/pi-ai", () => {
 	return {
@@ -72,6 +73,7 @@ mock.module("node:child_process", () => {
 
 import { clearAutoAdvanceCache } from "../extensions/ce-core/utils/auto-advance";
 import {
+	clearActiveStage,
 	getActiveStage,
 	setActiveStage,
 } from "../extensions/ce-core/utils/active-stage";
@@ -612,13 +614,91 @@ describe("auto-advance tool_result wiring", () => {
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
 
-	test("registers 3 tool_result handlers and an agent_end handler", () => {
+	test("registers 6 tool_result handlers and an agent_end handler", () => {
 		const { pi, eventHandlers } = createPiMock();
 		ceCoreExtension(pi as never);
 
-		expect(eventHandlers.get("tool_result")?.length).toBe(3);
+		expect(eventHandlers.get("tool_result")?.length).toBe(6);
 		expect(eventHandlers.get("tool_call")?.length).toBe(1);
 		expect(eventHandlers.get("agent_end")?.length).toBe(1);
+	});
+
+	test("failure triage handler ignores non-bash results", async () => {
+		const { pi, eventHandlers, makeEventCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+
+		const triageHandler = eventHandlers.get("tool_result")!.at(-1)!;
+		const result = await triageHandler(
+			{
+				toolName: "read",
+				input: { command: "bun test" },
+				content: [{ type: "text", text: "output" }],
+				isError: true,
+				details: {},
+			},
+			makeEventCtx({ cwd: "/tmp" }),
+		);
+
+		expect(result).toBeUndefined();
+	});
+
+	test("failure triage handler ignores bash results without an active stage", async () => {
+		const { pi, eventHandlers, makeEventCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		clearActiveStage();
+
+		const triageHandler = eventHandlers.get("tool_result")!.at(-1)!;
+		const result = await triageHandler(
+			{
+				toolName: "bash",
+				input: { command: "bun test" },
+				content: [{ type: "text", text: "FAIL test/foo.test.ts" }],
+				isError: true,
+				details: {},
+			},
+			makeEventCtx({ cwd: `/tmp/pi-ce-triage-none-${Date.now()}` }),
+		);
+
+		expect(result).toBeUndefined();
+	});
+
+	test("failure triage handler annotates a failing bash result and never sets isError", async () => {
+		const repoRoot = await mkdtemp(path.join(os.tmpdir(), "pi-ce-triage-"));
+		const { pi, eventHandlers, makeEventCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		setActiveStage("03-work");
+
+		try {
+			const triageHandler = eventHandlers.get("tool_result")!.at(-1)!;
+			const result = await triageHandler(
+				{
+					toolName: "bash",
+					input: { command: "bun test" },
+					content: [
+						{
+							type: "text",
+							text: "FAIL test/foo.test.ts\nexpected 1 received 2",
+						},
+					],
+					isError: true,
+					details: {},
+				},
+				makeEventCtx({ cwd: repoRoot }),
+			);
+
+			expect(result).toBeDefined();
+			expect(result.isError).toBeUndefined();
+			expect(result.content[0].text).toContain("TRIAGE");
+			expect(
+				result.content[0].text.startsWith("FAIL test/foo.test.ts"),
+			).toBe(true);
+			expect(result.details.triage.category).toBe("test_fixture");
+			expect(result.details.triage.source).toBe("heuristic");
+			expect(result.details.triage.relatedToRecentChange).toBe("unknown");
+			expect(typeof result.details.triage.rootCauseClarity).toBe("number");
+		} finally {
+			clearActiveStage();
+		}
 	});
 
 	test("session_shutdown clears the in-memory active stage", async () => {
@@ -626,7 +706,8 @@ describe("auto-advance tool_result wiring", () => {
 		ceCoreExtension(pi as never);
 		setActiveStage("03-work");
 
-		const shutdown = eventHandlers.get("session_shutdown")![0];
+		// Index 1 is the injection-screen cleanup; the stage-clear handler is last.
+		const shutdown = eventHandlers.get("session_shutdown")!.at(-1)!;
 		await shutdown({ type: "session_shutdown" }, makeEventCtx());
 
 		expect(getActiveStage()).toBeNull();
@@ -648,7 +729,7 @@ describe("auto-advance tool_result wiring", () => {
 			createPiMock();
 		ceCoreExtension(pi as never);
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const result = await autoAdvanceHandler(
 			makeEvent({ toolName: "bash" }),
 			makeEventCtx(),
@@ -694,7 +775,7 @@ describe("auto-advance tool_result wiring", () => {
 		setModelCalls.length = 0;
 		setThinkingLevelCalls.length = 0;
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const agentEndHandler = eventHandlers.get("agent_end")![0];
 
 		await autoAdvanceHandler(makeEvent(), makeEventCtx());
@@ -735,7 +816,7 @@ describe("auto-advance tool_result wiring", () => {
 			.handler("brainstorm the bug", ctx);
 		sendUserMessageCalls.length = 0;
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const agentEndHandler = eventHandlers.get("agent_end")![0];
 		const gatedEvent = makeEvent({
 			content: [
@@ -777,7 +858,7 @@ describe("auto-advance tool_result wiring", () => {
 			.handler("brainstorm the bug", ctx);
 		sendUserMessageCalls.length = 0;
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const agentEndHandler = eventHandlers.get("agent_end")![0];
 		let idle = false;
 		setTimeout(() => {
@@ -799,7 +880,7 @@ describe("auto-advance tool_result wiring", () => {
 		const { pi, eventHandlers, notifyCalls, makeEventCtx } = createPiMock();
 		ceCoreExtension(pi as never);
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const agentEndHandler = eventHandlers.get("agent_end")![0];
 
 		await autoAdvanceHandler(makeEvent(), makeEventCtx());
@@ -818,7 +899,7 @@ describe("auto-advance tool_result wiring", () => {
 			createPiMock();
 		ceCoreExtension(pi as never);
 
-		const autoAdvanceHandler = eventHandlers.get("tool_result")![2];
+		const autoAdvanceHandler = eventHandlers.get("tool_result")![4];
 		const result = await autoAdvanceHandler(
 			makeEvent({ content: null }),
 			makeEventCtx(),

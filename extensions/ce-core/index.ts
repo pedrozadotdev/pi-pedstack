@@ -40,6 +40,9 @@ import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
 import { resolveStageGateMode } from "./stage-gate/store";
 import { filterBashOutput } from "./tools/bash-output-filter";
 import { filterReadOutput } from "./tools/read-output-filter";
+import { registerInjectionScreen } from "./injection-screen/handlers";
+import { runFailureTriage } from "./tools/failure-triage-runner";
+import type { PersistedTriage } from "./tools/triage-store";
 import { COMPACTION_FOCUS_INSTRUCTIONS } from "./tools/compaction-optimizer";
 import { createMultiReviewerTool } from "./tools/multi-reviewer";
 import { createWorkflowStateTool } from "./tools/workflow-state";
@@ -61,6 +64,13 @@ import {
 	readPersistedActiveStage,
 } from "./utils/active-stage";
 import { evaluateWrite } from "./utils/capability-matrix";
+import { parseGuardMode } from "./utils/semantic-stage-guard";
+import {
+	createStageGuard,
+	type StageGuard,
+} from "./utils/stage-guard-runtime";
+import { createJevRuntime } from "./jev/runtime";
+import type { JevRuntime } from "./jev/types";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -352,6 +362,16 @@ const patternExtractorParams = Type.Object({
 	),
 });
 
+// Test seam: allows tests to inject a fake Jev runtime without spawning `cmd`.
+let stageGuardJevFactory: (() => JevRuntime) | null = null;
+
+/** @internal Test-only injection seam for the Jev runtime. */
+export function __setStageGuardJevFactory(
+	factory: (() => JevRuntime) | null,
+): void {
+	stageGuardJevFactory = factory;
+}
+
 export default function ceCoreExtension(pi: ExtensionAPI) {
 	const artifactHelper = createArtifactHelperTool();
 	const workflowState = createWorkflowStateTool();
@@ -382,6 +402,27 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	let persistedStageResolved = false;
 	let persistedStage: string | null = null;
 	let guardNotified = false;
+
+	// ponytail: Jev runtime created once, lazily; no process spawns until decide().
+	let jevRuntime: ReturnType<typeof createJevRuntime> | null = null;
+	function getJevRuntime() {
+		jevRuntime ??= createJevRuntime();
+		return jevRuntime;
+	}
+
+	// ponytail: Jev stage guard config, read once at init. Invalid values fail
+	// safe to shadow; the warning is deferred to the first tool call (no ctx yet).
+	const guardModeRaw = process.env.PEDSTACK_JEV_STAGE_GUARD;
+	const guardMode = parseGuardMode(guardModeRaw);
+	const guardModeInvalid =
+		guardModeRaw !== undefined &&
+		guardModeRaw !== "off" &&
+		guardModeRaw !== "shadow" &&
+		guardModeRaw !== "enforce";
+	const guardFailClosed =
+		process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED === "1";
+	let guardModeNotified = false;
+	let stageGuard: StageGuard | null = null;
 
 	pi.registerTool({
 		name: artifactHelper.name,
@@ -721,10 +762,54 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return persistedStage;
 	}
 
+	/** Lazily build the bash guard, memoizing the Jev runtime on first use. */
+	function getStageGuard(): StageGuard {
+		stageGuard ??= createStageGuard({
+			mode: guardMode,
+			failClosed: guardFailClosed,
+			createJev: () =>
+				stageGuardJevFactory ? stageGuardJevFactory() : createJevRuntime(),
+		});
+		return stageGuard;
+	}
+
+	/** Warn once when `PEDSTACK_JEV_STAGE_GUARD` is not a known mode. */
+	function notifyInvalidGuardModeOnce(ctx: ExtensionContext): void {
+		if (!guardModeInvalid || guardModeNotified) return;
+		guardModeNotified = true;
+		if (ctx.hasUI) {
+			ctx.ui.notify(
+				`Pedstack stage guard: invalid PEDSTACK_JEV_STAGE_GUARD value ` +
+					`"${guardModeRaw}"; using shadow mode.`,
+				"warning",
+			);
+		}
+	}
+
 	pi.on("tool_call", async (event, ctx) => {
 		if (guardDisabled) return undefined;
 
 		try {
+			notifyInvalidGuardModeOnce(ctx);
+
+			if (event.toolName === "bash") {
+				if (guardMode === "off") return undefined;
+				const command = (event.input as { command?: unknown }).command;
+				if (typeof command !== "string" || command.length === 0) {
+					return undefined;
+				}
+				const bashStage = await resolveGuardStage(ctx);
+				return await getStageGuard().evaluate({
+					repoRoot: ctx.cwd,
+					stage: bashStage,
+					cwd: ctx.cwd,
+					command,
+					notify: (message: string) => {
+						if (ctx.hasUI) ctx.ui.notify(message, "warning");
+					},
+				});
+			}
+
 			if (event.toolName !== "write" && event.toolName !== "edit") {
 				return undefined;
 			}
@@ -784,6 +869,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
 	// Semantic solution ranking: model-facing tool + auto-injection (one handler above).
 	registerSolutionSearch(pi);
+
+	// Injection screen phase 1 — screens raw untrusted results before the size
+	// filters compress them (registered first; phase 2 below runs last).
+	const injectionScreen = registerInjectionScreen(pi);
 
 	// Cheap semantic file reads/scouting: model-facing tools over one engine.
 	registerSemanticTools(pi);
@@ -872,6 +961,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			},
 		};
 	});
+
+	// Injection screen phase 2 — wraps final post-compression content when
+	// enforce+flagged, plus the turn_end sweep and session_shutdown cleanup.
+	injectionScreen.registerFinalPhase();
 
 	// ponytail: Auto-advance handler — intercepts context_handoff save and queues
 	// /ped-next for non-gated transitions. Additive to existing bash/read filters.
@@ -1047,6 +1140,102 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			}
 		}
 		return undefined;
+	});
+
+	// ponytail: failure triage handler — annotates failed verification commands
+	// with an advisory TRIAGE block. Additive, fail-open, never returns isError.
+	function extractTextContent(content: unknown): string | null {
+		const blocks =
+			(content as Array<{ type?: string; text?: string }> | undefined)?.filter(
+				(block) => block.type === "text",
+			) ?? [];
+		const text = blocks.map((block) => block.text ?? "").join("");
+		return text.length === 0 ? null : text;
+	}
+
+	function buildTriageDetails(
+		base: unknown,
+		captured: { record: PersistedTriage | null; persistError?: string },
+	): Record<string, unknown> {
+		return {
+			...(base && typeof base === "object" ? base : {}),
+			triage: {
+				...(captured.record ?? {}),
+				...(captured.persistError
+					? { persistError: captured.persistError }
+					: {}),
+			},
+		};
+	}
+
+	async function runTriageForEvent(
+		event: {
+			toolName: string;
+			input: unknown;
+			content: unknown;
+			isError?: boolean;
+			details?: unknown;
+		},
+		ctx: ExtensionContext,
+	): Promise<{ annotated: string; details: Record<string, unknown> } | null> {
+		const command = (event.input as { command?: unknown } | null)?.command;
+		if (typeof command !== "string" || command.length === 0) return null;
+
+		const content = extractTextContent(event.content);
+		if (content === null) return null;
+
+		const stage = await resolveGuardStage(ctx);
+		const captured: { record: PersistedTriage | null; persistError?: string } = {
+			record: null,
+		};
+
+		const annotated = await runFailureTriage(
+			{
+				toolName: event.toolName,
+				isError: event.isError ?? false,
+				command,
+				stage,
+				content,
+			},
+			{
+				runtime: getJevRuntime(),
+				repoRoot: ctx.cwd,
+				cwd: ctx.cwd,
+				onRecord: (record) => {
+					captured.record = record;
+				},
+				onPersistError: (error) => {
+					captured.persistError =
+						error instanceof Error ? error.message : String(error);
+				},
+			},
+		);
+		if (annotated === null) return null;
+
+		return { annotated, details: buildTriageDetails(event.details, captured) };
+	}
+
+	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName !== "bash") return undefined;
+
+		try {
+			const result = await runTriageForEvent(event, ctx);
+			if (!result) return undefined;
+
+			return {
+				content: [{ type: "text", text: result.annotated }],
+				details: result.details,
+			};
+		} catch (err) {
+			// ponytail: a triage bug never blocks or corrupts the bash result.
+			if (ctx.hasUI) {
+				ctx.ui.notify(
+					`Failure triage failed open: ${err instanceof Error ? err.message : String(err)}`,
+					"warning",
+				);
+			}
+			return undefined;
+		}
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {

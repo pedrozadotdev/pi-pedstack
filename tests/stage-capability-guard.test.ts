@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import path from "node:path";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import ceCoreExtension from "../extensions/ce-core/index";
+import ceCoreExtension, {
+	__setStageGuardJevFactory,
+} from "../extensions/ce-core/index";
 import {
 	clearActiveStage,
 	setActiveStage,
 } from "../extensions/ce-core/utils/active-stage";
+import { GUARD_LOG_FILE } from "../extensions/ce-core/utils/guard-log";
+import { createFakeJevRuntime } from "../extensions/ce-core/jev/runtime";
 
 // ── Fake pi harness ────────────────────────────────────────────────
 
@@ -94,6 +98,9 @@ beforeEach(() => {
 afterEach(async () => {
 	clearActiveStage();
 	delete process.env.PEDSTACK_DISABLE_GUARD;
+	delete process.env.PEDSTACK_JEV_STAGE_GUARD;
+	delete process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED;
+	__setStageGuardJevFactory(null);
 	await Promise.all(
 		tempRepos.splice(0).map((repo) => rm(repo, { recursive: true, force: true })),
 	);
@@ -107,7 +114,7 @@ describe("stage capability guard", () => {
 		ceCoreExtension(pi as never);
 
 		expect(eventHandlers.get("tool_call")?.length).toBe(1);
-		expect(eventHandlers.get("tool_result")?.length).toBe(3);
+		expect(eventHandlers.get("tool_result")?.length).toBe(6);
 		expect(registeredNames).toContain("stage_gate");
 		expect(registeredNames).toContain("solution_search");
 		expect(registeredNames).toContain("semantic_read");
@@ -265,6 +272,28 @@ describe("stage capability guard", () => {
 			),
 		).toBeUndefined();
 	});
+
+	test("conflicting-basename .context paths are blocked in 03-work and 06-docsync (C1)", async () => {
+		const { pi, eventHandlers, makeCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		const handler = eventHandlers.get("tool_call")![0];
+		const fixtures = [
+			".context/compound-engineering/package.json",
+			".context/compound-engineering/bun.lock",
+			".context/compound-engineering/notes.test.ts",
+			".context/compound-engineering/README.md",
+			".context",
+		];
+
+		for (const stage of ["03-work", "06-docsync"]) {
+			setActiveStage(stage);
+			for (const fixture of fixtures) {
+				const result = await handler(writeEvent(fixture), makeCtx("/repo"));
+				expect(result?.block).toBe(true);
+				expect(result?.reason).toContain("workflow-state");
+			}
+		}
+	});
 });
 
 // ── Unit 5: adversarial paths + failure isolation ──────────────────
@@ -386,5 +415,273 @@ describe("stage capability guard hardening", () => {
 
 		expect(result).toBeUndefined();
 		expect(notifyCalls.length).toBe(0);
+	});
+});
+
+// ── Unit 5: bash dispatch via the Jev semantic guard ──────────────
+
+const EFFECT_LABELS = [
+	"read_only",
+	"mutates_workspace",
+	"deletes_or_destructive",
+	"installs_dependencies",
+	"runs_tests_or_builds",
+	"package_runner",
+	"pipe_to_shell",
+	"container_or_remote",
+	"ambiguous",
+] as const;
+
+type FakeEffect = (typeof EFFECT_LABELS)[number];
+
+function fakeResponse(
+	effect: FakeEffect,
+	intent: boolean,
+	effectConfidence = 0.9,
+	intentConfidence = 0.9,
+): string {
+	const probabilities = Object.fromEntries(
+		EFFECT_LABELS.map((label) => [label, label === effect ? 1 : 0]),
+	);
+	return JSON.stringify({
+		model: "fake",
+		answers: {
+			effect: { type: "choice", choice: effect, probabilities, confidence: effectConfidence },
+			intent: { type: "noul", noul: intent ? 1 : 0, confidence: intentConfidence },
+		},
+	});
+}
+
+function fakeJev(options: {
+	effect?: FakeEffect;
+	intent?: boolean;
+	error?: boolean;
+	effectConfidence?: number;
+}) {
+	const {
+		effect = "read_only",
+		intent = false,
+		error = false,
+		effectConfidence = 0.9,
+	} = options;
+	return createFakeJevRuntime({
+		handler: () =>
+			error
+				? new Error("jev unavailable")
+				: {
+						exitCode: 0,
+						stdout: fakeResponse(effect, intent, effectConfidence),
+						stderr: "",
+					},
+	});
+}
+
+function bashEvent(command: string) {
+	return { type: "tool_call", toolName: "bash", input: { command } };
+}
+
+describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
+	async function setup(options: {
+		mode?: string;
+		failClosed?: boolean;
+		effect?: FakeEffect;
+		intent?: boolean;
+		error?: boolean;
+		stage?: string | null;
+	} = {}) {
+		if (options.mode !== undefined) {
+			process.env.PEDSTACK_JEV_STAGE_GUARD = options.mode;
+		}
+		if (options.failClosed) {
+			process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED = "1";
+		}
+		const fake = fakeJev(options);
+		__setStageGuardJevFactory(() => fake);
+		const { pi, eventHandlers, notifyCalls, makeCtx, registeredNames } =
+			createPiMock();
+		ceCoreExtension(pi as never);
+		setActiveStage(options.stage === undefined ? "02-plan" : options.stage);
+		return {
+			handler: eventHandlers.get("tool_call")![0],
+			fake,
+			notifyCalls,
+			makeCtx,
+			registeredNames,
+		};
+	}
+
+	test("shadow: deterministic bash never calls Jev and returns undefined", async () => {
+		const { handler, fake, makeCtx } = await setup({ mode: "shadow" });
+
+		expect(
+			await handler(bashEvent('grep -rn "foo" extensions/'), makeCtx("/repo")),
+		).toBeUndefined();
+		expect(
+			await handler(
+				bashEvent("sed -i 's/a/b/' extensions/ce-core/index.ts"),
+				makeCtx("/repo"),
+			),
+		).toBeUndefined();
+		expect(fake.calls.length).toBe(0);
+	});
+
+	test("enforce: a deterministic violation blocks with a reason", async () => {
+		const { handler, fake, makeCtx } = await setup({ mode: "enforce" });
+		const result = await handler(
+			bashEvent("sed -i 's/a/b/' extensions/ce-core/index.ts"),
+			makeCtx("/repo"),
+		);
+
+		expect(result?.block).toBe(true);
+		expect(result?.reason).toContain("02-plan");
+		expect(result?.reason).toContain("PEDSTACK_DISABLE_GUARD=1");
+		expect(fake.calls.length).toBe(0);
+	});
+
+	test("enforce: a Jev-derived mutating intent blocks", async () => {
+		const { handler, makeCtx } = await setup({
+			mode: "enforce",
+			effect: "mutates_workspace",
+			intent: true,
+		});
+		const result = await handler(bashEvent("python gen.py"), makeCtx("/repo"));
+
+		expect(result?.block).toBe(true);
+	});
+
+	test("ambiguous commands call Jev once and dedupe by stage+repo+command", async () => {
+		const { handler, fake, makeCtx } = await setup({ mode: "shadow" });
+
+		await handler(bashEvent("python gen.py"), makeCtx("/repo"));
+		await handler(bashEvent("python gen.py"), makeCtx("/repo"));
+		expect(fake.calls.length).toBe(1);
+
+		await handler(bashEvent('node -e "1"'), makeCtx("/repo"));
+		expect(fake.calls.length).toBe(2);
+
+		setActiveStage("03-work");
+		await handler(bashEvent("python gen.py"), makeCtx("/repo"));
+		expect(fake.calls.length).toBe(3);
+	});
+
+	test("a deterministic block is never weakened by an optimistic Jev answer", async () => {
+		const { handler, fake, makeCtx } = await setup({
+			mode: "enforce",
+			effect: "read_only",
+		});
+		const result = await handler(
+			bashEvent("rm extensions/ce-core/index.ts"),
+			makeCtx("/repo"),
+		);
+
+		expect(result?.block).toBe(true);
+		expect(fake.calls.length).toBe(0);
+	});
+
+	test("a Jev failure falls back to allow and notifies once", async () => {
+		const { handler, notifyCalls, makeCtx } = await setup({
+			mode: "shadow",
+			error: true,
+		});
+
+		expect(await handler(bashEvent("python gen.py"), makeCtx("/repo"))).toBeUndefined();
+		expect(await handler(bashEvent('node -e "1"'), makeCtx("/repo"))).toBeUndefined();
+		expect(notifyCalls.length).toBe(1);
+	});
+
+	test("FAILCLOSED=1 in enforce blocks when Jev is unavailable", async () => {
+		const { handler, makeCtx } = await setup({
+			mode: "enforce",
+			failClosed: true,
+			error: true,
+		});
+		const result = await handler(bashEvent("python gen.py"), makeCtx("/repo"));
+
+		expect(result?.block).toBe(true);
+	});
+
+	test("off disables the bash guard but keeps the write/edit guard", async () => {
+		const { handler, fake, makeCtx } = await setup({ mode: "off" });
+
+		expect(
+			await handler(bashEvent("rm extensions/ce-core/index.ts"), makeCtx("/repo")),
+		).toBeUndefined();
+		expect(fake.calls.length).toBe(0);
+		expect(
+			(await handler(writeEvent("extensions/ce-core/index.ts"), makeCtx("/repo")))
+				?.block,
+		).toBe(true);
+	});
+
+	test("PEDSTACK_DISABLE_GUARD=1 suppresses bash classification and logging", async () => {
+		process.env.PEDSTACK_DISABLE_GUARD = "1";
+		const repo = await makeRepo();
+		const { handler, fake, makeCtx } = await setup({ mode: "shadow" });
+
+		expect(
+			await handler(bashEvent("rm extensions/ce-core/index.ts"), makeCtx(repo)),
+		).toBeUndefined();
+		expect(fake.calls.length).toBe(0);
+		await expect(readFile(path.join(repo, GUARD_LOG_FILE), "utf8")).rejects.toThrow();
+	});
+
+	test("shadow logs one record per verdict without raw command text", async () => {
+		const repo = await makeRepo();
+		const { handler, makeCtx } = await setup({ mode: "shadow" });
+
+		await handler(
+			bashEvent("sed -i 's/a/b/' extensions/x.ts"),
+			makeCtx(repo),
+		);
+		const lines = (await readFile(path.join(repo, GUARD_LOG_FILE), "utf8"))
+			.trim()
+			.split("\n");
+
+		expect(lines.length).toBe(1);
+		const parsed = JSON.parse(lines[0]);
+		expect("command" in parsed).toBe(false);
+		expect(lines[0]).not.toContain("s/a/b/");
+	});
+
+	test("off writes nothing to the shadow log in a real repo", async () => {
+		const repo = await makeRepo();
+		const { handler, makeCtx } = await setup({ mode: "off" });
+
+		await handler(
+			bashEvent("sed -i 's/a/b/' extensions/x.ts"),
+			makeCtx(repo),
+		);
+		await expect(readFile(path.join(repo, GUARD_LOG_FILE), "utf8")).rejects.toThrow();
+	});
+
+	test("invalid mode warns once and still behaves as shadow", async () => {
+		const { handler, notifyCalls, makeCtx } = await setup({ mode: "SHADOW" });
+
+		await handler(bashEvent("python gen.py"), makeCtx("/repo"));
+		await handler(bashEvent("python gen.py"), makeCtx("/repo"));
+		expect(notifyCalls.length).toBe(1);
+	});
+
+	test("mutating-tool coverage: only write/edit/bash are intercepted", async () => {
+		const { handler, registeredNames, fake, makeCtx } = await setup({
+			mode: "shadow",
+		});
+
+		for (const name of registeredNames) {
+			expect(["write", "edit", "bash"]).not.toContain(name);
+			const result = await handler(
+				{ type: "tool_call", toolName: name, input: {} },
+				makeCtx("/repo"),
+			);
+			expect(result).toBeUndefined();
+		}
+
+		// bash is a Pi built-in, not a registered tool, yet it is intercepted...
+		await handler(bashEvent("python gen.py"), makeCtx("/repo"));
+		expect(fake.calls.length).toBe(1);
+		// ...and write/edit keep their deterministic path guard.
+		expect(
+			(await handler(writeEvent("extensions/x.ts"), makeCtx("/repo")))?.block,
+		).toBe(true);
 	});
 });

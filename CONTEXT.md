@@ -76,3 +76,20 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   (`source: "ordered"`).
 - **Outage** — a full Jev failure returns `status: "degraded"` plus explicit
   `read`/`grep` guidance; never weaker than the current workflow.
+
+## Injection screen (#13)
+
+- **Provenance** — the deterministic, non-model classification of where a tool result
+  came from: `http`, `gh-issue`, `gh-pr`, `gh-api`, or `external-path`. Anything else
+  classifies as `null` and is never screened.
+- **Untrusted source** — a provenance kind the injection screen treats as external input.
+- **Screen mode** — `off | shadow | enforce`, resolved from `PEDSTACK_INJECTION_SCREEN`
+  once at init; default and invalid value resolve to `shadow`.
+- **Flagged / clean / degraded** — the three screen outcomes. `degraded` is the
+  fail-open result produced when Jev is unavailable; it never adds a warning.
+- **Untrusted wrapper** — the fixed deterministic delimiter + warning prefix applied
+  only in `enforce` + `flagged` mode; the content inside is never modified.
+- **Wrap-miss** — a verdict was produced but phase 2 could not apply the wrapper
+  (e.g. a `tool_result` lookup miss); logged and counted, and it fails open.
+- **Provisional thresholds** — `noul >= 0.60` and `confidence >= 0.50`, hardcoded in
+  TypeScript until shadow calibration justifies changing or externalizing them.
