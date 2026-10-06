@@ -9,12 +9,14 @@ Built with TypeScript, tested with Bun test runner, published to npm as `pi-peds
 
 - Runtime: Bun
 - Language: TypeScript (strict)
-- Test: `bun test`
+- Test: `bun test` (transpile-only — it does not type-check)
+- Type check: `bun x tsc --noEmit`
 
 ## Key Commands
 
 ```bash
 bun test              # Run all tests
+bun x tsc --noEmit    # Type-check (strict mode); bun test alone does NOT type-check
 ```
 
 | Command | Description |
@@ -102,7 +104,7 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 | `context_handoff` | Save/load/validate cross-stage handoffs |
 | `stage_gate` | Score a stage artifact: deterministic checks + bounded Jev scoring → one verdict |
 | `docs_verification` | Evaluate, inspect, record, or waive per-unit source-driven documentation obligations (`evaluate` / `status` / `record` / `waive`) |
-| `multi_reviewer` | Orchestrate parallel reviewer subagents |
+| `multi_reviewer` | Orchestrate parallel reviewer subagents; optional `mode: single \| deep` (deep is opt-in) |
 | `checklist_add` / `checklist_show` / `checklist_del` | Persistent task tracking with handoff gating (bulk add via `descriptions[]`) |
 | `solution_search` | Rank `docs/solutions/**` cards for a query via Jev semantic ranking with a deterministic fallback (`mode: recall` / `overlap`) |
 | `semantic_read` | Answer one bounded semantic question about a single repo file; returns a typed answer plus byte facts, never a file body |
@@ -116,7 +118,7 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 
 **Failure triage:** a fourth `pi.on("tool_result")` handler (`failure-triage` + `failure-triage-runner` + `triage-store`) annotates a failed `test`/`typecheck`/`lint`/`build` bash result during `03-work` or `04-5-debug` with a bounded advisory TRIAGE block and persists a record under `.context/compound-engineering/triage/`. It is additive only: never returns `isError`, never mutates code, never changes exit status, and never bypasses stop-the-line. Jev outages degrade to a keyword heuristic, and any internal error fails open (the result is left unchanged).
 
-**Stage completion gate:** `extensions/ce-core/stage-gate/` scores a stage's produced artifact (via the `stage_gate` tool) and persists content-hashed records under `.context/compound-engineering/stage-gates/`. `context_handoff save` re-runs the deterministic floor on every cross-stage completion save and consults the record for the semantic verdict. Deterministic failures block in both `shadow` and `enforce`; `PEDSTACK_STAGE_GATE` (default `shadow`) is resolved once at init in `extensions/ce-core/stage-gate/store.ts`.
+**Stage completion gate:** `extensions/ce-core/stage-gate/` scores a stage's produced artifact (via the `stage_gate` tool) and persists content-hashed records under `.context/compound-engineering/stage-gates/`. `context_handoff save` re-runs the deterministic floor on every cross-stage completion save and consults the record for the semantic verdict. Deterministic failures block in both `shadow` and `enforce`; `PEDSTACK_STAGE_GATE` (default `shadow`) is resolved once at init in `extensions/ce-core/stage-gate/store.ts`. The result also carries the conditional-review `action`/`actionReason` (see **Conditional independent review**), persisted as the optional `review` field on the attempt; stage-entry routing treats a persisted `escalate` action exactly like an `escalate` verdict. The two findings predicates (`multi_reviewer_findings`, `review_findings_persisted`) demand a sidecar only when the prior fresh action is `review`, and `resolvePriorGate` in `store.ts` reuses the single `isRecordFresh` predicate before consuming it.
 
 **Handoff readiness:** `extensions/ce-core/handoff-readiness/` is a save-side semantic guard parallel to the stage gate. `combine.ts` owns the frozen types, the deterministic pre-pass, the byte-bounded Jev request, and the verdict derivation; `store.ts` persists one content-hashed record per stage pair plus a shadow log; `guard.ts` runs the authoritative order (deterministic floor → pre-pass → freshness reuse → Jev) with all I/O injected. `context_handoff save` consults it on cross-stage completion saves and `context_handoff validate` surfaces a record advisorily without ever calling Jev. `PEDSTACK_HANDOFF_READINESS=off|shadow|enforce` (default `shadow`) and `PEDSTACK_HANDOFF_READINESS_FAILCLOSED=1` are resolved once at init; degraded and deterministic records are never reused as fresh.
 
@@ -128,7 +130,9 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 
 **Solution ranking:** `extensions/ce-core/utils/solution-ranking.ts` exposes `rankSolutions()`, the single entry point used by the `solution_search` tool, by stage auto-injection (`02-plan`, `04-review`, `04-5-debug`, `05-learn`) and by `05-learn` overlap detection. It ships shadow-first: `solutionRanking.shadow` defaults to `true`, so auto-injection computes and logs but stays inert until enforcement is enabled. A Jev outage returns the deterministic `prior` ranking (`status: "degraded"`), never an empty list. Auto-injection is composed inside the single existing `before_agent_start` handler (`extensions/ce-core/utils/solution-wiring.ts`).
 
-**Model routing (roles):** `extensions/ce-core/utils/model-routing.ts` owns the deterministic role resolver `resolveExecutionRole()` and the one-shot orchestrator `resolveStageRouting()`, consulted by `switchStageConfig` in `commands/pedstack.ts` at stage entry. Three roles live in the optional top-level `models` block (`default` workhorse, `review` independent reviewer, `sota` escalation); thresholds live in the optional `routing` block (`shadow`, `sotaMinScore`, `sotaMinConfidence`, `maxEscalationsPerStage`; defaults `true`, `0.6`, `0.5`, `1`). Precedence is fixed: explicit per-stage `model` override → stage-gate `escalate` → Jev judgment → `default`. Jev answers five atomic `noul` questions combined with fixed weights in TypeScript; the resolver never selects `review` as an execution role. `multi_reviewer` falls back to `models.review` only when a stage has no explicit `reviewers[]` and the model is distinct from `models.default`/`models.sota`. Decisions persist to `.context/compound-engineering/routing/<stage>.json` (`routing-store.ts`). Ships shadow-first: `routing.shadow` defaults `true`, and operators with neither block configured spawn no Jev subprocess and keep byte-identical legacy behavior.
+**Model routing (roles):** `extensions/ce-core/utils/model-routing.ts` owns the deterministic role resolver `resolveExecutionRole()` and the one-shot orchestrator `resolveStageRouting()`, consulted by `switchStageConfig` in `commands/pedstack.ts` at stage entry. Three roles live in the optional top-level `models` block (`default` workhorse, `review` independent reviewer, `sota` escalation); thresholds live in the optional `routing` block (`shadow`, `sotaMinScore`, `sotaMinConfidence`, `maxEscalationsPerStage`; defaults `true`, `0.6`, `0.5`, `1`). Precedence is fixed: explicit per-stage `model` override → stage-gate `escalate` → Jev judgment → `default`. Jev answers five atomic `noul` questions combined with fixed weights in TypeScript; the resolver never selects `review` as an execution role. `multi_reviewer` falls back to `models.review` only when a stage has no explicit `reviewers[]`, and the independence guard compares it against the union of every execution-model writer — `models.default`, `models.sota`, and the per-stage `config[<stage>].model` override (`collectExecutionModels` in `review/policy.ts`). Decisions persist to `.context/compound-engineering/routing/<stage>.json` (`routing-store.ts`). Ships shadow-first: `routing.shadow` defaults `true`, and operators with neither block configured spawn no Jev subprocess and keep byte-identical legacy behavior.
+
+**Conditional independent review:** `extensions/ce-core/review/policy.ts` is a pure policy module that maps the gate verdict plus the retained review budget and reviewer availability to one bounded `ReviewAction` (`none | revise | review | escalate`). `accept → none`, `revise → revise`, `escalate → escalate`; `review → review` (one reviewer) unless `MAX_INDEPENDENT_REVIEW = 1` is already spent for the current stage loop or no independent reviewer resolves, in which case it maps to `escalate` with an explicit reason. A successful `accept` ends the loop, so a later re-entry starts a fresh budget; `independentReviewCount` counts the retained prior attempts whose verdict is `review` since the newest `accept`. The `stage_gate` tool resolves reviewer availability once (`getConfigKeyForSkill` + `hasIndependentReviewer`), `evaluate.ts` computes and persists the decision, and `model-routing.ts` reads the persisted action. `multi_reviewer mode: "single"` runs one reviewer and `mode: "deep"` runs the full configured set; omitting `mode` keeps legacy behavior and `deep` is only used on an explicit user request. A zero-finding reviewer run persists a well-formed `count: 0` sidecar, so the two critical findings predicates can be satisfied without a deadlock.
 
 **Semantic file reads:** `semantic_read` (one file) and `semantic_scout` (files/dirs/globs) are thin wrappers over one engine, `extensions/ce-core/utils/semantic-file-ask.ts`, registered by `extensions/ce-core/utils/semantic-wiring.ts`. They return typed per-path answers plus deterministic byte facts — never file bodies — so the agent opens only the files it needs. Path safety, pruning, binary/empty detection, dedupe, caps, ordering, status, and savings stay in TypeScript; Jev answers one bounded question per call. Budgets come from the `semanticRead` config block (`resolveSemanticReadConfig` in `config-types.ts`; defaults `excerptBytes` 4096, `maxPaths` 24/hard cap 32, `concurrency` 4, `selectLimit` 12, `deadlineMs` 45000, `select` true). Traversal policy (prune + containment) must apply at every expansion entry point, not only discovered children; a Jev outage degrades to explicit `read`/`grep` guidance.
 
@@ -137,6 +141,7 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 ## Code Style
 
 - TypeScript strict mode
+- After changing a shared interface (especially making a field required), run `bun x tsc --noEmit` until clean — `bun test` transpiles without type-checking, so a missing field stays invisible to the suite
 - Functions < 50 lines, files < 800 lines
 - No deep nesting (> 4 levels)
 - No `console.log` or debug statements in production code
@@ -163,6 +168,7 @@ Codex reviews all PRs using the following priority levels:
 - Breaking changes not marked as `BREAKING CHANGE`
 - Introduction of framework API usage without source-driven verification
 - `bun test` fails
+- `bun x tsc --noEmit` fails on a diff that touches a shared type or an `Evidence`-like contract (a green `bun test` is not a type-safety verdict)
 - Violation of stop-the-line rules: continuing to add features after finding a failure
 
 ### P1 — Recommended Label (Important)

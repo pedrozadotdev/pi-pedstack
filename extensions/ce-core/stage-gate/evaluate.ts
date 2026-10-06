@@ -25,10 +25,12 @@ import { combineVerdict } from "./combine";
 import { computeArtifactsHash, gatherEvidence } from "./evidence";
 import type { GatherEvidenceOptions } from "./evidence";
 import { evaluateDeterministic, getStageRubric } from "./rubrics";
-import { appendRecord, readAttempts, readLatestRecord } from "./store";
+import { appendRecord, readAttempts, readLatestRecord, resolvePriorGate } from "./store";
+import { resolveReviewAction } from "../review/policy";
 import type {
 	DeterministicResult,
 	Evidence,
+	ReviewAction,
 	SemanticScore,
 	SemanticScoreInput,
 	StageGateAttempt,
@@ -65,11 +67,16 @@ export interface StageGateInput {
 	mode: StageGateMode;
 	artifactPaths?: string[];
 	gitDiff?: string | null;
+	/** Whether an independent reviewer resolves from config; defaults to true. */
+	reviewerAvailable?: boolean;
 	overengineering?: StageGateOverengineeringOptions;
 }
 
 export interface StageGateResult {
 	verdict: StageGateVerdict;
+	/** The bounded action the pure review policy derives from the verdict (Unit 5). */
+	action: ReviewAction;
+	actionReason: string;
 	weightedScore: number | null;
 	criticalFailed: boolean;
 	enforcing: boolean;
@@ -279,7 +286,6 @@ async function scoreSemantics(
 
 async function persist(
 	repoRoot: string,
-	stage: StageKey,
 	mode: StageGateMode,
 	attempt: Omit<StageGateAttempt, "schema" | "artifactsHash" | "updatedAt">,
 	artifacts: string[],
@@ -385,6 +391,20 @@ async function appendShadowLog(
 	});
 }
 
+/**
+ * Independent reviews retained since the newest `accept`; an accept ends the
+ * stage loop, so a later re-entry starts a fresh budget (Unit 5).
+ */
+function independentReviewCount(attempts: StageGateAttempt[]): number {
+	let count = 0;
+	for (let index = attempts.length - 1; index >= 0; index--) {
+		const verdict = attempts[index].verdict;
+		if (verdict === "accept") break;
+		if (verdict === "review") count++;
+	}
+	return count;
+}
+
 /** Evaluates one stage artifact and persists the combined verdict. */
 export async function evaluateStageGate(
 	deps: StageGateDeps,
@@ -394,16 +414,18 @@ export async function evaluateStageGate(
 	const now = deps.now ?? (() => new Date());
 	const rubric = getStageRubric(input.stage);
 	const overMode = input.overengineering?.mode ?? "shadow";
+	const priorGate = await resolvePriorGate(input.repoRoot, input.stage);
 	const evidence = await gather({
 		repoRoot: input.repoRoot,
 		stage: input.stage,
 		hint: input.artifactPaths,
 		gitDiff: input.gitDiff ?? null,
+		priorGate,
 	});
 	const det = evaluateDeterministic(rubric, evidence);
-	const attempts = (await readAttempts(input.repoRoot, input.stage)).filter(
-		(entry) => entry.verdict === "revise",
-	).length;
+	const priorAttempts = await readAttempts(input.repoRoot, input.stage);
+	const attempts = priorAttempts.filter((entry) => entry.verdict === "revise").length;
+	const independentReviews = independentReviewCount(priorAttempts);
 	const signal = await resolveOverengineeringSignal(input, overMode);
 	const built = buildStageGateRequest(evidence, rubric, det, signal);
 	const outcome = await resolveOutcome(
@@ -420,6 +442,11 @@ export async function evaluateStageGate(
 		jevUnavailable: outcome.unavailable,
 		overengineeringEnforced: overMode === "enforce",
 	});
+	const review = resolveReviewAction({
+		verdict: combined.verdict,
+		independentReviews,
+		reviewerAvailable: input.reviewerAvailable ?? true,
+	});
 	const warnings = [...evidence.warnings, ...outcome.warnings];
 	const enforcing = input.mode === "enforce";
 	const overengineering = toOverengineeringRecord(
@@ -430,7 +457,6 @@ export async function evaluateStageGate(
 
 	await persist(
 		input.repoRoot,
-		input.stage,
 		input.mode,
 		{
 			stage: input.stage,
@@ -448,6 +474,7 @@ export async function evaluateStageGate(
 			artifacts: evidence.artifacts,
 			attempt: attempts,
 			overengineering,
+			review,
 		},
 		[...evidence.artifacts, ...signal.baselinePaths],
 		now,
@@ -465,6 +492,8 @@ export async function evaluateStageGate(
 
 	return {
 		verdict: combined.verdict,
+		action: review.action,
+		actionReason: review.reason,
 		weightedScore: combined.weightedScore,
 		criticalFailed: combined.criticalFailed,
 		enforcing,

@@ -84,7 +84,7 @@ Extract a single `isWalkableRoot(repoRoot, abs)` predicate and call it from
 
 ```ts
 // One policy, checked at the boundary — not inside the recursive loop only.
-async function addWalked(absDir: string, relDir: string, found: Set<string>) {
+async function addWalked(absDir: string, relDir: string, found: Set) {  // Set of path strings
   if (isPrunedRelative(relDir)) return;                    // explicit pruned dir
   if (await escapesRepoRoot(absDir)) return;               // escaping symlink base
   const collected: string[] = [];
@@ -141,7 +141,8 @@ value is later iterated.
 - **Route all walker callers through one guarded helper.** If two functions call
   `walkFiles` directly, one of them will eventually skip the guard.
 - **Add an adversarial expansion test per entry point**, not just the root:
-  `targets: ["node_modules"]`, `targets: ["<symlink-dir>/**"]`, and a file named
+  `targets: ["node_modules"]`, `targets: ["symlink-dir/**"]` (glob base is a
+  symlink), and a file named
   `__proto__`; assert the candidate is excluded (pruned/unsafe) or present
   (normal) — never silently missing.
 - **Prefer `Map` or `Object.create(null)` for externally keyed maps.** Lint or

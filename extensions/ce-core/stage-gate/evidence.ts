@@ -32,8 +32,10 @@ import type {
 	Evidence,
 	EvidenceFile,
 	EvidenceObligations,
+	ReviewAction,
 	ReviewFinding,
 	ReviewFindingsFile,
+	StageGateVerdict,
 	StageKey,
 	StageRubric,
 } from "./types";
@@ -59,6 +61,8 @@ export interface GatherEvidenceOptions {
 	docsVerificationMode?: DocsVerificationMode;
 	/** Test seam; defaults to the resolved `..._FAILCLOSED` flag. */
 	docsVerificationFailClosed?: boolean;
+	/** Prior fresh gate decision, threaded read-only into the predicates (Unit 4). */
+	priorGate?: { verdict: StageGateVerdict; action: ReviewAction } | null;
 }
 
 /** Canonical repo-relative POSIX path (backslashes normalized, `.`/`..` collapsed). */
@@ -436,5 +440,6 @@ export async function gatherEvidence(
 			mode,
 			failClosed,
 		),
+		priorGate: options.priorGate ?? null,
 	};
 }

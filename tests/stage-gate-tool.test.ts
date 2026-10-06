@@ -80,6 +80,10 @@ async function write(rel: string, content: string): Promise<void> {
 	await fs.writeFile(abs, content);
 }
 
+async function writeConfig(payload: Record<string, unknown>): Promise<void> {
+	await write(".pi/pi-pedstack/config.json", JSON.stringify(payload));
+}
+
 beforeEach(async () => {
 	root = await fs.mkdtemp(path.join(os.tmpdir(), "stage-gate-tool-"));
 });
@@ -135,5 +139,37 @@ describe("stage_gate tool (Unit 6)", () => {
 				artifactPaths: [{ text: "favorable prose" }],
 			}),
 		).toBe(false);
+	});
+
+	test("supplies reviewerAvailable from config and returns action review", async () => {
+		await write("docs/plans/plan.md", PLAN);
+		await writeConfig({
+			models: { review: { model: "role/review", thinkingLevel: "high" } },
+		});
+		const tool = createStageGateTool({
+			mode: "enforce",
+			runtime: createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) }),
+		});
+
+		const result = await tool.execute({ repoRoot: root, stage: "02-plan" });
+
+		expect(result.verdict).toBe("review");
+		expect(result.action).toBe("review");
+	});
+
+	test("maps a review verdict to escalate when no independent reviewer is configured", async () => {
+		await write("docs/plans/plan.md", PLAN);
+		// A project config wins over the global one; this one has no reviewers and
+		// no models.review, so no independent reviewer resolves.
+		await writeConfig({ plan: { model: "stage/plan" } });
+		const tool = createStageGateTool({
+			mode: "enforce",
+			runtime: createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) }),
+		});
+
+		const result = await tool.execute({ repoRoot: root, stage: "02-plan" });
+
+		expect(result.verdict).toBe("review");
+		expect(result.action).toBe("escalate");
 	});
 });

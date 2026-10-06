@@ -163,7 +163,7 @@ describe("multi_reviewer findings persistence", () => {
 		}
 	});
 
-	test("does not create a findings file when no findings are produced", async () => {
+	test("persists an empty sidecar when a reviewer runs and finds nothing", async () => {
 		mockState.findings = [];
 
 		const repoRoot = `/tmp/pi-ce-reviewer-empty-${Date.now()}`;
@@ -186,8 +186,17 @@ describe("multi_reviewer findings persistence", () => {
 			});
 
 			expect(result.findings).toEqual([]);
-			expect(result.findingsPath).toBeUndefined();
-			expect(result.findingsRelativePath).toBeUndefined();
+
+			// A reviewer ran, so the clean result is auditable: both path fields
+			// are present and the sidecar is a well-formed empty success.
+			expect(result.findingsPath).toBeDefined();
+			expect(result.findingsRelativePath).toBeDefined();
+			expect(result.findingsRelativePath!.startsWith(".context/")).toBe(true);
+			expect(existsSync(result.findingsPath!)).toBe(true);
+
+			const onDisk = JSON.parse(await readFile(result.findingsPath!, "utf8"));
+			expect(onDisk.count).toBe(0);
+			expect(onDisk.findings).toEqual([]);
 
 			const findingsDir = path.join(
 				repoRoot,
@@ -195,10 +204,8 @@ describe("multi_reviewer findings persistence", () => {
 				"compound-engineering",
 				"review-findings",
 			);
-			if (existsSync(findingsDir)) {
-				const files = await readdir(findingsDir);
-				expect(files).toEqual([]);
-			}
+			const files = await readdir(findingsDir);
+			expect(files).toHaveLength(1);
 
 			// And of course nothing leaked to the root.
 			const rootJsonFiles = await listRepoRootJsonFiles(repoRoot);

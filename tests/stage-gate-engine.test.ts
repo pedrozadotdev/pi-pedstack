@@ -11,7 +11,11 @@ import type {
 } from "../extensions/ce-core/jev/types.js";
 import { evaluateStageGate } from "../extensions/ce-core/stage-gate/evaluate.js";
 import { appendRecord, readLatestRecord } from "../extensions/ce-core/stage-gate/store.js";
-import type { StageGateAttempt } from "../extensions/ce-core/stage-gate/types.js";
+import type {
+	ReviewPolicyDecision,
+	StageGateAttempt,
+	StageGateVerdict,
+} from "../extensions/ce-core/stage-gate/types.js";
 
 const FILLER =
 	"This paragraph is intentionally long enough to satisfy the minimum length predicate for the artifact under test. It describes context, tradeoffs, and measurable outcomes in enough detail to read as real prose. ";
@@ -78,10 +82,17 @@ function scoring(scores: number[]) {
 }
 
 function priorRevise(): StageGateAttempt {
+	return priorAttempt("revise");
+}
+
+function priorAttempt(
+	verdict: StageGateVerdict,
+	review?: ReviewPolicyDecision,
+): StageGateAttempt {
 	return {
 		schema: 1,
 		stage: "02-plan",
-		verdict: "revise",
+		verdict,
 		enforcing: true,
 		weightedScore: null,
 		det: [],
@@ -95,6 +106,7 @@ function priorRevise(): StageGateAttempt {
 		artifactsHash: "x",
 		attempt: 0,
 		updatedAt: "2026-10-05T00:00:00.000Z",
+		review,
 	};
 }
 
@@ -240,5 +252,90 @@ describe("stage gate engine (Unit 5)", () => {
 		expect(result.artifacts).toEqual([]);
 		expect(runtime.calls.length).toBe(0);
 		await fs.rm(escape, { force: true });
+	});
+});
+
+describe("stage gate engine — review action (Unit 5)", () => {
+	test("a review verdict with an available reviewer returns and persists action review", async () => {
+		await write("docs/plans/plan.md", PLAN);
+		const result = await evaluateStageGate(
+			{ runtime: createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) }) },
+			{
+				repoRoot: root,
+				stage: "02-plan",
+				mode: "enforce",
+				reviewerAvailable: true,
+			},
+		);
+
+		expect(result.verdict).toBe("review");
+		expect(result.action).toBe("review");
+		const record = await readLatestRecord(root, "02-plan");
+		expect(record?.review?.action).toBe("review");
+		expect(record?.review?.reviewerCount).toBe(1);
+	});
+
+	test("a second review verdict in the same loop escalates", async () => {
+		await write("docs/plans/plan.md", PLAN);
+		await appendRecord(root, priorAttempt("review"));
+
+		const result = await evaluateStageGate(
+			{ runtime: createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) }) },
+			{
+				repoRoot: root,
+				stage: "02-plan",
+				mode: "enforce",
+				reviewerAvailable: true,
+			},
+		);
+
+		expect(result.action).toBe("escalate");
+		const record = await readLatestRecord(root, "02-plan");
+		expect(record?.review?.action).toBe("escalate");
+	});
+
+	test("a review verdict after an intervening accept starts a new loop", async () => {
+		await write("docs/plans/plan.md", PLAN);
+		await appendRecord(root, priorAttempt("review"));
+		await appendRecord(root, priorAttempt("accept"));
+
+		const result = await evaluateStageGate(
+			{ runtime: createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) }) },
+			{
+				repoRoot: root,
+				stage: "02-plan",
+				mode: "enforce",
+				reviewerAvailable: true,
+			},
+		);
+
+		expect(result.action).toBe("review");
+	});
+
+	test("review with reviewerAvailable false escalates", async () => {
+		await write("docs/plans/plan.md", PLAN);
+		const result = await evaluateStageGate(
+			{ runtime: createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) }) },
+			{
+				repoRoot: root,
+				stage: "02-plan",
+				mode: "enforce",
+				reviewerAvailable: false,
+			},
+		);
+
+		expect(result.action).toBe("escalate");
+		expect(result.actionReason.length).toBeGreaterThan(0);
+	});
+
+	test("an accept verdict returns action none", async () => {
+		await write("docs/plans/plan.md", PLAN);
+		const result = await evaluateStageGate(
+			{ runtime: createFakeJevRuntime({ handler: scoring([4, 4, 4, 4]) }) },
+			{ repoRoot: root, stage: "02-plan", mode: "enforce" },
+		);
+
+		expect(result.verdict).toBe("accept");
+		expect(result.action).toBe("none");
 	});
 });

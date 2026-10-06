@@ -61,6 +61,8 @@ export interface Evidence {
 	truncated: boolean;
 	/** Docs-verification summary; null means the check passes (Unit 6). */
 	obligations: EvidenceObligations | null;
+	/** Prior fresh gate decision for this stage; null when absent/stale (Unit 4). */
+	priorGate: { verdict: StageGateVerdict; action: ReviewAction } | null;
 }
 
 export interface DeterministicCheckResult {
@@ -118,6 +120,16 @@ export interface SemanticScore {
 /** One combined gate verdict (R5). */
 export type StageGateVerdict = "accept" | "revise" | "review" | "escalate";
 
+/** The bounded action the pure review policy emits (plan Unit 1). */
+export type ReviewAction = "none" | "revise" | "review" | "escalate";
+
+/** One pure review-policy decision (plan Unit 1). */
+export interface ReviewPolicyDecision {
+	action: ReviewAction;
+	reviewerCount: 0 | 1;
+	reason: string;
+}
+
 /** Operator-resolved gate mode (R11). Env is the only resolution layer. */
 export type StageGateMode = "off" | "shadow" | "enforce";
 
@@ -147,6 +159,8 @@ export interface StageGateAttempt {
 	updatedAt: string;
 	/** Schema-2 addition: the composed overengineering signal (absent for schema 1). */
 	overengineering?: OverengineeringRecord;
+	/** Schema-2 addition: the pure review-policy decision (Unit 5). */
+	review?: ReviewPolicyDecision;
 }
 
 /** File-level container at `.context/compound-engineering/stage-gates/<stage>.json`. */

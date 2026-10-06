@@ -3,7 +3,7 @@
 import { evaluateDeterministic, getStageRubric } from "./rubrics";
 import { gatherEvidence } from "./evidence";
 import type { GatherEvidenceOptions } from "./evidence";
-import { isCompletionSave, isRecordFresh, readAcceptRecord } from "./store";
+import { isCompletionSave, isRecordFresh, readAcceptRecord, resolvePriorGate } from "./store";
 import type {
 	DeterministicResult,
 	Evidence,
@@ -65,7 +65,8 @@ export async function evaluateCompletionGate(
 	const stageKey = stage as StageKey;
 	try {
 		const gather = deps.gather ?? gatherEvidence;
-		const evidence = await gather({ repoRoot, stage: stageKey });
+		const priorGate = await resolvePriorGate(repoRoot, stageKey);
+		const evidence = await gather({ repoRoot, stage: stageKey, priorGate });
 		const det = evaluateDeterministic(getStageRubric(stageKey), evidence);
 		const criticalFailure = det.find((entry) => entry.critical && !entry.pass);
 		if (criticalFailure) {

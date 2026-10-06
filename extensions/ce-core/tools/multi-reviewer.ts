@@ -6,7 +6,9 @@ import {
 	readPiPedstackConfig,
 	getConfigKeyForSkill,
 	type PiPedstackConfig,
+	type StepConfigKey,
 } from "../utils/config-types";
+import { collectExecutionModels } from "../review/policy";
 import { normalizeSlug } from "../utils/name-utils";
 
 export interface ReviewerConfig {
@@ -14,10 +16,14 @@ export interface ReviewerConfig {
 	thinkingLevel: string;
 }
 
+/** Explicit review depth. Omitted keeps legacy behavior. */
+export type MultiReviewerMode = "single" | "deep";
+
 export interface MultiReviewerInput {
 	stepName: string;
 	primaryOutput: string;
 	repoRoot: string;
+	mode?: MultiReviewerMode;
 }
 
 export interface ReviewFinding {
@@ -38,8 +44,8 @@ export interface MultiReviewerResult {
 	compiledSummary: string;
 	/**
 	 * Absolute path to the persisted findings JSON file inside
-	 * `.context/compound-engineering/review-findings/`. Present only when
-	 * findings were produced.
+	 * `.context/compound-engineering/review-findings/`. Present whenever a
+	 * reviewer ran — including a clean run that produced zero findings.
 	 */
 	findingsPath?: string;
 	/**
@@ -75,9 +81,7 @@ async function persistFindings(
 	stepName: string,
 	findings: ReviewFinding[],
 	compiledSummary: string,
-): Promise<{ absolute: string; relative: string } | null> {
-	if (findings.length === 0) return null;
-
+): Promise<{ absolute: string; relative: string }> {
 	const dir = reviewFindingsDir(repoRoot);
 	await mkdir(dir, { recursive: true });
 
@@ -331,19 +335,17 @@ Format your response as a JSON array of findings wrapped in a markdown code bloc
 /**
  * Resolve the `models.review` role as a single reviewer, but never when it is
  * not independent from an execution model (a model must not review itself).
+ * The comparison set is the union of every execution-model writer, including
+ * the per-stage override (`collectExecutionModels`).
  */
 function resolveReviewRole(
 	config: PiPedstackConfig | null,
+	configKey: StepConfigKey | null,
 ): ReviewerConfig[] | undefined {
 	const review = config?.models?.review;
 	if (!review?.model) return undefined;
 
-	const executionModels = [
-		config?.models?.default?.model,
-		config?.models?.sota?.model,
-	].filter((model): model is string => typeof model === "string");
-
-	if (executionModels.includes(review.model)) {
+	if (collectExecutionModels(config, configKey).includes(review.model)) {
 		console.warn(
 			`[multi-reviewer] models.review (${review.model}) matches an execution role model; review independence requires a distinct model. Ignoring.`,
 		);
@@ -353,34 +355,59 @@ function resolveReviewRole(
 	return [{ model: review.model, thinkingLevel: review.thinkingLevel ?? "high" }];
 }
 
+/** The config key for a stage name (`02-plan`) or a bare key (`plan`). */
+const BARE_CONFIG_KEYS = new Map<string, StepConfigKey>();
+for (const stageName of [
+	"01-brainstorm",
+	"02-plan",
+	"03-work",
+	"04-review",
+	"04-5-debug",
+	"05-learn",
+	"06-docsync",
+]) {
+	const key = getConfigKeyForSkill(stageName);
+	if (key) BARE_CONFIG_KEYS.set(key, key);
+}
+
+function resolveConfigKey(stepName: string): StepConfigKey | null {
+	const normalized = stepName.trim().toLowerCase();
+	return getConfigKeyForSkill(normalized) ?? BARE_CONFIG_KEYS.get(normalized) ?? null;
+}
+
+/** Non-empty explicit `reviewers[]` for the stage, or undefined. */
+function explicitReviewers(
+	config: PiPedstackConfig | null,
+	configKey: StepConfigKey | null,
+): ReviewerConfig[] | undefined {
+	if (!config || !configKey) return undefined;
+	const stage = config[configKey];
+	if (!stage || !("reviewers" in stage)) return undefined;
+	const reviewers = stage.reviewers;
+	if (!Array.isArray(reviewers) || reviewers.length === 0) return undefined;
+	return reviewers.map((reviewer) => ({
+		model: reviewer.model,
+		thinkingLevel: reviewer.thinkingLevel ?? "high",
+	}));
+}
+
 export function createMultiReviewerTool() {
 	return {
 		name: "multi_reviewer",
 		async execute(input: MultiReviewerInput): Promise<MultiReviewerResult> {
-			let reviewers: ReviewerConfig[] | undefined;
-
 			// Read configuration automatically
 			const config = await readPiPedstackConfig(input.repoRoot);
-			let configKey = input.stepName.trim().toLowerCase();
-			if (configKey.startsWith("0")) {
-				const mappedKey = getConfigKeyForSkill(configKey);
-				if (mappedKey) {
-					configKey = mappedKey;
-				}
-			}
-			const stageConfig = config ? (config as any)[configKey] : null;
-			if (
-				stageConfig &&
-				Array.isArray(stageConfig.reviewers) &&
-				stageConfig.reviewers.length > 0
-			) {
-				reviewers = stageConfig.reviewers;
-			}
+			const configKey = resolveConfigKey(input.stepName);
 
-			// Fall back to the `models.review` role when the stage has no explicit
-			// reviewers, but only if it is independent from the execution roles.
+			// Explicit reviewers[] win; otherwise fall back to the `models.review` role
+			// when it is independent from the execution roles. `single` bounds the
+			// selection to one reviewer; omitted mode keeps legacy behavior.
+			let reviewers = explicitReviewers(config, configKey);
 			if (!reviewers || reviewers.length === 0) {
-				reviewers = resolveReviewRole(config);
+				reviewers = resolveReviewRole(config, configKey);
+			}
+			if (reviewers && input.mode === "single") {
+				reviewers = reviewers.slice(0, 1);
 			}
 
 			if (!reviewers || reviewers.length === 0) {
@@ -451,7 +478,9 @@ export function createMultiReviewerTool() {
 
 			// Persist findings JSON inside .context/ so it is gitignored automatically.
 			// The previous behavior was to let the agent write a stray review-findings.json
-			// to the repo root, which leaked into git history.
+			// to the repo root, which leaked into git history. A zero-finding run still
+			// writes the empty sidecar so a clean review is auditable and does not deadlock
+			// the completion gate (`count: 0` === `findings.length`).
 			const persisted = await persistFindings(
 				input.repoRoot,
 				input.stepName,
@@ -462,8 +491,8 @@ export function createMultiReviewerTool() {
 			return {
 				findings,
 				compiledSummary: trimmedSummary,
-				findingsPath: persisted?.absolute,
-				findingsRelativePath: persisted?.relative,
+				findingsPath: persisted.absolute,
+				findingsRelativePath: persisted.relative,
 			};
 		},
 	};

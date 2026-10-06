@@ -29,7 +29,12 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 4. Check `docs/solutions/` for overlap by calling **`solution_search`** with `mode: "overlap"` and the new card's text as the query (see `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/05-learn/references/solution-search-strategy.md`).
 5. Choose the correct category using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/05-learn/references/category-map.md`.
 6. Write or update the solution artifact under `docs/solutions/<category>/`.
-7. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "05-learn"` to review the newly written or updated solution card (the solution artifact).
+7. Run **`stage_gate`** for `05-learn` and act on its `action`:
+    - `accept` → do not run `multi_reviewer`; advance.
+    - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
+    - `review` → invoke **`multi_reviewer`** with `stepName: "05-learn"` and `mode: "single"` to review the newly written or updated solution card (the solution artifact), then re-run `stage_gate`.
+    - `escalate` → do not loop; proceed to escalated execution.
+    Use `mode: "deep"` only on an explicit user request.
 8. Mention how future `02-plan` and `04-review` runs should benefit from the new learning.
 9. Include `🧠 Context Status` (health, handoff path, active files, recommendation for `06-docsync`) for workflow progression.
 10. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`. Recommend running `/ped-next` to advance to `06-docsync`.

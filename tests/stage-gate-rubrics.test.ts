@@ -50,6 +50,7 @@ function evidence(
 		gitDiff: null,
 		truncated: false,
 		obligations: overrides.obligations ?? null,
+		priorGate: overrides.priorGate ?? null,
 		...overrides,
 	};
 }
@@ -151,6 +152,7 @@ describe("stage gate rubrics (Unit 1)", () => {
 			reviewFindings: [
 				{
 					path: ".context/compound-engineering/review-findings/x-01-brainstorm.json",
+					count: 1,
 					findings: [finding("high", "docs/plans/x.md:10")],
 				},
 			],
@@ -160,8 +162,37 @@ describe("stage gate rubrics (Unit 1)", () => {
 		}
 	});
 
-	test("01-brainstorm: missing findings file fails multi_reviewer_findings", () => {
+	test("01-brainstorm: no prior gate and no sidecar passes multi_reviewer_findings", () => {
 		const results = run("01-brainstorm", { txt: BRAINSTORM_COMPLETE });
+		expectPass(results, "multi_reviewer_findings");
+	});
+
+	test("01-brainstorm: prior action review and no sidecar fails", () => {
+		const results = run("01-brainstorm", {
+			txt: BRAINSTORM_COMPLETE,
+			priorGate: { verdict: "review", action: "review" },
+		});
+		expectFail(results, "multi_reviewer_findings");
+	});
+
+	test("01-brainstorm: prior action review and a zero-finding sidecar passes", () => {
+		const results = run("01-brainstorm", {
+			txt: BRAINSTORM_COMPLETE,
+			priorGate: { verdict: "review", action: "review" },
+			reviewFindings: [
+				{ path: "review-findings/x-01-brainstorm.json", count: 0, findings: [] },
+			],
+		});
+		expectPass(results, "multi_reviewer_findings");
+	});
+
+	test("01-brainstorm: a sidecar whose count mismatches fails", () => {
+		const results = run("01-brainstorm", {
+			txt: BRAINSTORM_COMPLETE,
+			reviewFindings: [
+				{ path: "review-findings/x-01-brainstorm.json", count: 3, findings: [] },
+			],
+		});
 		expectFail(results, "multi_reviewer_findings");
 	});
 
@@ -243,8 +274,47 @@ describe("stage gate rubrics (Unit 1)", () => {
 		}
 	});
 
-	test("04-review: no findings file fails review_findings_persisted", () => {
-		expectFail(run("04-review", {}), "review_findings_persisted");
+	test("04-review: no prior gate and no sidecar passes review_findings_persisted", () => {
+		expectPass(run("04-review", {}), "review_findings_persisted");
+	});
+
+	test("04-review: prior action review and no sidecar fails", () => {
+		const results = run("04-review", {
+			priorGate: { verdict: "review", action: "review" },
+		});
+		expectFail(results, "review_findings_persisted");
+	});
+
+	test("04-review: prior action review with a well-formed sidecar passes", () => {
+		const files: ReviewFindingsFile[] = [
+			{
+				path: "review-findings/x-04-review.json",
+				count: 1,
+				findings: [finding("high", "src/app.ts:12")],
+			},
+		];
+		const results = run("04-review", {
+			priorGate: { verdict: "review", action: "review" },
+			reviewFindings: files,
+		});
+		expectPass(results, "review_findings_persisted");
+	});
+
+	test("04-review: prior action accept and no sidecar passes", () => {
+		const results = run("04-review", {
+			priorGate: { verdict: "accept", action: "none" },
+		});
+		expectPass(results, "review_findings_persisted");
+	});
+
+	test("the two findings predicates remain critical", () => {
+		const brainstorm = resultFor(
+			run("01-brainstorm", { txt: BRAINSTORM_COMPLETE }),
+			"multi_reviewer_findings",
+		);
+		const review = resultFor(run("04-review", {}), "review_findings_persisted");
+		expect(brainstorm.critical).toBe(true);
+		expect(review.critical).toBe(true);
 	});
 
 	test("04-review: unknown severity fails severity_classified", () => {
