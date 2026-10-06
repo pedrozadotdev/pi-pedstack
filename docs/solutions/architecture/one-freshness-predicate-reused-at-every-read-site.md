@@ -161,6 +161,40 @@ the weaker predicate was invisible to a green suite.
   identically"); this card covers the reader side ("the predicate must be reused,
   not re-derived").
 
+## Recurrence (2026-10-06): three read sites that re-derived or re-ran the writer
+
+The class recurred in the docs-verification review
+([`../../reviews/2026-10-06-runtime-source-driven-docs-verification.md`](../../reviews/2026-10-06-runtime-source-driven-docs-verification.md)):
+a new persisted record (`.context/compound-engineering/docs-verification/PLAN_SLUG.json`)
+shipped with three consumer paths, each of which disagreed with the writer.
+
+| Finding | Status | Read-site defect | Why the suite was green |
+|---|---|---|---|
+| M3 | Open decision | `tools/docs-verification.ts` `statusOp()` returns `{ operation: "status", found: true, record }` with **no** `isRecordFresh`/`isUnitFresh` call — the plan itself listed `status` as read site #3. A stale or degraded record surfaces as `found: true` with no staleness signal. | Every test asserted the happy record; no test seeded a stale/degraded one. |
+| M4 | Open decision | Two "newest plan" resolvers: `stage-gate/evidence.ts` `newestPlan()` (recursive, `abs.localeCompare`) vs `docs-verification/store.ts` `newestPlanPath()` (non-recursive, `rel.localeCompare`). The gate hashes the plan the resolver in `evidence.ts` chose; the record is keyed by the plan `store.ts` chose. A `.md` in a `docs/plans/` subdirectory (or an mtime tie) makes them disagree → a valid record reads as `stale: true`. | Both resolvers matched on the flat, single-plan fixture. |
+| M5 | Open decision | `utils/docs-verification-wiring.ts` `buildAppend()` → `guard.evaluate` runs inside the per-turn `before_agent_start` handler; `guard.evaluate` **always** calls `persist` plus `appendDocsLog`, even when every unit is reused (`toScore.length === 0`). The injection read path re-runs the writer every turn instead of reading the persisted record. | Tests called `evaluate` once; no test counted writes across turns. |
+
+**Root cause, extended:** a read/surface path must *reuse* the writer's decision,
+not re-derive it. M3 re-derives freshness incompletely, M4 re-derives the plan
+identity differently, and M5 re-derives (and re-persists) the whole evaluation.
+All three are "the read site answered a nearby question instead of the writer's
+question".
+
+**Detection added (extends the rules above):**
+
+- For every read site, name the exact question it answers and the writer function
+  it must reuse; a read site that calls a *different* writer (e.g. a per-turn
+  handler re-running `evaluate`) is a finding even if its output looks right.
+- For a persisted record keyed by a resolved artifact (plan/path), there must be
+  **one** resolver. Grep for a second implementation and diff its recursion and
+  tie-break rules against the first; disagreeing tie-breaks are a finding.
+- Add a write-count assertion per turn: a read-only injection path over an
+  unchanged artifact must produce **zero** new record writes and **zero** new log
+  lines.
+
+The input-validation sibling from the same review is
+[`validate-model-authored-plan-fields-before-read-or-extract.md`](./validate-model-authored-plan-fields-before-read-or-extract.md).
+
 ## Related solutions
 
 - `docs/solutions/workflow/stage-artifact-completion-gate-shadow-first-rubrics.md`

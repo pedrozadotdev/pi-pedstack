@@ -364,14 +364,28 @@ export interface ContextHandoffReadinessOptions {
 	fileExists?: (repoRoot: string, relPath: string) => boolean;
 }
 
+/**
+ * Save-side docs-verification hook. The wiring module owns evaluation; this
+ * only needs the verdict so `context-handoff.ts` calls one helper.
+ */
+export interface ContextHandoffDocsVerificationOptions {
+	run(input: {
+		repoRoot: string;
+		currentStage: string;
+		nextStage?: string;
+	}): Promise<{ blocked: boolean; blocker?: string; warning?: string }>;
+}
+
 export function createContextHandoffTool(
 	options: {
 		gateMode?: StageGateMode;
 		readiness?: ContextHandoffReadinessOptions;
+		docsVerification?: ContextHandoffDocsVerificationOptions;
 	} = {},
 ) {
 	const gateMode = options.gateMode ?? "off";
 	const readiness = options.readiness;
+	const docsVerification = options.docsVerification;
 	const readinessGuard = readiness
 		? createReadinessGuard({
 				mode: readiness.mode,
@@ -386,7 +400,7 @@ export function createContextHandoffTool(
 		async execute(input: ContextHandoffInput): Promise<ContextHandoffResult> {
 			switch (input.operation) {
 				case "save":
-					return save(input, gateMode, readinessGuard);
+					return save(input, gateMode, readinessGuard, docsVerification);
 				case "load":
 					return load(input);
 				case "latest":
@@ -566,6 +580,7 @@ async function save(
 	input: ContextHandoffInput,
 	gateMode: StageGateMode,
 	readinessGuard: ReadinessGuard | null,
+	docsVerification: ContextHandoffDocsVerificationOptions | undefined,
 ): Promise<ContextHandoffResult> {
 	const currentStage = input.currentStage ?? "unknown";
 	const nextStage = input.nextStage;
@@ -598,6 +613,36 @@ async function save(
 			}
 		} catch {
 			// If readChecklist throws unexpectedly, allow save to proceed safely
+		}
+	}
+	// Docs verification: the runtime guarantee. Runs before the completion gate
+	// so the gate sees a freshly written record; a block writes no artifact.
+	let docsWarning: string | undefined;
+	if (docsVerification) {
+		try {
+			const docsRun = await docsVerification.run({
+				repoRoot: input.repoRoot,
+				currentStage,
+				nextStage,
+			});
+			if (docsRun.blocked) {
+				return {
+					operation: "save",
+					found: true,
+					currentStage,
+					nextStage,
+					contextHealth,
+					blocker:
+						docsRun.blocker ??
+						"Cannot save: docs-verification obligations are open.",
+				};
+			}
+			docsWarning = docsRun.warning;
+		} catch (error) {
+			// Fail open: a wiring bug must never block an unrelated save.
+			docsWarning = `docs verification failed open: ${
+				error instanceof Error ? error.message : String(error)
+			}`;
 		}
 	}
 	// Stage gate: deterministic floor in both modes, record check in enforce (AD-2).
@@ -714,7 +759,7 @@ async function save(
 	await writeState(input.repoRoot, state);
 
 	const combinedWarning =
-		[gateWarning, readinessRun.warning]
+		[gateWarning, readinessRun.warning, docsWarning]
 			.filter((entry): entry is string => Boolean(entry))
 			.join(" ") || undefined;
 

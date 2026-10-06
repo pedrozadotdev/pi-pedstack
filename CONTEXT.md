@@ -115,3 +115,31 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   unusable answer set; non-blocking unless `FAILCLOSED` is set in `enforce`.
 - **Shadow mode** — compute, record, and log the readiness verdict without blocking
   (the default). `PEDSTACK_HANDOFF_READINESS = off | shadow | enforce`.
+
+## Docs verification (#15)
+
+- **Docs-verification obligation** — a persisted, per-unit record that a unit requires
+  authoritative `contextqmd` verification and has not yet produced compact evidence;
+  `open` until `satisfied` (a validated `docs-verified:` line) or `waived` (operator
+  reason). A waived obligation re-opens when the unit content hash changes.
+- **Evaluation unit** — one `### Unit` block extracted from the active plan, identified
+  by a stable slug (carry-over identity) and a content hash (dedupe key).
+- **Unit facts** — deterministic TypeScript facts for a unit: touched external packages,
+  version facts, declared files, existing evidence, and phase (`planned` at `02-plan`,
+  `observed` at `03-work`). Facts are computed in code, never by Jev.
+- **Docs decision** — the TypeScript-derived value `not_required | required | uncertain`;
+  Jev only answers the three bounded `noul` questions (`external_api_dependence`,
+  `version_sensitivity`, `verification_material`) and never derives the decision.
+- **Compact evidence** — a bounded `docs-verified: PACKAGE@VERSION DOC_REF` line naming a
+  detected package, the matching version (or `unknown` when the fact is version-unknown),
+  and a `contextqmd` doc path or page UID; format plus package/version match only, never
+  content match.
+- **Fallback evidence** — a `docs-verified:` line accepted while Jev is degraded, recorded
+  `source: "fallback"` and re-scored on recovery.
+- **Untrusted plan prose** — the active plan is agent-authored free text, not typed data. A
+  backticked token is only a candidate package; it is promoted to a fact by intersection with the
+  nearest manifest, never by a regex allowlist alone. A declared `Files` path is contained
+  (`canonicalRel`/`isInside`) before any `exists`/`readFile`/hash.
+- **Mode** — `PEDSTACK_DOCS_VERIFICATION = off | shadow | enforce` (default `shadow`);
+  `PEDSTACK_DOCS_VERIFICATION_FAILCLOSED=1` opts into blocking in `enforce` on a degraded
+  semantic layer (default `0`, fail-open).

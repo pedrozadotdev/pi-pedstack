@@ -1,5 +1,8 @@
 // Frozen types for the stage gate (plan Unit 1). Pure data + signatures only,
 // so every predicate in `rubrics.ts` can be a pure function over `Evidence`.
+import type { EvidenceObligations } from "../docs-verification/types";
+
+export type { EvidenceObligations };
 
 /** The 7 pedstack pipeline stages (R8). */
 export type StageKey =
@@ -55,6 +58,8 @@ export interface Evidence {
 	planText: string | null;
 	gitDiff: string | null;
 	truncated: boolean;
+	/** Docs-verification summary; null means the check passes (Unit 6). */
+	obligations: EvidenceObligations | null;
 }
 
 export interface DeterministicCheckResult {

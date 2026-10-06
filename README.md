@@ -249,6 +249,20 @@ Anti-rationalization: do not rationalize, downgrade, or explain away failures. S
 
 When implementation depends on a framework/library API, version-specific behavior, or a recommended pattern: verify against official documentation using the `contextqmd` CLI as the primary tool (see [shared contextqmd docs instruction](skills/references/contextqmd-docs.md)) before implementing. Pure logic, renaming, or in-project pattern reuse does not require external citation.
 
+### Docs-verification runtime trigger (#15)
+
+Source-driven verification is a **runtime trigger**, not model initiative. At the `02-plan` and `03-work` completion pairs, `context_handoff save` evaluates every implementation unit before the completion gate:
+
+- **Deterministic facts in TypeScript** — declared files, the nearest `package.json` dependency set, resolved lockfile versions (`bun.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`), and static `import` / `export ... from` / `require()` specifiers. A version-unknown fact can never justify a confident `not_required`.
+- **Jev judges only three bounded `noul` questions** — external API dependence, version sensitivity, and whether authoritative verification is materially needed.
+- **TypeScript derives** `not_required | required | uncertain`, aggregates packages (cap 8), and raises the version-unknown floor.
+- **Obligations** — a `required`/`uncertain` unit creates a tracked obligation that stays `open` until a compact, format- and package-matched `docs-verified: PACKAGE@VERSION DOC_REF` line is recorded, or the operator `waive`s it with a reason (`satisfied` → `waived` → re-opens when the unit content hash changes). A satisfied obligation is reused with **zero new Jev calls**; a `fallback`-satisfied obligation is re-scored on recovery.
+- **Non-critical rubric check** — `source_verification_obligations` fails (yielding `revise`, never `accept`) when an obligation is open, the record is stale, or a plan that touches external packages has no store. In `enforce` that blocks the cross-stage save; `shadow` warns.
+- **Tool** — `docs_verification` exposes `evaluate` / `status` / `record` / `waive`.
+- `PEDSTACK_DOCS_VERIFICATION = off | shadow | enforce` (default `shadow`) is read once at extension init; a Jev outage degrades to `uncertain` with obligations open and never marks evidence complete.
+
+**Known limitations (deferred to an on-demand `04-5-debug` pass):** the planned-phase extractor is over-broad — it can treat backticked code identifiers (`types.ts`, `status`, `mode`) as external packages and mint false obligations — and declared `Files` paths are resolved without repo containment (`canonicalRel`/`isInside`), so an absolute or `../` entry can be read outside the repo. The save hook also runs on every `02-plan`/`03-work` save rather than only the completion pair, and `status` returns the raw record with no freshness verdict. Both high findings share one root cause — model-authored plan prose trusted as typed data — recorded in the [untrusted plan-field card](docs/solutions/architecture/validate-model-authored-plan-fields-before-read-or-extract.md); the read-site and fallback defects are in the [read-site freshness card](docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md) and [degraded-fallback card](docs/solutions/architecture/keep-degraded-fallbacks-out-of-primary-signal-state.md).
+
 ### Review five axes
 
 All reviewers evaluate changes across: **correctness, readability, architecture, security, performance.**
@@ -277,6 +291,7 @@ A handoff can pass every structural probe and still be semantically empty — a 
 - **Advisory read-back.** `context_handoff validate` returns the latest record for the resolved pair without ever calling Jev.
 - `PEDSTACK_HANDOFF_READINESS = off | shadow | enforce` (default `shadow`) is read once at extension init.
 - `PEDSTACK_HANDOFF_READINESS_FAILCLOSED=1` blocks in `enforce` when the semantic layer is **degraded**; the default is fail-open.
+- `PEDSTACK_DOCS_VERIFICATION = off | shadow | enforce` (default `shadow`) gates the docs-verification runtime trigger; `PEDSTACK_DOCS_VERIFICATION_FAILCLOSED=1` blocks in `enforce` on a degraded layer (default `0`, fail-open).
 
 **Known limitations (deferred to an on-demand `04-5-debug` pass):** the deterministic pre-pass checks `activeFiles` only, not the union with `recentlyAccessedFiles`, so a deleted recent-only file can still be judged `continue`; and `validate`'s surfacing matches on pair + thresholds version alone, so it can return a stale or degraded record instead of the required “never a stale one”. The fix is to reuse the single exported freshness predicate at every read site — recorded in the [read-site freshness card](docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md).
 

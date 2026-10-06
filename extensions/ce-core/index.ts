@@ -39,6 +39,11 @@ import { createContextHandoffTool } from "./tools/context-handoff";
 import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
 import { resolveStageGateMode } from "./stage-gate/store";
 import {
+	resolveDocsVerificationFailClosed,
+	resolveDocsVerificationMode,
+} from "./docs-verification/store";
+import { createDocsVerificationWiring } from "./utils/docs-verification-wiring";
+import {
 	resolveReadinessFailClosed,
 	resolveReadinessMode,
 } from "./handoff-readiness/store";
@@ -389,12 +394,18 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	// ponytail: operator-only gate mode, resolved once at init like the guard.
 	const gateMode = resolveStageGateMode(process.env);
 	// ponytail: handoff-readiness mode/fail-closed are also resolved once.
+	// ponytail: docs-verification mode/fail-closed resolved once at init.
+	const docsWiring = createDocsVerificationWiring({
+		mode: resolveDocsVerificationMode(process.env),
+		failClosed: resolveDocsVerificationFailClosed(process.env),
+	});
 	const contextHandoff = createContextHandoffTool({
 		gateMode,
 		readiness: {
 			mode: resolveReadinessMode(process.env),
 			failClosed: resolveReadinessFailClosed(process.env),
 		},
+		docsVerification: docsWiring,
 	});
 	const stageGate = createStageGateTool({ mode: gateMode });
 	const multiReviewer = createMultiReviewerTool();
@@ -855,7 +866,17 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		const solutionsBlock = ctx?.cwd
 			? await buildSolutionsAppend({ repoRoot: ctx.cwd, skillPath })
 			: undefined;
-		return composeSolutionSystemPrompt(event.systemPrompt, append, solutionsBlock);
+		const docsBlock = ctx?.cwd
+			? await docsWiring.buildAppend({ repoRoot: ctx.cwd, skillPath })
+			: undefined;
+		const injected = [solutionsBlock, docsBlock]
+			.filter((block): block is string => Boolean(block))
+			.join("");
+		return composeSolutionSystemPrompt(
+			event.systemPrompt,
+			append,
+			injected || undefined,
+		);
 	});
 
 	pi.registerTool({
@@ -880,6 +901,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
 	// Semantic solution ranking: model-facing tool + auto-injection (one handler above).
 	registerSolutionSearch(pi);
+
+	// Docs verification: model-facing tool (injection ran in the one handler above).
+	docsWiring.register(pi);
 
 	// Injection screen phase 1 — screens raw untrusted results before the size
 	// filters compress them (registered first; phase 2 below runs last).

@@ -1,6 +1,7 @@
 // Artifact resolution, best-effort evidence gathering, and content hashing
 // (plan Unit 2). All reads are resilient: a bad file is recorded, never thrown.
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getStageRubric } from "./rubrics";
@@ -12,10 +13,25 @@ import {
 	isInside,
 	toPosix,
 } from "../utils/repo-paths";
+import { computePlanUnitHashes } from "../docs-verification/facts";
+import {
+	isRecordFresh,
+	planSlugFromPath,
+	readDocsRecord,
+	resolveDocsVerificationFailClosed,
+	resolveDocsVerificationMode,
+} from "../docs-verification/store";
+import { extractUnits, parsePlannedPackages } from "../docs-verification/units";
+import type {
+	DocsObligation,
+	DocsPhase,
+	DocsVerificationMode,
+} from "../docs-verification/types";
 import type {
 	CheckpointRecord,
 	Evidence,
 	EvidenceFile,
+	EvidenceObligations,
 	ReviewFinding,
 	ReviewFindingsFile,
 	StageKey,
@@ -39,6 +55,10 @@ export interface GatherEvidenceOptions {
 	stage: StageKey;
 	hint?: string[];
 	gitDiff?: string | null;
+	/** Test seam; defaults to the resolved `PEDSTACK_DOCS_VERIFICATION` mode. */
+	docsVerificationMode?: DocsVerificationMode;
+	/** Test seam; defaults to the resolved `..._FAILCLOSED` flag. */
+	docsVerificationFailClosed?: boolean;
 }
 
 /** Canonical repo-relative POSIX path (backslashes normalized, `.`/`..` collapsed). */
@@ -281,8 +301,10 @@ async function readReviewFindings(
 	return files;
 }
 
-async function newestTextIn(repoRoot: string, dir: string): Promise<string | null> {
-	const files = await listFilesRecursive(path.join(repoRoot, dir));
+async function newestPlan(
+	repoRoot: string,
+): Promise<{ path: string; text: string } | null> {
+	const files = await listFilesRecursive(path.join(repoRoot, "docs/plans"));
 	const md = files.filter((abs) => abs.endsWith(".md"));
 	if (md.length === 0) return null;
 	const stats = await Promise.all(
@@ -291,12 +313,85 @@ async function newestTextIn(repoRoot: string, dir: string): Promise<string | nul
 	stats.sort((a, b) =>
 		b.mtimeMs - a.mtimeMs !== 0 ? b.mtimeMs - a.mtimeMs : b.abs.localeCompare(a.abs),
 	);
+	const chosen = stats[0].abs;
 	try {
-		const buffer = await fs.readFile(stats[0].abs);
-		return buffer.subarray(0, MAX_FILE_BYTES).toString("utf8");
+		const buffer = await fs.readFile(chosen);
+		return {
+			path: canonicalRel(repoRoot, toPosix(chosen)),
+			text: buffer.subarray(0, MAX_FILE_BYTES).toString("utf8"),
+		};
 	} catch {
 		return null;
 	}
+}
+
+const DOCS_VERIFICATION_STAGES = new Set<StageKey>(["02-plan", "03-work"]);
+
+/**
+ * Summarize the docs-verification store for the rubric check. Staleness is
+ * recomputed with the shared `isRecordFresh` predicate (R7); a corrupt or
+ * absent store is treated as absent, never as an error.
+ */
+async function collectObligations(
+	repoRoot: string,
+	stage: StageKey,
+	plan: { path: string; text: string } | null,
+	mode: DocsVerificationMode,
+	failClosed: boolean,
+): Promise<EvidenceObligations> {
+	const base: EvidenceObligations = {
+		applicable: false,
+		planHasExternalPackages: false,
+		storePresent: false,
+		stale: false,
+		degraded: false,
+		failClosed,
+		open: 0,
+		satisfied: 0,
+		waived: 0,
+	};
+	if (!DOCS_VERIFICATION_STAGES.has(stage) || mode === "off") return base;
+	const phase: DocsPhase = stage === "03-work" ? "observed" : "planned";
+	const units = plan ? extractUnits(plan.text, phase) : [];
+	const planHasExternalPackages = units.some(
+		(unit) => parsePlannedPackages(unit.text).length > 0,
+	);
+	if (!plan) return { ...base, applicable: true, planHasExternalPackages };
+	const record = await readDocsRecord(repoRoot, planSlugFromPath(plan.path));
+	if (!record) return { ...base, applicable: true, planHasExternalPackages };
+	let stale = true;
+	try {
+		const unitHashes = await computePlanUnitHashes(
+			{ repoRoot, phase, planText: plan.text },
+			{
+				readFile: (abs) => fs.readFile(abs, "utf8"),
+				exists: (abs) => existsSync(abs),
+			},
+		);
+		stale = !isRecordFresh(record, {
+			planPath: plan.path,
+			activePhase: phase,
+			unitHashes,
+		});
+	} catch {
+		stale = true;
+	}
+	const obligations = record.units
+		.map((unit) => unit.obligation)
+		.filter((entry): entry is DocsObligation => Boolean(entry));
+	return {
+		applicable: true,
+		planHasExternalPackages:
+			planHasExternalPackages ||
+			record.units.some((unit) => unit.packages.length > 0),
+		storePresent: true,
+		stale,
+		degraded: record.units.some((unit) => unit.source === "degraded"),
+		failClosed,
+		open: obligations.filter((entry) => entry.status === "open").length,
+		satisfied: obligations.filter((entry) => entry.status === "satisfied").length,
+		waived: obligations.filter((entry) => entry.status === "waived").length,
+	};
 }
 
 /** Gathers every read the deterministic predicates and the Jev state need. */
@@ -314,6 +409,12 @@ export async function gatherEvidence(
 		resolved.paths,
 		errors,
 	);
+	const plan = await newestPlan(repoRoot);
+	const mode =
+		options.docsVerificationMode ?? resolveDocsVerificationMode(process.env);
+	const failClosed =
+		options.docsVerificationFailClosed ??
+		resolveDocsVerificationFailClosed(process.env);
 	return {
 		stage,
 		repoRoot,
@@ -325,8 +426,15 @@ export async function gatherEvidence(
 		reviewFindings: await readReviewFindings(repoRoot, rubric),
 		checkpoints: await readCheckpoints(repoRoot),
 		contextState: await readContextState(repoRoot, warnings),
-		planText: await newestTextIn(repoRoot, "docs/plans"),
+		planText: plan?.text ?? null,
 		gitDiff: options.gitDiff ?? null,
 		truncated,
+		obligations: await collectObligations(
+			repoRoot,
+			stage,
+			plan,
+			mode,
+			failClosed,
+		),
 	};
 }

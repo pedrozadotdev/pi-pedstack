@@ -79,6 +79,44 @@ const noPlaceholders: DeterministicCheck = check(
 			: pass("no placeholder tokens found"),
 );
 
+/**
+ * Non-critical docs-verification obligation check. `evidence.ts` owns the store
+ * read so no mode logic leaks in here; the verdict matrix follows the
+ * requirements (open/stale/missing fail, degraded fails only when fail-closed).
+ */
+const sourceVerificationObligations = check(
+	"source_verification_obligations",
+	false,
+	(e) => {
+		const obligations = e.obligations;
+		if (!obligations || !obligations.applicable) {
+			return pass("docs-verification not applicable");
+		}
+		if (!obligations.planHasExternalPackages) {
+			return pass("no external packages detected in the plan");
+		}
+		if (!obligations.storePresent) {
+			return fail(
+				"plan touches external packages but no docs-verification store is present",
+			);
+		}
+		if (obligations.stale) {
+			return fail("docs-verification store is stale against the current plan");
+		}
+		if (obligations.degraded) {
+			return obligations.failClosed
+				? fail(
+						"docs-verification is degraded and PEDSTACK_DOCS_VERIFICATION_FAILCLOSED=1",
+					)
+				: pass("docs-verification degraded but fail-open (FAILCLOSED=0)");
+		}
+		if (obligations.open > 0) {
+			return fail(`${obligations.open} open docs-verification obligation(s)`);
+		}
+		return pass("all tracked docs-verification obligations satisfied or waived");
+	},
+);
+
 const artifactPresent: DeterministicCheck = check(
 	"artifact_present",
 	true,
@@ -248,6 +286,7 @@ const planRubric: StageRubric = {
 		]),
 		minLength("min_length", 800),
 		noPlaceholders,
+		sourceVerificationObligations,
 		check("units_present", true, (e) => {
 			const hasHeadingLine = hasHeading(e.txt, "Implementation units");
 			const hasUnit = /^###\s+Unit\b/im.test(e.txt);
@@ -297,6 +336,7 @@ const workRubric: StageRubric = {
 		verificationRecorded("work_verification_recorded"),
 		testsNotFailing,
 		checkpointConsistent,
+		sourceVerificationObligations,
 	],
 	semanticDimensions: [
 		dimension("plan_scope_adherence", "Work adheres to the planned scope."),
