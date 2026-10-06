@@ -267,7 +267,7 @@ function combine(
 }
 
 /** Bounded worker pool: a slot is only refilled when its `decide()` settles. */
-async function runWithConcurrency<T, R>(
+export async function runWithConcurrency<T, R>(
 	items: T[],
 	concurrency: number,
 	worker: (item: T) => Promise<R>,

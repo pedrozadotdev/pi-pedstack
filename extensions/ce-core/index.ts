@@ -27,6 +27,7 @@ import {
 	composeSolutionSystemPrompt,
 	registerSolutionSearch,
 } from "./utils/solution-wiring";
+import { registerSemanticTools } from "./utils/semantic-wiring";
 import { createReviewRouterTool } from "./tools/review-router";
 import { createSessionCheckpointTool } from "./tools/session-checkpoint";
 import { createTaskSplitterTool } from "./tools/task-splitter";
@@ -872,6 +873,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	// Injection screen phase 1 — screens raw untrusted results before the size
 	// filters compress them (registered first; phase 2 below runs last).
 	const injectionScreen = registerInjectionScreen(pi);
+
+	// Cheap semantic file reads/scouting: model-facing tools over one engine.
+	registerSemanticTools(pi);
 
 	// Bash output smart filter — reduces context waste from verbose command output
 	pi.on("tool_result", async (event, _ctx) => {

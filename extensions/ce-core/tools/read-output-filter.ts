@@ -44,7 +44,7 @@ export interface ReadOutputFilterResult {
 // File Classification
 // ============================================================================
 
-type FileCategory =
+export type FileCategory =
 	| "lock-file"
 	| "generated-file"
 	| "minified-file"
@@ -109,7 +109,7 @@ const FILE_PATTERNS: FilePattern[] = [
 	},
 ];
 
-function classifyFile(path: string): FileCategory {
+export function classifyReadFile(path: string): FileCategory {
 	const normalized = path.replace(/\\/g, "/");
 	for (const pattern of FILE_PATTERNS) {
 		if (pattern.test(normalized)) return pattern.category;
@@ -619,7 +619,7 @@ export function filterReadOutput(
 	}
 
 	// Apply category-specific filtering
-	const category = classifyFile(path);
+	const category = classifyReadFile(path);
 	const categoryResult = filterByCategory(
 		category,
 		output,

@@ -4,6 +4,14 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getStageRubric } from "./rubrics";
+import {
+	canonicalRel,
+	globBase,
+	globToRegExp,
+	isEscapingSymlink,
+	isInside,
+	toPosix,
+} from "../utils/repo-paths";
 import type {
 	CheckpointRecord,
 	Evidence,
@@ -34,50 +42,6 @@ export interface GatherEvidenceOptions {
 }
 
 /** Canonical repo-relative POSIX path (backslashes normalized, `.`/`..` collapsed). */
-function canonicalRel(repoRoot: string, raw: string): string {
-	const normalized = raw.replace(/\\/g, "/");
-	return path.relative(repoRoot, path.resolve(repoRoot, normalized)).replace(/\\/g, "/");
-}
-
-function toPosix(value: string): string {
-	return value.split(path.sep).join("/");
-}
-
-function isInside(rel: string): boolean {
-	return rel !== "" && !rel.startsWith("../") && !path.isAbsolute(rel);
-}
-
-/** Converts a glob with `*` (single segment) and `**` (recursive) to a RegExp. */
-function globToRegExp(glob: string): RegExp {
-	let source = "";
-	for (let index = 0; index < glob.length; index++) {
-		const char = glob[index];
-		if (char === "*") {
-			if (glob[index + 1] === "*") {
-				index++;
-				if (glob[index + 1] === "/") {
-					index++;
-					source += "(?:.*/)?";
-				} else {
-					source += ".*";
-				}
-			} else {
-				source += "[^/]*";
-			}
-			continue;
-		}
-		source += /[\\^$+.()|{}[\]]/.test(char) ? `\\${char}` : char;
-	}
-	return new RegExp(`^${source}$`);
-}
-
-/** Static directory prefix of a glob, used to bound the filesystem walk. */
-function globBase(glob: string): string {
-	const wildcard = glob.indexOf("*");
-	const staticPart = wildcard === -1 ? glob : glob.slice(0, wildcard);
-	const slash = staticPart.lastIndexOf("/");
-	return slash === -1 ? "" : staticPart.slice(0, slash);
-}
 
 async function listFilesRecursive(dir: string): Promise<string[]> {
 	let entries;
@@ -108,15 +72,6 @@ function allowedPrefixes(rubric: StageRubric): string[] {
 	for (const glob of rubric.artifactGlobs) bases.add(globBase(glob));
 	bases.add(rubric.artifactDir);
 	return [...bases].filter((base) => base.length > 0).map((base) => `${base}/`);
-}
-
-async function isEscapingSymlink(repoRoot: string, abs: string): Promise<boolean> {
-	try {
-		const real = await fs.realpath(abs);
-		return !isInside(canonicalRel(repoRoot, real));
-	} catch {
-		return true;
-	}
 }
 
 async function resolveViaGlobs(repoRoot: string, rubric: StageRubric): Promise<string[]> {
