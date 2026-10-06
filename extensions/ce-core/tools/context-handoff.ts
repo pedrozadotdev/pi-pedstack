@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { appendHealthDegradedLog } from "../compaction-guard/store";
+import type { ContextHealth } from "../compaction-guard/types";
 import { normalizeSlug } from "../utils/name-utils";
 import { evaluateCompletionGate } from "../stage-gate/guard";
 import { isCompletionSave } from "../stage-gate/store";
@@ -41,8 +43,6 @@ import type {
 	ReadinessState,
 } from "../handoff-readiness/types";
 import { readChecklist } from "./checklist";
-
-type ContextHealth = "good" | "watch" | "heavy" | "critical";
 
 type ContextHandoffRecommendedAction =
 	| "continue"
@@ -422,18 +422,30 @@ interface ContextHandoffDriftAdvice {
 	correction?: string;
 }
 
+/**
+ * Save-side compaction-health provider (AD-6). Called only when the caller
+ * omits `contextHealth`; an explicit value always wins.
+ */
+export interface ContextHandoffHealthOptions {
+	read: () => { health: ContextHealth; degradedReason?: string };
+	/** Test injection; defaults to the compaction store's degraded append. */
+	logDegraded?: (repoRoot: string, reason: string) => void | Promise<void>;
+}
+
 export function createContextHandoffTool(
 	options: {
 		gateMode?: StageGateMode;
 		readiness?: ContextHandoffReadinessOptions;
 		docsVerification?: ContextHandoffDocsVerificationOptions;
 		drift?: ContextHandoffDriftOptions;
+		health?: ContextHandoffHealthOptions;
 	} = {},
 ) {
 	const gateMode = options.gateMode ?? "off";
 	const readiness = options.readiness;
 	const docsVerification = options.docsVerification;
 	const drift = options.drift;
+	const health = options.health;
 	const readinessGuard = readiness
 		? createReadinessGuard({
 				mode: readiness.mode,
@@ -454,6 +466,7 @@ export function createContextHandoffTool(
 						readinessGuard,
 						docsVerification,
 						drift,
+						health,
 					);
 				case "load":
 					return load(input);
@@ -788,16 +801,49 @@ async function surfaceDrift(
 	);
 }
 
+/**
+ * Resolve the save's health: an explicit caller value always wins, otherwise
+ * the provider defaults it. A provider throw or a missing provider is `watch`;
+ * a degraded reason is recorded best-effort. Never throws.
+ */
+async function resolveContextHealth(
+	input: ContextHandoffInput,
+	health: ContextHandoffHealthOptions | undefined,
+): Promise<ContextHealth> {
+	if (input.contextHealth) return input.contextHealth;
+	if (!health) return "watch";
+	try {
+		const reading = health.read();
+		if (reading.degradedReason) {
+			try {
+				if (health.logDegraded) {
+					await health.logDegraded(input.repoRoot, reading.degradedReason);
+				} else {
+					await appendHealthDegradedLog(input.repoRoot, reading.degradedReason);
+				}
+			} catch {
+				// ponytail: best-effort telemetry; health is already resolved.
+			}
+		}
+		return reading.health;
+	} catch {
+		// ponytail: a provider outage is the watch default, never a save failure.
+		return "watch";
+	}
+}
+
 async function save(
 	input: ContextHandoffInput,
 	gateMode: StageGateMode,
 	readinessGuard: ReadinessGuard | null,
 	docsVerification: ContextHandoffDocsVerificationOptions | undefined,
 	drift: ContextHandoffDriftOptions | undefined,
+	health: ContextHandoffHealthOptions | undefined,
 ): Promise<ContextHandoffResult> {
 	const currentStage = input.currentStage ?? "unknown";
 	const nextStage = input.nextStage;
-	const contextHealth = input.contextHealth ?? "watch";
+	// Single provider read at the top, before the checklist and gate checks (AD-6).
+	const contextHealth = await resolveContextHealth(input, health);
 
 	// Block cross-stage saves when checklist is non-empty
 	if (nextStage) {

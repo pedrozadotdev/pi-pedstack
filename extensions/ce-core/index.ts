@@ -60,6 +60,26 @@ import {
 	type DriftGuard,
 } from "./drift/guard";
 import { formatDriftCorrection } from "./drift/combine";
+import {
+	appendHealthDegradedLog,
+	captureContextSnapshot,
+	clearContextSnapshot,
+	getCurrentCompactionSessionKey,
+	getCurrentContextHealth,
+	getOrCreateSessionState,
+	resetAllSessionState,
+	resetEpisode,
+	resolveCompactionLive,
+	resolveCompactionMode,
+	setCurrentCompactionMode,
+	setCurrentCompactionSessionKey,
+} from "./compaction-guard/store";
+import {
+	createCompactionGuard,
+	type CompactionGuard,
+	type CompactionGuardInput,
+} from "./compaction-guard/guard";
+import { RECENT_ENTRIES, deriveTier } from "./compaction-guard/facts";
 import { filterBashOutput } from "./tools/bash-output-filter";
 import { filterReadOutput } from "./tools/read-output-filter";
 import { registerInjectionScreen } from "./injection-screen/handlers";
@@ -410,6 +430,91 @@ export function __setDriftJevFactory(
 	driftJevFactory = factory;
 }
 
+// Test seam: the compaction guard's Jev runtime (separate from drift/bash).
+let compactionJevFactory: (() => JevRuntime) | null = null;
+
+/** @internal Test-only injection seam for the compaction-guard Jev runtime. */
+export function __setCompactionGuardJevFactory(
+	factory: (() => JevRuntime) | null,
+): void {
+	compactionJevFactory = factory;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
+}
+
+function extractMessageText(message: unknown): string {
+	const record = asRecord(message);
+	if (!record) return "";
+	if (typeof record.content === "string") return record.content;
+	if (!Array.isArray(record.content)) return "";
+	let text = "";
+	for (const block of record.content) {
+		const entry = asRecord(block);
+		if (!entry) continue;
+		if (typeof entry.text === "string") text += `${entry.text}\n`;
+		else if (typeof entry.name === "string") text += `[tool ${entry.name}]\n`;
+	}
+	return text.trim();
+}
+
+/** Last RECENT_ENTRIES non-empty message excerpts from the cut region. */
+function extractRecentEntries(event: unknown): string[] {
+	const preparation = asRecord(asRecord(event)?.preparation) ?? {};
+	const messages = [
+		...toStringList(preparation.turnPrefixMessages),
+		...toStringList(preparation.messagesToSummarize),
+	];
+	const entries = messages.map(extractMessageText).filter((t) => t.length > 0);
+	return entries.slice(-RECENT_ENTRIES);
+}
+
+function toStringList(value: unknown): unknown[] {
+	return Array.isArray(value) ? value : [];
+}
+
+/** The current model window; the hook paths never resolve a tier from it (AD-3). */
+function readContextWindow(ctx: ExtensionContext): number | null {
+	try {
+		const usage = ctx.getContextUsage?.();
+		if (usage && typeof usage.contextWindow === "number") {
+			return usage.contextWindow;
+		}
+	} catch {
+		// fall through to the model fallback
+	}
+	const model = ctx.model as { contextWindow?: unknown } | undefined;
+	return typeof model?.contextWindow === "number" ? model.contextWindow : null;
+}
+
+/**
+ * Map the awaited hook event to a normalized guard input. `reason`/`willRetry`
+ * are read defensively: on a Pi version without them the reason is `unknown`, so
+ * the guard short-circuits to a deterministic `allow` (fail open).
+ */
+function mapCompactionEvent(
+	event: unknown,
+	ctx: ExtensionContext,
+): CompactionGuardInput {
+	const record = asRecord(event) ?? {};
+	const preparation = asRecord(record.preparation) ?? {};
+	const settings = asRecord(preparation.settings) ?? {};
+	return {
+		repoRoot: ctx.cwd,
+		reason: typeof record.reason === "string" ? record.reason : "unknown",
+		willRetry: record.willRetry === true,
+		tokensBefore: preparation.tokensBefore,
+		contextWindow: readContextWindow(ctx),
+		reserveTokens: settings.reserveTokens,
+		isSplitTurn: preparation.isSplitTurn,
+		recentEntries: extractRecentEntries(event),
+		priorSummary: preparation.previousSummary,
+	};
+}
+
 export default function ceCoreExtension(pi: ExtensionAPI) {
 	const artifactHelper = createArtifactHelperTool();
 	const workflowState = createWorkflowStateTool();
@@ -439,6 +544,16 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		driftModeRaw !== "shadow" &&
 		driftModeRaw !== "enforce";
 	const driftFailClosed = resolveDriftFailClosed(process.env);
+	// Compaction-guard mode/live are read once too; invalid fails safe to shadow.
+	const compactionModeRaw = process.env.PEDSTACK_COMPACTION_GUARD;
+	const compactionMode = resolveCompactionMode(process.env);
+	const compactionModeInvalid =
+		compactionModeRaw !== undefined &&
+		compactionModeRaw !== "off" &&
+		compactionModeRaw !== "shadow" &&
+		compactionModeRaw !== "enforce";
+	const compactionLive = resolveCompactionLive(process.env);
+	setCurrentCompactionMode(compactionMode);
 	const contextHandoff = createContextHandoffTool({
 		gateMode,
 		readiness: {
@@ -450,6 +565,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			mode: driftMode,
 			failClosed: driftFailClosed,
 			sessionKey: getCurrentDriftSessionKey,
+		},
+		health: {
+			read: () => getCurrentContextHealth(),
+			logDegraded: appendHealthDegradedLog,
 		},
 	});
 	const stageGate = createStageGateTool({ mode: gateMode, overengineeringMode });
@@ -495,6 +614,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	// created lazily on the first evaluated turn.
 	let driftModeNotified = false;
 	let driftGuard: DriftGuard | null = null;
+
+	// ponytail: compaction guard state; Jev runtime created lazily on first use.
+	let compactionModeNotified = false;
+	let compactionGuard: CompactionGuard | null = null;
 
 	pi.registerTool({
 		name: artifactHelper.name,
@@ -883,6 +1006,59 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		}
 	}
 
+	/** Lazily build the compaction guard, memoizing the Jev runtime on first use. */
+	function getCompactionGuard(): CompactionGuard {
+		compactionGuard ??= createCompactionGuard({
+			mode: compactionMode,
+			live: compactionLive,
+			sessionKey: () => getCurrentCompactionSessionKey(),
+			createJev: () =>
+				compactionJevFactory ? compactionJevFactory() : createJevRuntime(),
+		});
+		return compactionGuard;
+	}
+
+	/** Warn once when `PEDSTACK_COMPACTION_GUARD` is not a known mode. */
+	function notifyInvalidCompactionModeOnce(ctx: ExtensionContext): void {
+		if (!compactionModeInvalid || compactionModeNotified) return;
+		compactionModeNotified = true;
+		if (ctx.hasUI) {
+			ctx.ui.notify(
+				`Pedstack compaction guard: invalid PEDSTACK_COMPACTION_GUARD value ` +
+					`"${compactionModeRaw}"; using shadow mode.`,
+				"warning",
+			);
+		}
+	}
+
+	/** Capture the per-turn usage snapshot and fire the one-shot request nudge. */
+	function captureTurnSnapshot(ctx: ExtensionContext, sessionKey: string): void {
+		try {
+			const usage = ctx.getContextUsage?.();
+			if (!usage || typeof usage.contextWindow !== "number") return;
+			captureContextSnapshot({
+				tokens: usage.tokens,
+				contextWindow: usage.contextWindow,
+			});
+			const tier = deriveTier(
+				usage.tokens === null ? null : usage.tokens / usage.contextWindow,
+			);
+			if (tier !== "request") return;
+			const state = getOrCreateSessionState(sessionKey);
+			if (state.requestNotified) return;
+			state.requestNotified = true;
+			if (ctx.hasUI) {
+				ctx.ui.notify(
+					"Pedstack compaction guard: context pressure is critical; " +
+						"save a handoff or compact soon.",
+					"warning",
+				);
+			}
+		} catch {
+			// ponytail: snapshot capture is best-effort; keep the last snapshot.
+		}
+	}
+
 	pi.on("tool_call", async (event, ctx) => {
 		if (guardDisabled) return undefined;
 
@@ -928,24 +1104,33 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		}
 	});
 
-	// Turn-level drift detection (AD-1/AD-5): additive, fail-open, never blocks.
+	// Turn-level drift detection (AD-1/AD-5) + compaction snapshot capture.
+	// Additive, fail-open, never blocks.
 	pi.on("turn_end", async (event, ctx) => {
 		try {
-			if (driftMode === "off") return undefined;
-			notifyInvalidDriftModeOnce(ctx);
-
+			if (driftMode === "off" && compactionMode === "off") return undefined;
 			const sessionKey = resolveSessionKey(ctx.sessionManager);
-			setCurrentDriftSessionKey(sessionKey);
-			const stage = await resolveGuardStage(ctx);
-			await getDriftGuard().evaluate({
-				repoRoot: ctx.cwd,
-				stage,
-				message: event.message,
-				toolResults: event.toolResults,
-				turnIndex: event.turnIndex,
-			});
+
+			if (compactionMode !== "off") {
+				notifyInvalidCompactionModeOnce(ctx);
+				setCurrentCompactionSessionKey(sessionKey);
+				captureTurnSnapshot(ctx, sessionKey);
+			}
+
+			if (driftMode !== "off") {
+				notifyInvalidDriftModeOnce(ctx);
+				setCurrentDriftSessionKey(sessionKey);
+				const stage = await resolveGuardStage(ctx);
+				await getDriftGuard().evaluate({
+					repoRoot: ctx.cwd,
+					stage,
+					message: event.message,
+					toolResults: event.toolResults,
+					turnIndex: event.turnIndex,
+				});
+			}
 		} catch {
-			// ponytail: additive handler — a drift bug must never break a turn.
+			// ponytail: additive handler — a bug here must never break a turn.
 		}
 		return undefined;
 	});
@@ -1385,9 +1570,11 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async () => {
-		// Fresh session: reset per-session drift state (record files untouched).
+		// Fresh session: reset per-session state (record files untouched).
 		driftGuard?.reset();
 		setCurrentDriftSessionKey("");
+		resetAllSessionState();
+		clearContextSnapshot();
 		return undefined;
 	});
 
@@ -1398,6 +1585,41 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		// In-memory only: record files stay on disk (AD-6).
 		driftGuard?.reset();
 		setCurrentDriftSessionKey("");
+		resetAllSessionState();
+		clearContextSnapshot();
+		return undefined;
+	});
+
+	// `session_compact` ends the threshold episode: keep the entry, reset counters.
+	pi.on("session_compact", async (_event, ctx) => {
+		try {
+			const sessionKey =
+				ctx?.sessionManager && typeof ctx.sessionManager === "object"
+					? resolveSessionKey(ctx.sessionManager)
+					: getCurrentCompactionSessionKey();
+			resetEpisode(sessionKey);
+		} catch {
+			// ponytail: lifecycle reset is best-effort and never blocks.
+		}
+		return undefined;
+	});
+
+	// Compaction hook: the only place a `{ cancel: true }` can be produced (AD-8).
+	pi.on("session_before_compact", async (event, ctx) => {
+		try {
+			if (compactionMode === "off") return undefined;
+			notifyInvalidCompactionModeOnce(ctx);
+			const sessionKey = resolveSessionKey(ctx.sessionManager);
+			setCurrentCompactionSessionKey(sessionKey);
+			const result = await getCompactionGuard().evaluate(
+				mapCompactionEvent(event, ctx),
+			);
+			if (compactionMode === "enforce" && result.action === "defer") {
+				return { cancel: true };
+			}
+		} catch {
+			// ponytail: shape drift or a guard bug fails open to stock Pi.
+		}
 		return undefined;
 	});
 

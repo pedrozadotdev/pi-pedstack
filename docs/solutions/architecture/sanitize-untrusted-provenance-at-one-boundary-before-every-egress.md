@@ -192,6 +192,11 @@ to route through the boundary value.
   split the screen reuses.
 - [`../workflow/requirements-vs-plan-signature-divergence.md`](../workflow/requirements-vs-plan-signature-divergence.md)
   — the sibling "local validation not equal to the real contract" failure mode.
+- [`./parity-test-extracted-security-helpers-against-the-original.md`](./parity-test-extracted-security-helpers-against-the-original.md)
+  — the corollary for the sanitizer itself: extracting/promoting this helper is a coverage
+  change, and a bundled anchor (`\b`) silently narrowed a credential regex (H1 in the
+  2026-10-06 compaction review). Parity-test the new helper against the old over adversarial
+  inputs.
 
 ## Provenance
 
