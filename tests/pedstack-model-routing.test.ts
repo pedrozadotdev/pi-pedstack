@@ -190,4 +190,60 @@ describe("switchStageConfig — stage-entry routing", () => {
 
 		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "cheap" }]);
 	});
+
+	test("a persisted escalate review action selects sota when shadow is false", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, {
+			models: {
+				default: { model: "test/cheap" },
+				sota: { model: "test/strong", thinkingLevel: "high" },
+			},
+			routing: { shadow: false },
+		});
+		const gateDir = path.join(
+			repo,
+			".context",
+				"compound-engineering",
+				"stage-gates",
+		);
+		mkdirSync(gateDir, { recursive: true });
+		writeFileSync(
+			path.join(gateDir, "01-brainstorm.json"),
+			JSON.stringify({
+				stage: "01-brainstorm",
+				attempts: [
+					{
+						schema: 2,
+						stage: "01-brainstorm",
+						verdict: "review",
+						enforcing: true,
+						weightedScore: 0.5,
+						det: [],
+						sem: [],
+						criticalFailed: false,
+						jevUnavailable: false,
+						jevReason: null,
+						model: "typesafe/jev",
+						warnings: [],
+						artifacts: [],
+						artifactsHash: "x",
+						attempt: 0,
+						updatedAt: "2026-10-05T00:00:00.000Z",
+						review: {
+							action: "escalate",
+							reviewerCount: 0,
+							reason: "independent review budget exhausted",
+						},
+					},
+				],
+			}),
+			"utf8",
+		);
+		__setModelRoutingJevFactory(() => fakeJev(0.1));
+		const harness = makeHarness(repo);
+
+		await cmdPedStart(harness.pi).handler("build a CLI", harness.ctx);
+
+		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "strong" }]);
+	});
 });

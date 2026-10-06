@@ -206,6 +206,20 @@ describe("stage gate evidence (Unit 2)", () => {
 	});
 });
 
+describe("stage gate evidence — prior gate action (Unit 4)", () => {
+	test("defaults priorGate to null and passes through an explicit value", async () => {
+		const defaulted = await gatherEvidence({ repoRoot: root, stage: "04-review" });
+		expect(defaulted.priorGate).toBeNull();
+
+		const passed = await gatherEvidence({
+			repoRoot: root,
+			stage: "04-review",
+			priorGate: { verdict: "review", action: "review" },
+		});
+		expect(passed.priorGate).toEqual({ verdict: "review", action: "review" });
+	});
+});
+
 async function sha256String(value: string): Promise<string> {
 	return createHash("sha256").update(value).digest("hex");
 }

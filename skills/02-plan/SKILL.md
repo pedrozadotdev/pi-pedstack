@@ -51,7 +51,12 @@ Every unit follows **RED → GREEN → REFACTOR**:
 8. Structure work using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/02-plan/references/implementation-unit-template.md`
 9. Verify every unit follows TDD gates
 10. **Strict Review (required)** — always execute. Read `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/02-plan/references/ceo-review-mode.md` and run the full Strict Review flow (Premise Challenge, Dream State Mapping, Implementation Alternatives, Temporal Interrogation, Error and Rescue Map, Failure Modes Registry, Test Diagram). Update the plan artifact with any changes identified.
-11. Invoke the **`multi_reviewer`** tool (required, execute this every time) with `stepName: "02-plan"` to review the plan artifact. This runs **after** the Strict Review so multi_reviewer inspects an already-reviewed plan.
+11. Run **`stage_gate`** for `02-plan` and act on its `action`:
+    - `accept` → do not run `multi_reviewer`; advance.
+    - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
+    - `review` → invoke **`multi_reviewer`** with `stepName: "02-plan"` and `mode: "single"`, then re-run `stage_gate`. This runs **after** the Strict Review so multi_reviewer inspects an already-reviewed plan.
+    - `escalate` → do not loop; proceed to escalated execution.
+    Use `mode: "deep"` only on an explicit user request.
 12. Handoff to `03-work` via the standard pipeline handoff.
 
 ## Artifact output
