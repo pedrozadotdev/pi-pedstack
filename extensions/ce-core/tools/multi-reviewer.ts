@@ -5,6 +5,7 @@ import * as path from "node:path";
 import {
 	readPiPedstackConfig,
 	getConfigKeyForSkill,
+	type PiPedstackConfig,
 } from "../utils/config-types";
 import { normalizeSlug } from "../utils/name-utils";
 
@@ -327,6 +328,31 @@ Format your response as a JSON array of findings wrapped in a markdown code bloc
 	});
 }
 
+/**
+ * Resolve the `models.review` role as a single reviewer, but never when it is
+ * not independent from an execution model (a model must not review itself).
+ */
+function resolveReviewRole(
+	config: PiPedstackConfig | null,
+): ReviewerConfig[] | undefined {
+	const review = config?.models?.review;
+	if (!review?.model) return undefined;
+
+	const executionModels = [
+		config?.models?.default?.model,
+		config?.models?.sota?.model,
+	].filter((model): model is string => typeof model === "string");
+
+	if (executionModels.includes(review.model)) {
+		console.warn(
+			`[multi-reviewer] models.review (${review.model}) matches an execution role model; review independence requires a distinct model. Ignoring.`,
+		);
+		return undefined;
+	}
+
+	return [{ model: review.model, thinkingLevel: review.thinkingLevel ?? "high" }];
+}
+
 export function createMultiReviewerTool() {
 	return {
 		name: "multi_reviewer",
@@ -349,6 +375,12 @@ export function createMultiReviewerTool() {
 				stageConfig.reviewers.length > 0
 			) {
 				reviewers = stageConfig.reviewers;
+			}
+
+			// Fall back to the `models.review` role when the stage has no explicit
+			// reviewers, but only if it is independent from the execution roles.
+			if (!reviewers || reviewers.length === 0) {
+				reviewers = resolveReviewRole(config);
 			}
 
 			if (!reviewers || reviewers.length === 0) {

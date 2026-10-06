@@ -1,0 +1,27 @@
+{
+  "name": "overengineered-inside-protected",
+  "stage": "04-review",
+  "baseline": {
+    "requirements": true,
+    "plan": true
+  },
+  "facts": {
+    "protectedPaths": [
+      "src/auth/token.ts"
+    ],
+    "newDependencies": []
+  },
+  "scores": {
+    "evidence_first_findings": 4,
+    "coverage_across_axes": 4,
+    "actionable_recommendations": 4,
+    "no_unrequested_abstraction": 1,
+    "scope_fidelity": 1,
+    "complexity_proportionality": 1,
+    "dependency_justification": 1
+  },
+  "expected": {
+    "overFloorPass": false,
+    "verdict": "review"
+  }
+}

@@ -197,24 +197,11 @@ function enforceRequestBodyLimit(request: JevRequest): void {
 	shrink(state as Record<string, unknown>, "task", 0);
 }
 
+import { isUnitNumber, readConfidence } from "./noul-read";
+
 interface NoulReading {
 	value: number;
 	confidence: number;
-}
-
-function isUnitNumber(value: unknown): value is number {
-	return (
-		typeof value === "number" &&
-		Number.isFinite(value) &&
-		value >= 0 &&
-		value <= 1
-	);
-}
-
-/** Omitted confidence means 1; an explicit null/non-finite value is invalid. */
-function readConfidence(answer: { confidence?: unknown }): number | null {
-	if (answer.confidence === undefined) return 1;
-	return isUnitNumber(answer.confidence) ? answer.confidence : null;
 }
 
 /** A noul answer is valid only when finite and in [0,1]; omitted confidence = 1. */

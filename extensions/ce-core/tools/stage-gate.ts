@@ -6,6 +6,7 @@ import type { JevRuntime } from "../jev/types";
 import { evaluateStageGate } from "../stage-gate/evaluate";
 import type { GatherEvidenceOptions } from "../stage-gate/evidence";
 import { isStageKey } from "../stage-gate/store";
+import type { OverengineeringMode } from "../overengineering/types";
 import type {
 	DeterministicResult,
 	Evidence,
@@ -30,6 +31,8 @@ export const stageGateParams = Type.Object({
 
 export interface StageGateToolDeps {
 	mode: StageGateMode;
+	/** Resolved once at init; defaults to `shadow` when absent. */
+	overengineeringMode?: OverengineeringMode;
 	/** Injected runtime for tests; lazily created otherwise. */
 	runtime?: JevRuntime;
 	now?: () => Date;
@@ -90,6 +93,7 @@ export function createStageGateTool(deps: StageGateToolDeps) {
 					stage: input.stage,
 					mode: deps.mode,
 					artifactPaths: input.artifactPaths,
+					overengineering: { mode: deps.overengineeringMode ?? "shadow" },
 				},
 			);
 			return { stage: input.stage, ...result };

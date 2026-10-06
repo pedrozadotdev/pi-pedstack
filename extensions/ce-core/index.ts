@@ -38,6 +38,7 @@ import { createPatternExtractorTool } from "./tools/pattern-extractor";
 import { createContextHandoffTool } from "./tools/context-handoff";
 import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
 import { resolveStageGateMode } from "./stage-gate/store";
+import { resolveOverengineeringMode } from "./overengineering/compose";
 import {
 	resolveReadinessFailClosed,
 	resolveReadinessMode,
@@ -410,6 +411,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const patternExtractor = createPatternExtractorTool();
 	// ponytail: operator-only gate mode, resolved once at init like the guard.
 	const gateMode = resolveStageGateMode(process.env);
+	// ponytail: the overengineering mode is a separate shadow-first knob.
+	const overengineeringMode = resolveOverengineeringMode(process.env);
 	// ponytail: handoff-readiness mode/fail-closed are also resolved once.
 	// Drift mode/fail-closed are read once too; invalid values fail safe to shadow.
 	const driftModeRaw = process.env.PEDSTACK_DRIFT_GUARD;
@@ -432,7 +435,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			sessionKey: getCurrentDriftSessionKey,
 		},
 	});
-	const stageGate = createStageGateTool({ mode: gateMode });
+	const stageGate = createStageGateTool({ mode: gateMode, overengineeringMode });
 	const multiReviewer = createMultiReviewerTool();
 	const checklistAdd = createChecklistAddTool();
 	const checklistShow = createChecklistShowTool();
