@@ -25,6 +25,35 @@ export interface ReviewableStepConfig extends StepConfig {
   reviewers?: ReviewerConfig[]
 }
 
+export interface ModelRolesConfig {
+  default?: StepConfig
+  review?: StepConfig
+  sota?: StepConfig
+}
+
+/** Partial, operator-supplied `routing` config block. */
+export interface RoutingConfig {
+  shadow?: boolean
+  sotaMinScore?: number
+  sotaMinConfidence?: number
+  maxEscalationsPerStage?: number
+}
+
+/** Deterministic thresholds that map a Jev judgment to an execution role. */
+export interface RoutingThresholds {
+  sotaMinScore: number
+  sotaMinConfidence: number
+  maxEscalationsPerStage: number
+}
+
+/** Documented defaults for the `routing` config block (shadow-first). */
+export const DEFAULT_MODEL_ROUTING: RoutingThresholds & { shadow: boolean } = {
+  sotaMinScore: 0.6,
+  sotaMinConfidence: 0.5,
+  maxEscalationsPerStage: 1,
+  shadow: true,
+}
+
 export interface PiPedstackConfig {
   brainstorm?: ReviewableStepConfig
   plan?: ReviewableStepConfig
@@ -35,6 +64,8 @@ export interface PiPedstackConfig {
   docsync?: StepConfig
   solutionRanking?: SolutionRankingConfig
   semanticRead?: SemanticReadConfig
+  models?: ModelRolesConfig
+  routing?: RoutingConfig
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +100,7 @@ export const DEFAULT_SEMANTIC_READ: SemanticBudgets = {
 
 export type StepConfigKey = Exclude<
   keyof PiPedstackConfig,
-  "solutionRanking" | "semanticRead"
+  "solutionRanking" | "semanticRead" | "models" | "routing"
 >
 
 const SKILL_TO_CONFIG_KEY: Record<string, StepConfigKey> = {
@@ -175,6 +206,84 @@ function warnUnknownKeys(
     if (!allowed.has(key)) {
       console.warn(`[pi-pedstack] Unknown ${prefix} key: "${key}"`)
     }
+  }
+}
+
+const MODEL_ROLES_KEYS = new Set(["default", "review", "sota"])
+
+function validateModels(raw: unknown): ModelRolesConfig {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error('pi-pedstack config: "models" must be an object')
+  }
+
+  const obj = raw as Record<string, unknown>
+  const result: ModelRolesConfig = {}
+  for (const role of ["default", "review", "sota"] as const) {
+    if (obj[role] === undefined) continue
+    if (!isStepConfig(obj[role])) {
+      throw new Error(
+        `pi-pedstack config: "models.${role}" must have "model" (string) and optional "thinkingLevel" (string)`,
+      )
+    }
+    result[role] = obj[role] as StepConfig
+  }
+
+  warnUnknownKeys(obj, MODEL_ROLES_KEYS, "models")
+  return result
+}
+
+const ROUTING_KEYS = new Set([
+  "shadow",
+  "sotaMinScore",
+  "sotaMinConfidence",
+  "maxEscalationsPerStage",
+])
+
+function validateRouting(raw: unknown): RoutingConfig {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error('pi-pedstack config: "routing" must be an object')
+  }
+
+  const obj = raw as Record<string, unknown>
+  const result: RoutingConfig = {}
+  for (const key of ["sotaMinScore", "sotaMinConfidence"] as const) {
+    const value = readUnitInterval(obj, key, "routing")
+    if (value !== undefined) result[key] = value
+  }
+  const maxEscalations = readPositiveInteger(
+    obj,
+    "maxEscalationsPerStage",
+    "routing",
+  )
+  if (maxEscalations !== undefined) {
+    result.maxEscalationsPerStage = maxEscalations
+  }
+  const shadow = readBooleanField(obj, "shadow", "routing")
+  if (shadow !== undefined) result.shadow = shadow
+
+  warnUnknownKeys(obj, ROUTING_KEYS, "routing")
+  return result
+}
+
+/** Merge a validated (possibly partial) config with the documented defaults. */
+export function resolveModelRolesConfig(
+  config: PiPedstackConfig | null,
+): ModelRolesConfig {
+  return config?.models ? { ...config.models } : {}
+}
+
+/** Merge a validated (possibly partial) config with the documented defaults. */
+export function resolveRoutingConfig(
+  config: PiPedstackConfig | null,
+): RoutingThresholds & { shadow: boolean } {
+  const raw = config?.routing ?? {}
+  return {
+    sotaMinScore: raw.sotaMinScore ?? DEFAULT_MODEL_ROUTING.sotaMinScore,
+    sotaMinConfidence:
+      raw.sotaMinConfidence ?? DEFAULT_MODEL_ROUTING.sotaMinConfidence,
+    maxEscalationsPerStage:
+      raw.maxEscalationsPerStage ?? DEFAULT_MODEL_ROUTING.maxEscalationsPerStage,
+    shadow: raw.shadow ?? DEFAULT_MODEL_ROUTING.shadow,
   }
 }
 
@@ -299,7 +408,13 @@ function applyReviewableStepConfigs(
 
 function warnUnknownConfigKeys(obj: Record<string, unknown>): void {
   for (const key of Object.keys(obj)) {
-    if (!VALID_STEP_NAMES.has(key) && key !== "solutionRanking" && key !== "semanticRead") {
+    if (
+      !VALID_STEP_NAMES.has(key) &&
+      key !== "solutionRanking" &&
+      key !== "semanticRead" &&
+      key !== "models" &&
+      key !== "routing"
+    ) {
       console.warn(`[pi-pedstack] Unknown config key: "${key}". Valid keys: ${[...VALID_STEP_NAMES].join(", ")}`)
     }
   }
@@ -322,6 +437,14 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
 
   if (obj.semanticRead !== undefined) {
     config.semanticRead = validateSemanticRead(obj.semanticRead)
+  }
+
+  if (obj.models !== undefined) {
+    config.models = validateModels(obj.models)
+  }
+
+  if (obj.routing !== undefined) {
+    config.routing = validateRouting(obj.routing)
   }
 
   warnUnknownConfigKeys(obj)

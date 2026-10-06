@@ -52,6 +52,26 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Overlap detection** — reusing `rankSolutions` with a newly written solution card
   as the query to surface semantically overlapping existing cards (`05-learn`).
 
+## Model roles & routing (#6)
+
+- **Model role** — one of `default` (cheap normal-execution workhorse), `review`
+  (independent stronger reviewer), or `sota` (highest-capability escalation), declared once
+  in the optional top-level `models` block.
+- **Execution role** — the role actually applied to a stage turn: `default | sota` only.
+  `review` is never an execution target.
+- **Routing decision** — the persisted `{ role, reason, source, scores, weighted, confidence,
+  attempts, escalations }` produced at stage entry. `reason` is one of
+  `override | gate_escalate | jev | budget_exhausted | fallback`; `source` is one of
+  `override | deterministic | jev | budget | fallback`.
+- **Deterministic escalation** — a `sota` choice justified by the newest stage-gate
+  `escalate` verdict, independent of Jev; it short-circuits any Jev call.
+- **Escalation budget** — `routing.maxEscalationsPerStage` (default 1). A Jev judgment that
+  would select `sota` after the budget is spent is recorded as `budget_exhausted`/`budget`,
+  never `fallback`, so a spend cap is distinguishable from an outage.
+- **Shadow-first routing** — `routing.shadow` defaults `true`: the decision is computed and
+  persisted while the legacy per-stage model is still applied. Routing runs at all only when
+  a `models` or `routing` block exists.
+
 ## Semantic file scouting (#14)
 
 - **Semantic read** — the `semantic_read` tool: one repo-relative file, one bounded
