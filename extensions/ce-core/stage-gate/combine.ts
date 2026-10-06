@@ -1,4 +1,5 @@
 // Pure verdict combination (plan Unit 3, R3/R4/R5/G3/G5). No I/O, no Jev.
+import { OVERENGINEERING_DIMENSION_IDS } from "../overengineering/types";
 import type {
 	DeterministicResult,
 	SemanticScore,
@@ -11,12 +12,20 @@ export const T_REVIEW = 0.5;
 export const DIM_FLOOR = 0.25;
 export const MAX_REVISE = 2;
 
+/**
+ * The overengineering dimensions are floor-only: any present dim below this
+ * blocks `accept`, but they never enter `weightedAverage` (plan Unit 2).
+ */
+export const OVERENGINEERING_FLOOR = 0.5;
+
 export interface CombineInput {
 	det: DeterministicResult[];
 	sem: SemanticScoreInput[];
 	/** Prior `revise` records for this stage at evaluation time. */
 	attempts: number;
 	jevUnavailable: boolean;
+	/** True only when `PEDSTACK_OVERENGINEERING=enforce` (absent means false). */
+	overengineeringEnforced?: boolean;
 }
 
 export interface CombineResult {
@@ -75,6 +84,10 @@ export function combineVerdict(input: CombineInput): CombineResult {
 	const criticalFailed = input.det.some((entry) => entry.critical && !entry.pass);
 	const detFailed = input.det.some((entry) => !entry.pass);
 	const unavailable = input.jevUnavailable || sem.length === 0;
+	// Floor-only partition: the four over dims are excluded from the average.
+	const overIds = new Set<string>(OVERENGINEERING_DIMENSION_IDS);
+	const base = sem.filter((entry) => !overIds.has(entry.id));
+	const present = sem.filter((entry) => overIds.has(entry.id));
 
 	if (detFailed) {
 		reasons.push(
@@ -90,14 +103,23 @@ export function combineVerdict(input: CombineInput): CombineResult {
 		return finish("accept", null, false, sem, reasons, input.attempts);
 	}
 
-	const weightedScore = weightedAverage(sem);
-	const belowFloor = sem.some((entry) => entry.normalized < DIM_FLOOR);
+	const weightedScore = weightedAverage(base);
+	const belowFloor = base.some((entry) => entry.normalized < DIM_FLOOR);
+	const overengineeringFailed =
+		input.overengineeringEnforced === true &&
+		present.length >= 1 &&
+		present.some((entry) => entry.normalized < OVERENGINEERING_FLOOR);
 	let verdict: StageGateVerdict;
-	if (weightedScore >= T_ACCEPT && !belowFloor) {
+	if (weightedScore >= T_ACCEPT && !belowFloor && !overengineeringFailed) {
 		verdict = "accept";
 	} else if (weightedScore >= T_REVIEW) {
 		verdict = "review";
 		if (belowFloor) reasons.push(`a dimension is below the ${DIM_FLOOR} floor`);
+		if (overengineeringFailed) {
+			reasons.push(
+				`an overengineering dimension is below the ${OVERENGINEERING_FLOOR} floor`,
+			);
+		}
 	} else {
 		verdict = "revise";
 	}
