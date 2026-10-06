@@ -1,0 +1,28 @@
+diff --git a/package.json b/package.json
+index 1111111..2222222 100644
+--- a/package.json
++++ b/package.json
+@@ -10,0 +11,2 @@
++    "lodash": "^4.17.21",
++    "left-pad": "^1.3.0",
+diff --git a/src/service.ts b/src/service.ts
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/src/service.ts
+@@ -0,0 +1,6 @@
++import axios from "axios";
++import fs from "node:fs";
++import { helper } from "./helper";
++export const run = async () => {
++  return axios.get("https://example.com");
++};
+diff --git a/tests/service.test.ts b/tests/service.test.ts
+new file mode 100644
+index 0000000..4444444
+--- /dev/null
++++ b/tests/service.test.ts
+@@ -0,0 +1,3 @@
++import { expect, test } from "bun:test";
++test("run", () => { expect(true).toBe(true); });
++// validation: zod schema parse

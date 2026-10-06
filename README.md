@@ -28,6 +28,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
 - **Bash stage guard (shadow by default)** — an indirect-surface guard classifies `bash` commands by effect (writes, deletes, installs, package runners, pipes) and logs verdicts to `.context/compound-engineering/jev-stage-guard.jsonl`; set `PEDSTACK_JEV_STAGE_GUARD=enforce` to block
 - **Stage completion gate** — every stage scores the artifact it produced before its cross-stage handoff. Deterministic per-stage predicates (artifact present, required headings, no placeholders, persisted review findings) block in **both** `shadow` and `enforce`; CommandCode `typesafe/jev` adds a bounded semantic score via the `stage_gate` tool. `PEDSTACK_STAGE_GATE=off|shadow|enforce` (default `shadow`)
+- **Semantic overengineering signal (shadow-first)** — four floor-only dimensions (`no_unrequested_abstraction`, `scope_fidelity`, `complexity_proportionality`, `dependency_justification`) ride the existing stage-gate Jev request and judge whether an artifact added only *justified* complexity. They are excluded from `weightedAverage` and can only lower a verdict via `OVERENGINEERING_FLOOR = 0.5`. Ships inert (`PEDSTACK_OVERENGINEERING=off|shadow|enforce`, default `shadow`), independent of `PEDSTACK_STAGE_GATE`
 - **Untrusted injection screen** — a two-phase `tool_result` screen classifies provenance (HTTP, `gh` reads, external paths) and asks Jev one bounded question; `enforce` prepends a deterministic warning wrapper around flagged content without rewriting it. Ships shadow-first (`PEDSTACK_INJECTION_SCREEN=off|shadow|enforce`, default `shadow`), fails open on Jev failure and wrap-miss
 - **Failure triage** — a failed `test`/`typecheck`/`lint`/`build` command during `03-work` or `04-5-debug` gains an inline, bounded advisory TRIAGE block (category, relation to recent change, root-cause clarity) and a record under `.context/compound-engineering/triage/`; Jev degrades to a deterministic heuristic on outage, and triage never auto-fixes or changes the exit status
 - **🐴 Ponytail Discipline** — YAGNI-first code philosophy dynamically injected into plan, work, review, and debug stages: resist unrequested abstractions, prefer stdlib, write the minimum code that works
@@ -323,6 +324,17 @@ Records are persisted per stage under `.context/compound-engineering/stage-gates
 
 **Known limitations:** the semantic scorer needs CommandCode to be available — when the runtime is unavailable the score is marked `jev unavailable` and the deterministic floor still decides. The placeholder predicate currently rejects normal schema notation (`<string>`, `<sha256>`) and the shared `stage-reports/` fallback can resolve the wrong stage's report; both confirmed defects are recorded in the [stage-gate solution card](docs/solutions/workflow/stage-artifact-completion-gate-shadow-first-rubrics.md).
 
+### Overengineering signal (shadow-first)
+
+The Ponytail/YAGNI discipline is injected as prompt prose into `02-plan`, `03-work`, `04-review`, and `04-5-debug`. The overengineering signal (`extensions/ce-core/overengineering/`) gives the stage gate four semantic dimensions that check whether the artifact added only *justified* complexity — `no_unrequested_abstraction`, `scope_fidelity`, `complexity_proportionality`, and `dependency_justification`.
+
+- **Floor-only, never averageable.** The four dimensions are excluded from `weightedAverage`, so they cannot move a historical verdict boundary. They can only lower a verdict: any present dimension below `OVERENGINEERING_FLOOR = 0.5` blocks `accept` when enforcement is on. A skipped dimension is absent from `sem` with a reason in `skippedDimensions[]` — never a sentinel score.
+- **Independent shadow flag.** `PEDSTACK_OVERENGINEERING = off | shadow | enforce` (default `shadow`) is read once at init and is independent of `PEDSTACK_STAGE_GATE`, so calibrating one judgment cannot force the other. An invalid value resolves to `shadow`, never `off`.
+- **Deterministic baseline first.** Each stage's normative excerpt (requirements for `02-plan`, the plan for `03-work`, both for `04-review`) is resolved from files — never a network fetch. A missing baseline short-circuits to `unavailable` with no git call; `off` performs no reads.
+- **Exact evidence, injected I/O.** `facts.ts` extracts diff, manifest, and untracked-file facts behind an injected `runGit`; a git failure degrades to empty facts plus skip reasons. The record's `source` separates a real reading (`jev`) from an outage or a size trim, so the calibration log never counts an outage as a reading.
+
+**Enforcement checkpoint:** flip `PEDSTACK_OVERENGINEERING` to `enforce` only after the D10 calibration data exists. The `04-review` pass confirmed the feature and found 1 high + 2 moderate + 4 low findings, all in the deterministic evidence path: H1 treats a directory with *no* `package.json` as unreadable (permanently skipping `dependency_justification`), M1 extracts script/nested manifest keys as dependencies, and M2 stamps a Jev outage as `source: "jev"`. None change a verdict while the signal is inert; they are deferred to an on-demand `04-5-debug` pass and recorded in the [floor-only semantic dimensions card](docs/solutions/architecture/floor-only-semantic-dimensions-with-exact-evidence.md).
+
 ### Handoff readiness (#10)
 
 A handoff can pass every structural probe and still be semantically empty — a bare `/ped-next` next step, `verification: ran tests` with no command or result, stale active files, blocking open decisions, or missing history. The save-side readiness guard (`extensions/ce-core/handoff-readiness/`) is layered **on top of** the deterministic floor, which stays authoritative: Jev can only add a block, never override a deterministic one.
@@ -487,8 +499,8 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 16 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~40,300 |
-| Tests | 1,168 (1,166 pass + 2 opt-in skips) (3,689 assertions) |
+| TypeScript lines | ~43,386 |
+| Tests | 1251 (1249 pass + 2 opt-in skip) (4,053 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -525,6 +537,16 @@ then Jev — with all I/O injected. `context_handoff save` consults it on
 cross-stage completion saves and `context_handoff validate` reads a record back
 advisorily, never calling Jev (issue
 [#10](https://github.com/pedrozadotdev/pi-pedstack/issues/10)).
+
+The overengineering subsystem (`extensions/ce-core/overengineering/`) supplies the stage
+gate with the two things it lacked — a per-stage baseline and deterministic complexity
+facts — for four floor-only semantic dimensions. `baseline.ts` resolves the per-stage
+normative excerpt from files only; `facts.ts` is pure diff/manifest/untracked extraction
+behind an injected git runner; `compose.ts` resolves the mode and baseline first, then
+degrades to `unavailable` rather than throwing; `shadow-log.ts` appends the D10
+calibration records. The four dimensions are excluded from `weightedAverage` and can only
+lower a verdict through `OVERENGINEERING_FLOOR = 0.5` (issue
+[#16](https://github.com/pedrozadotdev/pi-pedstack/issues/16)).
 
 The failure-triage subsystem (`extensions/ce-core/tools/failure-triage.ts`,
 `failure-triage-runner.ts`, `triage-store.ts`) registers no Pi tool either. It runs as a

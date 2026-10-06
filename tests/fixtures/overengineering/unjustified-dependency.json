@@ -1,0 +1,27 @@
+{
+  "name": "unjustified-dependency",
+  "stage": "04-review",
+  "baseline": {
+    "requirements": true,
+    "plan": true
+  },
+  "facts": {
+    "protectedPaths": [],
+    "newDependencies": [
+      "left-pad"
+    ]
+  },
+  "scores": {
+    "evidence_first_findings": 4,
+    "coverage_across_axes": 4,
+    "actionable_recommendations": 4,
+    "no_unrequested_abstraction": 4,
+    "scope_fidelity": 4,
+    "complexity_proportionality": 4,
+    "dependency_justification": 1
+  },
+  "expected": {
+    "overFloorPass": false,
+    "verdict": "review"
+  }
+}

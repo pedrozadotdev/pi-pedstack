@@ -135,3 +135,22 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   unusable answer set; non-blocking unless `FAILCLOSED` is set in `enforce`.
 - **Shadow mode** — compute, record, and log the readiness verdict without blocking
   (the default). `PEDSTACK_HANDOFF_READINESS = off | shadow | enforce`.
+
+## Overengineering signal (#16)
+
+- **Overengineering signal** — four floor-only semantic dimensions that check whether an
+  artifact added only justified complexity. They ride the existing stage-gate Jev request
+  (`StageGateAttempt.schema = 2`) and are never a second gate.
+- **Dimension** — one of the four ids: `no_unrequested_abstraction`, `scope_fidelity`,
+  `complexity_proportionality`, `dependency_justification`.
+- **OVERENGINEERING_FLOOR** — `0.5`; any present overengineering dimension below it
+  prevents `accept` and routes to `review`/`revise`. The dimensions are excluded from
+  `weightedAverage` (floor-only), so a high base average cannot mask them.
+- **Baseline** — the per-stage normative excerpt: requirements for `02-plan`, the plan (with
+  a contamination guard) for `03-work`, and both for `04-review`. Resolution is file-based;
+  the terminal fallback is `unavailable` (never a network fetch).
+- **Source** — `jev | unavailable`; `unavailable` means no baseline, all dimensions skipped,
+  or a `request_too_large` trim. A skipped dimension is absent from `sem` with a reason in
+  `skippedDimensions[]` — never a sentinel score.
+- **Shadow mode** — compute, persist, and log the dimensions without changing
+  `weightedScore` or `verdict` (the default). `PEDSTACK_OVERENGINEERING = off | shadow | enforce`.
