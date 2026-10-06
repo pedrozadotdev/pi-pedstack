@@ -23,6 +23,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Knowledge compounding** — solved problems become searchable solution artifacts
 - **Semantic solution search** — the `solution_search` tool and stage auto-injection rank `docs/solutions/` cards with a Jev semantic layer over a deterministic, never-weaker fallback; ships shadow-first (inert until `solutionRanking.shadow=false`)
 - **Cheap semantic file reads** — `semantic_read` (one file) and `semantic_scout` (files/dirs/globs) return typed per-path answers plus byte facts — **never file bodies** — so the agent opens only the files it truly needs; a Jev outage degrades to explicit `read`/`grep` guidance
+- **Model roles & task-shaped routing** — declare three roles once (`models.default` cheap workhorse, `models.review` independent reviewer, `models.sota` escalation) and let stage entry resolve the execution role with a fixed precedence (explicit override → stage-gate `escalate` → Jev judgment → cheap fallback); ships shadow-first (`routing.shadow` defaults `true`)
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
 - **Bash stage guard (shadow by default)** — an indirect-surface guard classifies `bash` commands by effect (writes, deletes, installs, package runners, pipes) and logs verdicts to `.context/compound-engineering/jev-stage-guard.jsonl`; set `PEDSTACK_JEV_STAGE_GUARD=enforce` to block
@@ -110,6 +111,46 @@ Model and thinking level switching is handled automatically by the ce-core exten
 
 All pipeline skills declare `disable-model-invocation: true` in their frontmatter to ensure they can only be invoked by the user via explicit commands, strictly guaranteeing that model routing rules are enforced.
 
+#### Model roles & task-shaped routing (Jev)
+
+Instead of maintaining a model per stage, you can declare **three roles once** and let Pedstack route each stage entry to the right one. Roles are opt-in: nothing changes until a `models` or `routing` block exists.
+
+```json
+{
+  "models": {
+    "default": { "model": "anthropic/claude-haiku-3-5-20241022", "thinkingLevel": "medium" },
+    "review":  { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" },
+    "sota":    { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" }
+  },
+  "routing": {
+    "shadow": true,
+    "sotaMinScore": 0.6,
+    "sotaMinConfidence": 0.5,
+    "maxEscalationsPerStage": 1
+  }
+}
+```
+
+- **`models.default`** — the cheap normal-execution workhorse.
+- **`models.review`** — the independent reviewer, used only when a stage has no explicit `reviewers[]` and never when it equals `models.default`/`models.sota`.
+- **`models.sota`** — the escalation model, reached only through deterministic evidence or a qualifying Jev judgment.
+- **`routing.shadow`** — when `true` (default) routing computes and persists a decision but keeps applying the legacy per-stage model.
+- **`routing.sotaMinScore` / `sotaMinConfidence`** — deterministic thresholds (`[0, 1]`) a Jev judgment must clear before it may select `sota`.
+- **`routing.maxEscalationsPerStage`** — spend cap (`>= 1`) on applied `sota` escalations per stage.
+
+**Precedence at stage entry** (deterministic before semantic):
+
+1. An explicit per-stage `"model"` override wins verbatim.
+2. A stage-gate `escalate` verdict for the stage → `sota` (no Jev call).
+3. Otherwise Jev answers five bounded `noul` questions (`complexity`, `risk`, `cross_cutting`, `deep_reasoning`, `ambiguity`); TypeScript combines them with fixed weights and thresholds. Cleared with budget available → `sota`; threshold cleared but budget spent → `budget_exhausted`.
+4. Anything else — including a Jev outage or invalid answer → `default`.
+
+Every decision is persisted to `.context/compound-engineering/routing/<stage>.json` with its `role`, `reason` (`override | gate_escalate | jev | budget_exhausted | fallback`), `source`, and (for Jev) the atomic scores.
+
+**Migration strategy:** roles coexist with per-stage config. Run the default **shadow phase** first (`routing.shadow = true`; legacy models still apply, decisions are logged and persisted), then set `routing.shadow = false` to enforce, and eventually fold per-stage keys into `models` with a codemod (not shipped here). Operators with neither `models` nor `routing` configured keep byte-identical behavior and spawn no Jev subprocess.
+
+**Known limitation:** the review-independence guard compares `models.review` only against `models.default`/`models.sota`, not against a per-stage `review.model` override, so a config that sets both to the same id can still review itself. Tracked in the [independence-guard solution card](docs/solutions/workflow/independence-guards-must-enumerate-every-execution-model-source.md).
+
 Here is a complete configuration schema example:
 
 ```json
@@ -169,6 +210,17 @@ Here is a complete configuration schema example:
     "selectLimit": 12,
     "deadlineMs": 45000,
     "select": true
+  },
+  "models": {
+    "default": { "model": "anthropic/claude-haiku-3-5-20241022", "thinkingLevel": "medium" },
+    "review":  { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" },
+    "sota":    { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" }
+  },
+  "routing": {
+    "shadow": true,
+    "sotaMinScore": 0.6,
+    "sotaMinConfidence": 0.5,
+    "maxEscalationsPerStage": 1
   }
 }
 ```
@@ -189,6 +241,11 @@ Here is a complete configuration schema example:
   - `selectLimit` — maximum candidates in the second-pass Choice, capped at 20 (integer `>= 1`).
   - `deadlineMs` — total scout deadline in milliseconds (integer `>= 1`).
   - `select` — when `true` (default), `semantic_scout` runs the second-pass Choice recommendation. Unknown keys warn and are ignored; invalid values throw.
+- **`models`**: Named model roles (`default`, `review`, `sota`). Each role takes `{ "model": string, "thinkingLevel"?: string }`; all three keys are optional. Unknown keys warn and are ignored; invalid values throw. See [Model roles & task-shaped routing](#model-roles--task-shaped-routing-jev).
+- **`routing`**: Tunables for role resolution. All keys are optional and fall back to the defaults shown above.
+  - `shadow` — when `true` (default), routing computes and persists a decision but keeps applying the legacy per-stage model. Set to `false` to enforce role-based switching.
+  - `sotaMinScore` / `sotaMinConfidence` — a Jev judgment must reach both (`weighted >= sotaMinScore` and `confidence >= sotaMinConfidence`) before it may select `sota`; numbers in `[0, 1]`.
+  - `maxEscalationsPerStage` — cap on applied `sota` escalations per stage (integer `>= 1`).
 
 ### Dynamic Append Instructions
 
@@ -400,6 +457,7 @@ your-project/
         ├── active-stage.json  # Guard's persisted active stage
         ├── stage-reports/     # Per-stage completion reports
         ├── stage-gates/       # Stage-gate verdict records (content-hashed)
+        ├── routing/           # Per-stage model-routing decisions (role, reason, scores)
         └── jev-stage-guard.jsonl # Bash guard shadow verdict log (rotated at 1 MiB)
 ```
 
@@ -414,8 +472,8 @@ Commit everything to git — these files are the project's traceable memory.
 | Skills | 7 |
 | Tools | 16 CE + 10 Pi built-in |
 | Rules | 79 |
-| TypeScript lines | ~30,041 |
-| Tests | 883 (882 pass + 1 opt-in skip) (2,857 assertions) |
+| TypeScript lines | ~37,300 |
+| Tests | 1,087 (1,085 pass + 2 opt-in skips) (3,418 assertions) |
 
 Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, Rust, Go, Python, Java, Kotlin, C++, C#, Dart, Swift, Perl, PHP). Project-level overrides take priority.
 
@@ -433,7 +491,8 @@ save-side guard that `context_handoff save` consults on cross-stage completion s
 `typesafe/jev` decision model (Noul / Choice / Score questions over stdin). It registers
 **no Pi tool** of its own and adds **no dependency**; it is consumed by the stage gate, by
 the solution-ranking engine behind the `solution_search` tool and optional stage
-auto-injection, by the bash stage guard
+auto-injection, by the model-role routing resolver at stage entry
+(`extensions/ce-core/utils/model-routing.ts`), by the bash stage guard
 (`extensions/ce-core/utils/stage-guard-runtime.ts`) for the bounded semantic fallback on
 commands the deterministic classifier cannot prove, and by the failure-triage
 `tool_result` handler — all through an injected runtime so its validated
