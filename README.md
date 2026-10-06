@@ -22,6 +22,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Evidence-first review** — auto-assigned reviewers across five axes, autofix loop
 - **Knowledge compounding** — solved problems become searchable solution artifacts
 - **Semantic solution search** — the `solution_search` tool and stage auto-injection rank `docs/solutions/` cards with a Jev semantic layer over a deterministic, never-weaker fallback; ships shadow-first (inert until `solutionRanking.shadow=false`)
+- **Cheap semantic file reads** — `semantic_read` (one file) and `semantic_scout` (files/dirs/globs) return typed per-path answers plus byte facts — **never file bodies** — so the agent opens only the files it truly needs; a Jev outage degrades to explicit `read`/`grep` guidance
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a `PEDSTACK_DISABLE_GUARD=1` escape hatch
 - **Stage completion gate** — every stage scores the artifact it produced before its cross-stage handoff. Deterministic per-stage predicates (artifact present, required headings, no placeholders, persisted review findings) block in **both** `shadow` and `enforce`; CommandCode `typesafe/jev` adds a bounded semantic score via the `stage_gate` tool. `PEDSTACK_STAGE_GATE=off|shadow|enforce` (default `shadow`)
@@ -157,6 +158,14 @@ Here is a complete configuration schema example:
     "candidates": 15,
     "limit": 3,
     "shadow": true
+  },
+  "semanticRead": {
+    "excerptBytes": 4096,
+    "maxPaths": 24,
+    "concurrency": 4,
+    "selectLimit": 12,
+    "deadlineMs": 45000,
+    "select": true
   }
 }
 ```
@@ -170,6 +179,13 @@ Here is a complete configuration schema example:
   - `candidates` — deterministic recall cap before any Jev call (integer `>= 1`).
   - `limit` — maximum cards returned/injected (integer `>= 1`).
   - `shadow` — when `true` (default), auto-injection computes and logs but stays inert. Set to `false` to enforce stage injection. Unknown keys warn and are ignored; invalid values throw.
+- **`semanticRead`**: Tunables for the semantic read/scout engine (`semantic_read`, `semantic_scout`). All keys are optional and fall back to the defaults shown above.
+  - `excerptBytes` — per-path UTF-8 byte cap sent to Jev (integer `>= 1`).
+  - `maxPaths` — default scout cap on scored paths; clamped to 32 at engine runtime (integer `>= 1`).
+  - `concurrency` — maximum in-flight Jev decisions (integer `>= 1`).
+  - `selectLimit` — maximum candidates in the second-pass Choice, capped at 20 (integer `>= 1`).
+  - `deadlineMs` — total scout deadline in milliseconds (integer `>= 1`).
+  - `select` — when `true` (default), `semantic_scout` runs the second-pass Choice recommendation. Unknown keys warn and are ignored; invalid values throw.
 
 ### Dynamic Append Instructions
 
@@ -269,6 +285,23 @@ Stage discipline is not just prompt text. The ce-core extension hooks the `write
 - **Untrusted content:** injected card bodies are reference data, not instructions.
 
 **Enforcement checkpoint:** before setting `solutionRanking.shadow=false`, resolve the deferred findings (M1 request-cap byte-bounding of every serialized frontmatter field, M2 silent catch, M3 module-singleton reset) recorded in the [shadow-first solution card](docs/solutions/architecture/shadow-first-semantic-ranking-with-deterministic-fallback.md) via a `04-5-debug` pass. None block merge while the feature is inert.
+
+### Semantic file reads & scouting (#14)
+
+`semantic_read` answers one bounded semantic question about a single repo file; `semantic_scout` answers the same question across files, directories, and `*`/`**` globs. Both are thin wrappers over one engine (`extensions/ce-core/utils/semantic-file-ask.ts`) and return **typed answers plus deterministic facts — never file bodies** — so the agent opens only the files it actually needs.
+
+| Tool | Input | Returns |
+|------|-------|---------|
+| `semantic_read` | `path`, `question`, optional `type`/`criteria`, `repoRoot` | one typed answer + `path`, `fileBytes`, `excerptBytes`, `truncated` |
+| `semantic_scout` | `targets` (files/dirs/globs), `question`, optional `type`/`criteria`/`select`/`limit`, `repoRoot` | typed per-path answers + `counts` (with `omitted`), `savings`, optional `recommendation` |
+
+- **Guidance:** use `semantic_read`/`semantic_scout` for *judgments* ("does this matter?", "which should I open?"); use `read` for exact text or editing and `grep`/the code graph for deterministic facts.
+- **Budgets:** `excerptBytes` 4096, `maxPaths` 24 (hard cap 32), `concurrency` 4, `selectLimit` 12, `deadlineMs` 45000, `select` true — all tunable via the `semanticRead` config block.
+- **Deterministic policy stays in TypeScript:** path safety, directory/file pruning (`.git`, `node_modules`, build dirs, lock/minified/generated files), binary/empty detection, dedupe, caps, ordering, status, and savings. Jev answers only one bounded question per call.
+- **Status contract (`semantic_scout`):** `ok` (every attempted path answered), `partial` (some answers and some per-path failures, or zero answers without an outage), `empty` (no eligible candidates after pruning/filtering), `degraded` (Jev outage), `error` (invalid target/question/criteria). A per-path failure is isolated; it never aborts the batch.
+- **Never-weaker degraded fallback:** a full Jev outage returns `status: "degraded"` with explicit `read`/`grep` guidance — the engine never throws and never returns an unexplained empty list.
+
+**Known limitations (deferred to an on-demand `04-5-debug` pass):** the #14 review found that pruning and containment are enforced inside the child loop but not at every expansion entry point — an explicitly named pruned directory (`node_modules`) and a directory-symlink glob base are still walked, a zero-answer batch is reported as `partial` without explanation, and a file named `__proto__` is dropped from the second-pass Choice (M1, M2, M4, L6). Content is still protected by the downstream realpath check before any read, so this is a policy/semantics deviation, not a body leak. Findings are recorded in the [traversal-policy solution card](docs/solutions/architecture/apply-traversal-policy-to-expansion-roots.md).
 
 ---
 

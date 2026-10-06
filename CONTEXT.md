@@ -51,3 +51,28 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   threshold ⇒ explicit `status: "none"` ("no relevant solution").
 - **Overlap detection** — reusing `rankSolutions` with a newly written solution card
   as the query to surface semantically overlapping existing cards (`05-learn`).
+
+## Semantic file scouting (#14)
+
+- **Semantic read** — the `semantic_read` tool: one repo-relative file, one bounded
+  question, one typed answer plus byte facts; never a file body.
+- **Semantic scout** — the `semantic_scout` tool: expands files/dirs/globs into a
+  deduped candidate set, answers each within one deadline, reports counts/savings, and
+  optionally recommends the first file to open.
+- **Excerpt budget** — the per-path UTF-8 byte cap (default 4096) sent to Jev; the full
+  body is never returned to the model.
+- **Traversal policy** — directory/file pruning (`.git`, `node_modules`, build dirs,
+  lock/minified/generated files) and containment (reject any path or symlink target
+  escaping `repoRoot`) are properties of a path, not of how it was reached: they apply
+  at **every expansion entry point** (explicit file/dir target, glob base, walk root),
+  not only to discovered children. Directory symlinks are never followed.
+- **Status ladder** — the total `semantic_scout` status:
+  `ok` (all attempted paths answered) → `partial` (answers + per-path failures, or zero
+  answers with no outage) → `empty` (no eligible candidates) / `degraded` (Jev outage,
+  with `read`/`grep` guidance) / `error` (invalid target, question, or criteria). The
+  single-file `semantic_read` uses `ok | error | degraded`.
+- **Recommendation** — the optional `semantic_scout` output choosing the first file to
+  open, via a second-pass Jev `choice` (`source: "jev"`) or a deterministic ordering
+  (`source: "ordered"`).
+- **Outage** — a full Jev failure returns `status: "degraded"` plus explicit
+  `read`/`grep` guidance; never weaker than the current workflow.

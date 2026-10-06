@@ -27,6 +27,7 @@ import {
 	composeSolutionSystemPrompt,
 	registerSolutionSearch,
 } from "./utils/solution-wiring";
+import { registerSemanticTools } from "./utils/semantic-wiring";
 import { createReviewRouterTool } from "./tools/review-router";
 import { createSessionCheckpointTool } from "./tools/session-checkpoint";
 import { createTaskSplitterTool } from "./tools/task-splitter";
@@ -783,6 +784,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
 	// Semantic solution ranking: model-facing tool + auto-injection (one handler above).
 	registerSolutionSearch(pi);
+
+	// Cheap semantic file reads/scouting: model-facing tools over one engine.
+	registerSemanticTools(pi);
 
 	// Bash output smart filter — reduces context waste from verbose command output
 	pi.on("tool_result", async (event, _ctx) => {

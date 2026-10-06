@@ -34,13 +34,43 @@ export interface PiPedstackConfig {
   learn?: ReviewableStepConfig
   docsync?: StepConfig
   solutionRanking?: SolutionRankingConfig
+  semanticRead?: SemanticReadConfig
+}
+
+// ---------------------------------------------------------------------------
+// Semantic read budgets
+// ---------------------------------------------------------------------------
+
+/** Resolved budgets for the semantic read/scout engine (`semantic-file-ask.ts`). */
+export interface SemanticBudgets {
+  excerptBytes: number
+  maxPaths: number
+  concurrency: number
+  selectLimit: number
+  deadlineMs: number
+  select: boolean
+}
+
+/** Partial, operator-supplied `semanticRead` config block. */
+export type SemanticReadConfig = Partial<SemanticBudgets>
+
+export const DEFAULT_SEMANTIC_READ: SemanticBudgets = {
+  excerptBytes: 4096,
+  maxPaths: 24,
+  concurrency: 4,
+  selectLimit: 12,
+  deadlineMs: 45000,
+  select: true,
 }
 
 // ---------------------------------------------------------------------------
 // Step name mapping
 // ---------------------------------------------------------------------------
 
-export type StepConfigKey = Exclude<keyof PiPedstackConfig, "solutionRanking">
+export type StepConfigKey = Exclude<
+  keyof PiPedstackConfig,
+  "solutionRanking" | "semanticRead"
+>
 
 const SKILL_TO_CONFIG_KEY: Record<string, StepConfigKey> = {
   "01-brainstorm": "brainstorm",
@@ -96,12 +126,13 @@ const SOLUTION_RANKING_KEYS = new Set([
 function readUnitInterval(
   obj: Record<string, unknown>,
   key: string,
+  prefix = "solutionRanking",
 ): number | undefined {
   const value = obj[key]
   if (value === undefined) return undefined
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
     throw new Error(
-      `pi-pedstack config: "solutionRanking.${key}" must be a finite number in [0, 1]`,
+      `pi-pedstack config: "${prefix}.${key}" must be a finite number in [0, 1]`,
     )
   }
   return value
@@ -110,12 +141,13 @@ function readUnitInterval(
 function readPositiveInteger(
   obj: Record<string, unknown>,
   key: string,
+  prefix = "solutionRanking",
 ): number | undefined {
   const value = obj[key]
   if (value === undefined) return undefined
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
     throw new Error(
-      `pi-pedstack config: "solutionRanking.${key}" must be an integer >= 1`,
+      `pi-pedstack config: "${prefix}.${key}" must be an integer >= 1`,
     )
   }
   return value
@@ -124,19 +156,24 @@ function readPositiveInteger(
 function readBooleanField(
   obj: Record<string, unknown>,
   key: string,
+  prefix = "solutionRanking",
 ): boolean | undefined {
   const value = obj[key]
   if (value === undefined) return undefined
   if (typeof value !== "boolean") {
-    throw new Error(`pi-pedstack config: "solutionRanking.${key}" must be a boolean`)
+    throw new Error(`pi-pedstack config: "${prefix}.${key}" must be a boolean`)
   }
   return value
 }
 
-function warnUnknownSolutionRankingKeys(obj: Record<string, unknown>): void {
+function warnUnknownKeys(
+  obj: Record<string, unknown>,
+  allowed: Set<string>,
+  prefix: string,
+): void {
   for (const key of Object.keys(obj)) {
-    if (!SOLUTION_RANKING_KEYS.has(key)) {
-      console.warn(`[pi-pedstack] Unknown solutionRanking key: "${key}"`)
+    if (!allowed.has(key)) {
+      console.warn(`[pi-pedstack] Unknown ${prefix} key: "${key}"`)
     }
   }
 }
@@ -160,9 +197,59 @@ function validateSolutionRanking(raw: unknown): SolutionRankingConfig {
   const shadow = readBooleanField(obj, "shadow")
   if (shadow !== undefined) result.shadow = shadow
 
-  warnUnknownSolutionRankingKeys(obj)
+  warnUnknownKeys(obj, SOLUTION_RANKING_KEYS, "solutionRanking")
 
   return result
+}
+
+const SEMANTIC_READ_KEYS = new Set([
+  "excerptBytes",
+  "maxPaths",
+  "concurrency",
+  "selectLimit",
+  "deadlineMs",
+  "select",
+])
+
+function validateSemanticRead(raw: unknown): SemanticReadConfig {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error('pi-pedstack config: "semanticRead" must be an object')
+  }
+
+  const obj = raw as Record<string, unknown>
+  const result: SemanticReadConfig = {}
+
+  for (const key of [
+    "excerptBytes",
+    "maxPaths",
+    "concurrency",
+    "selectLimit",
+    "deadlineMs",
+  ] as const) {
+    const value = readPositiveInteger(obj, key, "semanticRead")
+    if (value !== undefined) result[key] = value
+  }
+  const select = readBooleanField(obj, "select", "semanticRead")
+  if (select !== undefined) result.select = select
+
+  warnUnknownKeys(obj, SEMANTIC_READ_KEYS, "semanticRead")
+
+  return result
+}
+
+/** Merge a validated (possibly partial) config with the documented defaults. */
+export function resolveSemanticReadConfig(
+  config: PiPedstackConfig | null,
+): SemanticBudgets {
+  const raw = config?.semanticRead ?? {}
+  return {
+    excerptBytes: raw.excerptBytes ?? DEFAULT_SEMANTIC_READ.excerptBytes,
+    maxPaths: raw.maxPaths ?? DEFAULT_SEMANTIC_READ.maxPaths,
+    concurrency: raw.concurrency ?? DEFAULT_SEMANTIC_READ.concurrency,
+    selectLimit: raw.selectLimit ?? DEFAULT_SEMANTIC_READ.selectLimit,
+    deadlineMs: raw.deadlineMs ?? DEFAULT_SEMANTIC_READ.deadlineMs,
+    select: raw.select ?? DEFAULT_SEMANTIC_READ.select,
+  }
 }
 
 /** Merge a validated (possibly partial) config with the documented defaults. */
@@ -212,7 +299,7 @@ function applyReviewableStepConfigs(
 
 function warnUnknownConfigKeys(obj: Record<string, unknown>): void {
   for (const key of Object.keys(obj)) {
-    if (!VALID_STEP_NAMES.has(key) && key !== "solutionRanking") {
+    if (!VALID_STEP_NAMES.has(key) && key !== "solutionRanking" && key !== "semanticRead") {
       console.warn(`[pi-pedstack] Unknown config key: "${key}". Valid keys: ${[...VALID_STEP_NAMES].join(", ")}`)
     }
   }
@@ -231,6 +318,10 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
 
   if (obj.solutionRanking !== undefined) {
     config.solutionRanking = validateSolutionRanking(obj.solutionRanking)
+  }
+
+  if (obj.semanticRead !== undefined) {
+    config.semanticRead = validateSemanticRead(obj.semanticRead)
   }
 
   warnUnknownConfigKeys(obj)

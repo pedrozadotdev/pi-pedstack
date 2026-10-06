@@ -102,4 +102,13 @@ describe("package bootstrap structure", () => {
 		expect(workflow).toContain("main");
 		expect(workflow).toContain("bun test");
 	});
+
+	test("README and CONTEXT document the semantic read/scout tools", () => {
+		const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
+		expect(readme).toContain("semantic_read");
+		expect(readme).toContain("semantic_scout");
+
+		const context = readFileSync(path.join(repoRoot, "CONTEXT.md"), "utf8");
+		expect(context).toContain("Semantic scout");
+	});
 });
