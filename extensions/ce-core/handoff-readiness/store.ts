@@ -29,22 +29,6 @@ const VERDICTS = new Set<ReadinessVerdict>([
 const SOURCES = new Set<ReadinessSource>(["jev", "deterministic", "degraded"]);
 const DIMENSION_IDS = new Set<string>(READINESS_QUESTION_IDS);
 
-/** `PEDSTACK_HANDOFF_READINESS`: missing/empty/invalid resolves to `shadow`. */
-export function resolveReadinessMode(
-	env: Record<string, string | undefined>,
-): ReadinessMode {
-	const value = env.PEDSTACK_HANDOFF_READINESS;
-	if (value === "off") return "off";
-	if (value === "enforce") return "enforce";
-	return "shadow";
-}
-
-export function resolveReadinessFailClosed(
-	env: Record<string, string | undefined>,
-): boolean {
-	return env.PEDSTACK_HANDOFF_READINESS_FAILCLOSED === "1";
-}
-
 /** Slugified `<currentStage>-<nextStage>`, defaulting a missing next to current. */
 export function pairSlug(
 	currentStage?: string,

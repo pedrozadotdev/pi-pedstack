@@ -30,7 +30,7 @@ import {
 	createInjectionScreenEngine,
 	type InjectionScreenEngine,
 } from "./engine";
-import { resolveScreenMode, type ScreenMode } from "./provenance";
+import type { ScreenMode } from "./provenance";
 import {
 	resetInjectionScreenState,
 	wrapTracker,
@@ -38,7 +38,6 @@ import {
 } from "./wrapper";
 
 const NOTIFY_MESSAGES = {
-	mode: "PEDSTACK_INJECTION_SCREEN has an unrecognized value; falling back to shadow mode.",
 	degraded:
 		"Injection screen degraded (Jev unavailable). Unverified content passed through unwrapped.",
 	wrapMiss:
@@ -46,6 +45,7 @@ const NOTIFY_MESSAGES = {
 };
 
 export interface InjectionScreenDeps {
+	mode: ScreenMode;
 	jev?: JevRuntime;
 	jevFactory?: () => JevRuntime;
 	now?: () => Date;
@@ -71,7 +71,6 @@ interface Runtime {
 	mode: ScreenMode;
 	repoRoot: string;
 	notifyOnce(ctx: ExtensionContext | undefined, key: string, message: string): void;
-	warnModeOnce(ctx: ExtensionContext | undefined): void;
 }
 
 function readToolCallId(event: unknown): string | undefined {
@@ -128,7 +127,6 @@ async function screenRawPhase(
 	event: ToolResultEvent,
 	ctx: ExtensionContext,
 ): Promise<void> {
-	rt.warnModeOnce(ctx);
 	try {
 		const toolName = (event as { toolName?: unknown }).toolName;
 		if (!isScreenableTool(toolName)) return;
@@ -163,7 +161,6 @@ async function wrapFinalPhase(
 	event: ToolResultEvent,
 	ctx: ExtensionContext,
 ): Promise<ToolResultPatch | void> {
-	rt.warnModeOnce(ctx);
 	try {
 		const toolName = (event as { toolName?: unknown }).toolName;
 		if (!isScreenableTool(toolName)) return;
@@ -221,9 +218,9 @@ function clearAtShutdown(rt: Runtime): void {
 
 export function registerInjectionScreen(
 	pi: ExtensionAPI,
-	deps: InjectionScreenDeps = {},
+	deps: InjectionScreenDeps,
 ): InjectionScreenHandle {
-	const { mode, invalid } = resolveScreenMode(process.env);
+	const mode = deps.mode;
 	const repoRoot = deps.repoRoot ?? process.cwd();
 
 	let lazyJev: JevRuntime | null = null;
@@ -258,11 +255,6 @@ export function registerInjectionScreen(
 				ctx.ui.notify(message, "warning");
 			} catch {
 				// ponytail: a notify failure must never affect the tool result.
-			}
-		},
-		warnModeOnce(ctx) {
-			if (invalid) {
-				rt.notifyOnce(ctx, "mode", NOTIFY_MESSAGES.mode);
 			}
 		},
 	};

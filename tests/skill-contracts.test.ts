@@ -383,13 +383,13 @@ describe("stage gate skill wiring (Unit 8)", () => {
 		"06-docsync": "skills/06-docsync/SKILL.md",
 	};
 
-	test("pipeline-config documents stage_gate and PEDSTACK_STAGE_GATE", () => {
+	test("pipeline-config documents stage_gate and config.json mode", () => {
 		const content = readFileSync(
 			path.join(repoRoot, "skills", "references", "pipeline-config.md"),
 			"utf8",
 		);
 		expect(content).toContain("stage_gate");
-		expect(content).toContain("PEDSTACK_STAGE_GATE");
+		expect(content).toContain("features.stageGate.mode");
 	});
 
 	test("every stage doc runs stage_gate before its completion save", () => {
@@ -481,10 +481,10 @@ describe("02-plan strict review reference (Unit 7)", () => {
 describe("docs-verification wiring (Unit 9)", () => {
 	const read = (rel: string): string => readFileSync(path.join(repoRoot, rel), "utf8");
 
-	test("every edited doc names the PEDSTACK_DOCS_VERIFICATION mode switch", () => {
+	test("every edited doc names the docs-verification config mode", () => {
 		for (const rel of ["AGENTS.md", "README.md", "CONTEXT.md"]) {
 			const content = read(rel);
-			expect({ rel, has: content.includes("PEDSTACK_DOCS_VERIFICATION") }).toEqual({
+			expect({ rel, has: content.includes("features.docsVerification.mode") }).toEqual({
 				rel,
 				has: true,
 			});
@@ -496,7 +496,7 @@ describe("docs-verification wiring (Unit 9)", () => {
 			const content = read(rel);
 			expect({
 				rel,
-				has: content.includes("PEDSTACK_DOCS_VERIFICATION_FAILCLOSED"),
+				has: content.includes("features.docsVerification.failClosed"),
 			}).toEqual({ rel, has: true });
 		}
 	});

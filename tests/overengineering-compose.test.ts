@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { composeOverengineeringSignal, resolveOverengineeringMode } from "../extensions/ce-core/overengineering/compose.js";
+import { composeOverengineeringSignal } from "../extensions/ce-core/overengineering/compose.js";
 import {
 	appendOverengineeringShadow,
 	OVERENGINEERING_LOG_FILE,
@@ -35,12 +35,6 @@ afterEach(async () => {
 });
 
 describe("overengineering compose (Unit 5)", () => {
-	test("resolveOverengineeringMode is env-only with a shadow default", () => {
-		expect(resolveOverengineeringMode({})).toBe("shadow");
-		expect(resolveOverengineeringMode({ PEDSTACK_OVERENGINEERING: "bogus" })).toBe("shadow");
-		expect(resolveOverengineeringMode({ PEDSTACK_OVERENGINEERING: "off" })).toBe("off");
-		expect(resolveOverengineeringMode({ PEDSTACK_OVERENGINEERING: "enforce" })).toBe("enforce");
-	});
 
 	test("off performs no git call and no file read", async () => {
 		let gitCalls = 0;

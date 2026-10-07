@@ -226,7 +226,7 @@ function blockedReason(
 	return (
 		`Pedstack stage guard blocked this write: stage "${stage}" may not write ` +
 		`path "${rawPath}" (class: ${pathClass}). Writable classes for ${stage}: ` +
-		`${writable}. Set PEDSTACK_DISABLE_GUARD=1 to bypass.`
+		`${writable}. Set "features.stageGuard.disabled": true in config.json to bypass.`
 	);
 }
 
@@ -240,6 +240,6 @@ function workflowStateReason(
 		`Pedstack stage guard blocked this write: ${stageLabel} may never write ` +
 		`workflow state path "${rawPath}" (class: workflow-state). Workflow ` +
 		`state is managed by extension tools, not write/edit. ` +
-		`Set PEDSTACK_DISABLE_GUARD=1 to bypass.`
+		`Set "features.stageGuard.disabled": true in config.json to bypass.`
 	);
 }

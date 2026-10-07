@@ -212,7 +212,7 @@ describe("evaluateWrite matrix", () => {
 		expect(reason).toContain("source");
 		expect(reason).toContain("extensions/ce-core/index.ts");
 		expect(reason).toContain("plan");
-		expect(reason).toContain("PEDSTACK_DISABLE_GUARD=1");
+		expect(reason).toContain("features.stageGuard.disabled");
 	});
 
 	test("workflow-state is blocked even without a known stage", () => {
@@ -224,7 +224,7 @@ describe("evaluateWrite matrix", () => {
 		expect(verdict.allow).toBe(false);
 		expect(verdict.pathClass).toBe("workflow-state");
 		expect(verdict.reason).toContain("workflow-state");
-		expect(verdict.reason).toContain("PEDSTACK_DISABLE_GUARD=1");
+		expect(verdict.reason).toContain("features.stageGuard.disabled");
 	});
 
 	test("blocks conflicting-basename .context paths in every stage (C1)", () => {

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises"
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import * as os from "node:os"
 import {
@@ -29,6 +30,59 @@ export interface ModelRolesConfig {
   default?: StepConfig
   review?: StepConfig
   sota?: StepConfig
+}
+
+
+export type FeatureMode = "off" | "shadow" | "enforce"
+
+export interface ModeFeatureConfig {
+  mode?: FeatureMode
+}
+
+export interface FailClosedFeatureConfig extends ModeFeatureConfig {
+  failClosed?: boolean
+}
+
+export interface CompactionGuardFeatureConfig extends ModeFeatureConfig {
+  live?: boolean
+}
+
+export interface StageGuardFeatureConfig extends FailClosedFeatureConfig {
+  /** Bypass both deterministic write/edit and semantic bash stage guards. */
+  disabled?: boolean
+}
+
+export interface FeaturesConfig {
+  stageGate?: ModeFeatureConfig
+  overengineering?: ModeFeatureConfig
+  handoffReadiness?: FailClosedFeatureConfig
+  docsVerification?: FailClosedFeatureConfig
+  driftGuard?: FailClosedFeatureConfig
+  compactionGuard?: CompactionGuardFeatureConfig
+  injectionScreen?: ModeFeatureConfig
+  stageGuard?: StageGuardFeatureConfig
+}
+
+export interface ResolvedFeaturesConfig {
+  stageGate: { mode: FeatureMode }
+  overengineering: { mode: FeatureMode }
+  handoffReadiness: { mode: FeatureMode; failClosed: boolean }
+  docsVerification: { mode: FeatureMode; failClosed: boolean }
+  driftGuard: { mode: FeatureMode; failClosed: boolean }
+  compactionGuard: { mode: FeatureMode; live: boolean }
+  injectionScreen: { mode: FeatureMode }
+  stageGuard: { mode: FeatureMode; failClosed: boolean; disabled: boolean }
+}
+
+export const DEFAULT_FEATURES: ResolvedFeaturesConfig = {
+  stageGate: { mode: "shadow" },
+  overengineering: { mode: "shadow" },
+  handoffReadiness: { mode: "shadow", failClosed: false },
+  docsVerification: { mode: "shadow", failClosed: false },
+  driftGuard: { mode: "shadow", failClosed: false },
+  compactionGuard: { mode: "shadow", live: false },
+  injectionScreen: { mode: "shadow" },
+  stageGuard: { mode: "shadow", failClosed: false, disabled: false },
 }
 
 /** Partial, operator-supplied `routing` config block. */
@@ -66,6 +120,7 @@ export interface PiPedstackConfig {
   semanticRead?: SemanticReadConfig
   models?: ModelRolesConfig
   routing?: RoutingConfig
+  features?: FeaturesConfig
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +155,7 @@ export const DEFAULT_SEMANTIC_READ: SemanticBudgets = {
 
 export type StepConfigKey = Exclude<
   keyof PiPedstackConfig,
-  "solutionRanking" | "semanticRead" | "models" | "routing"
+  "solutionRanking" | "semanticRead" | "models" | "routing" | "features"
 >
 
 const SKILL_TO_CONFIG_KEY: Record<string, StepConfigKey> = {
@@ -265,6 +320,183 @@ function validateRouting(raw: unknown): RoutingConfig {
   return result
 }
 
+
+const FEATURE_KEYS = new Set([
+  "stageGate",
+  "overengineering",
+  "handoffReadiness",
+  "docsVerification",
+  "driftGuard",
+  "compactionGuard",
+  "injectionScreen",
+  "stageGuard",
+])
+
+function readFeatureMode(
+  obj: Record<string, unknown>,
+  prefix: string,
+): FeatureMode | undefined {
+  const value = obj.mode
+  if (value === undefined) return undefined
+  if (value !== "off" && value !== "shadow" && value !== "enforce") {
+    throw new Error(
+      `pi-pedstack config: "${prefix}.mode" must be "off", "shadow", or "enforce"`,
+    )
+  }
+  return value
+}
+
+function validateFeatureEntry(
+  raw: unknown,
+  prefix: string,
+  options: { failClosed?: boolean; live?: boolean; disabled?: boolean } = {},
+): ModeFeatureConfig & {
+  failClosed?: boolean
+  live?: boolean
+  disabled?: boolean
+} {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`pi-pedstack config: "${prefix}" must be an object`)
+  }
+  const obj = raw as Record<string, unknown>
+  const result: ModeFeatureConfig & {
+    failClosed?: boolean
+    live?: boolean
+    disabled?: boolean
+  } = {}
+  const mode = readFeatureMode(obj, prefix)
+  if (mode !== undefined) result.mode = mode
+
+  const allowed = new Set(["mode"])
+  if (options.failClosed) {
+    allowed.add("failClosed")
+    const value = readBooleanField(obj, "failClosed", prefix)
+    if (value !== undefined) result.failClosed = value
+  }
+  if (options.live) {
+    allowed.add("live")
+    const value = readBooleanField(obj, "live", prefix)
+    if (value !== undefined) result.live = value
+  }
+  if (options.disabled) {
+    allowed.add("disabled")
+    const value = readBooleanField(obj, "disabled", prefix)
+    if (value !== undefined) result.disabled = value
+  }
+  warnUnknownKeys(obj, allowed, prefix)
+  return result
+}
+
+function validateFeatures(raw: unknown): FeaturesConfig {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error('pi-pedstack config: "features" must be an object')
+  }
+  const obj = raw as Record<string, unknown>
+  const result: FeaturesConfig = {}
+
+  if (obj.stageGate !== undefined) {
+    result.stageGate = validateFeatureEntry(obj.stageGate, "features.stageGate")
+  }
+  if (obj.overengineering !== undefined) {
+    result.overengineering = validateFeatureEntry(
+      obj.overengineering,
+      "features.overengineering",
+    )
+  }
+  if (obj.handoffReadiness !== undefined) {
+    result.handoffReadiness = validateFeatureEntry(
+      obj.handoffReadiness,
+      "features.handoffReadiness",
+      { failClosed: true },
+    )
+  }
+  if (obj.docsVerification !== undefined) {
+    result.docsVerification = validateFeatureEntry(
+      obj.docsVerification,
+      "features.docsVerification",
+      { failClosed: true },
+    )
+  }
+  if (obj.driftGuard !== undefined) {
+    result.driftGuard = validateFeatureEntry(
+      obj.driftGuard,
+      "features.driftGuard",
+      { failClosed: true },
+    )
+  }
+  if (obj.compactionGuard !== undefined) {
+    result.compactionGuard = validateFeatureEntry(
+      obj.compactionGuard,
+      "features.compactionGuard",
+      { live: true },
+    )
+  }
+  if (obj.injectionScreen !== undefined) {
+    result.injectionScreen = validateFeatureEntry(
+      obj.injectionScreen,
+      "features.injectionScreen",
+    )
+  }
+  if (obj.stageGuard !== undefined) {
+    result.stageGuard = validateFeatureEntry(
+      obj.stageGuard,
+      "features.stageGuard",
+      { failClosed: true, disabled: true },
+    )
+  }
+
+  warnUnknownKeys(obj, FEATURE_KEYS, "features")
+  return result
+}
+
+export function resolveFeaturesConfig(
+  config: PiPedstackConfig | null,
+): ResolvedFeaturesConfig {
+  const raw = config?.features ?? {}
+  return {
+    stageGate: {
+      mode: raw.stageGate?.mode ?? DEFAULT_FEATURES.stageGate.mode,
+    },
+    overengineering: {
+      mode: raw.overengineering?.mode ?? DEFAULT_FEATURES.overengineering.mode,
+    },
+    handoffReadiness: {
+      mode:
+        raw.handoffReadiness?.mode ?? DEFAULT_FEATURES.handoffReadiness.mode,
+      failClosed:
+        raw.handoffReadiness?.failClosed ??
+        DEFAULT_FEATURES.handoffReadiness.failClosed,
+    },
+    docsVerification: {
+      mode:
+        raw.docsVerification?.mode ?? DEFAULT_FEATURES.docsVerification.mode,
+      failClosed:
+        raw.docsVerification?.failClosed ??
+        DEFAULT_FEATURES.docsVerification.failClosed,
+    },
+    driftGuard: {
+      mode: raw.driftGuard?.mode ?? DEFAULT_FEATURES.driftGuard.mode,
+      failClosed:
+        raw.driftGuard?.failClosed ?? DEFAULT_FEATURES.driftGuard.failClosed,
+    },
+    compactionGuard: {
+      mode:
+        raw.compactionGuard?.mode ?? DEFAULT_FEATURES.compactionGuard.mode,
+      live: raw.compactionGuard?.live ?? DEFAULT_FEATURES.compactionGuard.live,
+    },
+    injectionScreen: {
+      mode:
+        raw.injectionScreen?.mode ?? DEFAULT_FEATURES.injectionScreen.mode,
+    },
+    stageGuard: {
+      mode: raw.stageGuard?.mode ?? DEFAULT_FEATURES.stageGuard.mode,
+      failClosed:
+        raw.stageGuard?.failClosed ?? DEFAULT_FEATURES.stageGuard.failClosed,
+      disabled: raw.stageGuard?.disabled ?? DEFAULT_FEATURES.stageGuard.disabled,
+    },
+  }
+}
+
 /** Merge a validated (possibly partial) config with the documented defaults. */
 export function resolveModelRolesConfig(
   config: PiPedstackConfig | null,
@@ -413,7 +645,8 @@ function warnUnknownConfigKeys(obj: Record<string, unknown>): void {
       key !== "solutionRanking" &&
       key !== "semanticRead" &&
       key !== "models" &&
-      key !== "routing"
+      key !== "routing" &&
+      key !== "features"
     ) {
       console.warn(`[pi-pedstack] Unknown config key: "${key}". Valid keys: ${[...VALID_STEP_NAMES].join(", ")}`)
     }
@@ -447,6 +680,10 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
     config.routing = validateRouting(obj.routing)
   }
 
+  if (obj.features !== undefined) {
+    config.features = validateFeatures(obj.features)
+  }
+
   warnUnknownConfigKeys(obj)
   return config
 }
@@ -460,24 +697,49 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
  * 1. Project-level: {cwd}/.pi/pi-pedstack/config.json (highest priority)
  * 2. Global-level: ~/.pi/pi-pedstack/config.json (fallback)
  */
+function isMissingConfig(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  )
+}
+
+export function readPiPedstackConfigSync(cwd: string): PiPedstackConfig | null {
+  const projectPath = path.join(cwd, ".pi", "pi-pedstack", "config.json")
+  try {
+    const content = readFileSync(projectPath, "utf8")
+    return validatePiPedstackConfig(JSON.parse(content))
+  } catch (error) {
+    if (!isMissingConfig(error)) throw error
+  }
+
+  const globalPath = path.join(os.homedir(), ".pi", "pi-pedstack", "config.json")
+  try {
+    const content = readFileSync(globalPath, "utf8")
+    return validatePiPedstackConfig(JSON.parse(content))
+  } catch (error) {
+    if (isMissingConfig(error)) return null
+    throw error
+  }
+}
+
 export async function readPiPedstackConfig(cwd: string): Promise<PiPedstackConfig | null> {
-  // Try project-level config
   const projectPath = path.join(cwd, ".pi", "pi-pedstack", "config.json")
   try {
     const content = await readFile(projectPath, "utf8")
-    const parsed = JSON.parse(content)
-    return validatePiPedstackConfig(parsed)
-  } catch {
-    // Project config not found, continue to global
+    return validatePiPedstackConfig(JSON.parse(content))
+  } catch (error) {
+    if (!isMissingConfig(error)) throw error
   }
 
-  // Fallback to global-level
   const globalPath = path.join(os.homedir(), ".pi", "pi-pedstack", "config.json")
   try {
     const content = await readFile(globalPath, "utf8")
-    const parsed = JSON.parse(content)
-    return validatePiPedstackConfig(parsed)
-  } catch {
-    return null
+    return validatePiPedstackConfig(JSON.parse(content))
+  } catch (error) {
+    if (isMissingConfig(error)) return null
+    throw error
   }
 }

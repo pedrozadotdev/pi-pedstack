@@ -62,22 +62,6 @@ const VERDICTS = new Set<DriftVerdict>([
 const SOURCES = new Set<DriftSource>(["jev", "deterministic", "degraded"]);
 const DIMENSION_IDS = new Set<string>(DRIFT_QUESTION_IDS);
 
-/** `PEDSTACK_DRIFT_GUARD`: missing/empty/invalid resolves to `shadow`. */
-export function resolveDriftMode(
-	env: Record<string, string | undefined>,
-): DriftMode {
-	const value = env.PEDSTACK_DRIFT_GUARD;
-	if (value === "off") return "off";
-	if (value === "enforce") return "enforce";
-	return "shadow";
-}
-
-export function resolveDriftFailClosed(
-	env: Record<string, string | undefined>,
-): boolean {
-	return env.PEDSTACK_DRIFT_GUARD_FAILCLOSED === "1";
-}
-
 export function driftRecordPath(repoRoot: string, stage: string): string {
 	return path.join(repoRoot, driftRecordRelPath(stage));
 }

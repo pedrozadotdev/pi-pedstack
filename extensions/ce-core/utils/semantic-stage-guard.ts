@@ -116,7 +116,8 @@ function capabilitiesFor(stage: string | null | undefined): string[] {
 
 // ── Block message templates ────────────────────────────────────────
 
-const OVERRIDE_HINT = "Set PEDSTACK_DISABLE_GUARD=1 to bypass.";
+const OVERRIDE_HINT =
+	'Set "features.stageGuard.disabled": true in config.json to bypass.';
 
 function literalTargetReason(
 	stage: string,
@@ -522,9 +523,3 @@ function mapSignals(
 	return fallbackVerdict(plan, `unmapped effect "${effect}"`);
 }
 
-/** Parse `PEDSTACK_JEV_STAGE_GUARD`; invalid/absent values fail safe to shadow. */
-export function parseGuardMode(raw: string | undefined): GuardMode {
-	return raw === "off" || raw === "shadow" || raw === "enforce"
-		? raw
-		: "shadow";
-}

@@ -6,7 +6,6 @@ import {
 	MIN_EFFECT_CONFIDENCE,
 	MIN_INTENT_CONFIDENCE,
 	MESSAGE_COMMAND_MAX_CHARS,
-	parseGuardMode,
 	planCommandGuard,
 	redactCommand,
 	TRUNCATION_MARKER,
@@ -185,7 +184,7 @@ describe("applyJevAnswers", () => {
 		);
 		expect(verdict.verdict).toBe("block");
 		expect(verdict.reason).toContain("02-plan");
-		expect(verdict.reason).toContain("PEDSTACK_DISABLE_GUARD=1");
+		expect(verdict.reason).toContain("features.stageGuard.disabled");
 	});
 
 	test("mutates without intent allows", () => {
@@ -347,12 +346,3 @@ describe("redactCommand and truncateCommand", () => {
 
 // ── parseGuardMode ─────────────────────────────────────────────────
 
-describe("parseGuardMode", () => {
-	test("maps the documented values and fails safe to shadow", () => {
-		expect(parseGuardMode("off")).toBe("off");
-		expect(parseGuardMode("shadow")).toBe("shadow");
-		expect(parseGuardMode("enforce")).toBe("enforce");
-		expect(parseGuardMode(undefined)).toBe("shadow");
-		expect(parseGuardMode("bogus")).toBe("shadow");
-	});
-});
