@@ -78,6 +78,7 @@ import {
 	cmdPedReload,
 	cmdPedFixIssues,
 	startStageFromRememberedContext,
+	rememberCommandContext,
 	isModelVisible,
 	findPreConversationEntry,
 	findFreshTargetId,
@@ -425,6 +426,294 @@ describe("commands/pedstack: session-traversal helpers", () => {
 			// Should have sent ONE message: just the optional prompt (skill path stored separately)
 			expect(sentMessages.length).toBe(1);
 			expect(sentMessages[0].content).toBe("focus on error handling");
+		});
+
+		test("stale 04-review→05-learn handoff with findings routes to 03-work", async () => {
+			const repo = await mkdtemp(path.join(tmpdir(), "pi-pedstack-next-review-"));
+			try {
+				const ceDir = path.join(repo, ".context", "compound-engineering");
+				const reviewDir = path.join(repo, "docs", "reviews");
+				await mkdir(ceDir, { recursive: true });
+				await mkdir(reviewDir, { recursive: true });
+				const reviewPath = "docs/reviews/topic.md";
+				await writeFile(
+					path.join(repo, reviewPath),
+					[
+						"# Review",
+						"",
+						"## Review Outcome",
+						"- Status: findings",
+						"- Findings: 2",
+						"",
+						"- **Finding**: first issue",
+						"- **Finding**: second issue",
+					].join("\n"),
+				);
+				await writeFile(
+					path.join(ceDir, "context-state.json"),
+					JSON.stringify({
+						currentStage: "04-review",
+						nextStage: "05-learn",
+						contextHealth: "good",
+						artifacts: { review: reviewPath },
+						activeFiles: [],
+						recentlyAccessedFiles: [],
+						currentTruth: [],
+						invalidatedAssumptions: [],
+						openDecisions: [],
+						compressionRisk: [],
+					}),
+				);
+
+				const appendCalls: Array<{ type: string; data: any }> = [];
+				const sentMessages: string[] = [];
+				const notifications: string[] = [];
+				const pi = {
+					appendEntry(type: string, data?: any) {
+						appendCalls.push({ type, data });
+					},
+					sendUserMessage(content: string) {
+						sentMessages.push(content);
+					},
+					setModel: async () => true,
+					setThinkingLevel: () => {},
+					getThinkingLevel: () => "medium",
+				} as any;
+				const ctx = {
+					hasUI: true,
+					cwd: repo,
+					sessionManager: {
+						getLeafId: () => "leaf-1",
+						getBranch: () => [
+							{ type: "message", id: "msg-1", parentId: "root-1" } as SessionEntry,
+						],
+					},
+					model: { provider: "anthropic", id: "sonnet" },
+					modelRegistry: { find: () => undefined },
+					ui: { notify: (message: string) => notifications.push(message) },
+					navigateTree: async () => ({ cancelled: false }),
+					waitForIdle: async () => {},
+				} as any;
+
+				await cmdPedNext(pi).handler("", ctx);
+
+				expect(appendCalls[0].data.stage).toBe("03-work");
+				expect(sentMessages[0]).toContain("Fix the unresolved review findings");
+				expect(sentMessages[0]).toContain(reviewPath);
+				expect(
+					notifications.some((message) =>
+						message.includes("overrides stale handoff route"),
+					),
+				).toBe(true);
+			} finally {
+				await rm(repo, { recursive: true, force: true });
+			}
+		});
+
+		test("legacy pre-outcome review with structured findings routes to 03-work", async () => {
+			const repo = await mkdtemp(path.join(tmpdir(), "pi-pedstack-next-legacy-review-"));
+			try {
+				const ceDir = path.join(repo, ".context", "compound-engineering");
+				const reviewDir = path.join(repo, "docs", "reviews");
+				await mkdir(ceDir, { recursive: true });
+				await mkdir(reviewDir, { recursive: true });
+				await writeFile(
+					path.join(reviewDir, "legacy.md"),
+					[
+						"# Review",
+						"- **Finding**: first unresolved issue",
+						"- **Finding**: second unresolved issue",
+					].join("\n"),
+				);
+				await writeFile(
+					path.join(ceDir, "context-state.json"),
+					JSON.stringify({
+						currentStage: "04-review",
+						nextStage: "05-learn",
+						contextHealth: "good",
+						artifacts: {},
+						activeFiles: [],
+						recentlyAccessedFiles: [],
+						currentTruth: [],
+						invalidatedAssumptions: [],
+						openDecisions: [],
+						compressionRisk: [],
+					}),
+				);
+
+				const appendCalls: Array<{ type: string; data: any }> = [];
+				const sentMessages: string[] = [];
+				const pi = {
+					appendEntry(type: string, data?: any) {
+						appendCalls.push({ type, data });
+					},
+					sendUserMessage(content: string) {
+						sentMessages.push(content);
+					},
+					setModel: async () => true,
+					setThinkingLevel: () => {},
+					getThinkingLevel: () => "medium",
+				} as any;
+				const ctx = {
+					hasUI: false,
+					cwd: repo,
+					sessionManager: {
+						getLeafId: () => "leaf-1",
+						getBranch: () => [
+							{ type: "message", id: "msg-1", parentId: "root-1" } as SessionEntry,
+						],
+					},
+					model: { provider: "anthropic", id: "sonnet" },
+					modelRegistry: { find: () => undefined },
+					ui: { notify: () => {} },
+					navigateTree: async () => ({ cancelled: false }),
+					waitForIdle: async () => {},
+				} as any;
+
+				await cmdPedNext(pi).handler("", ctx);
+
+				expect(appendCalls[0].data.stage).toBe("03-work");
+				expect(sentMessages[0]).toContain("docs/reviews/legacy.md");
+			} finally {
+				await rm(repo, { recursive: true, force: true });
+			}
+		});
+
+		test("stale review without valid outcome or detectable findings does not advance", async () => {
+			const repo = await mkdtemp(path.join(tmpdir(), "pi-pedstack-next-ambiguous-review-"));
+			try {
+				const ceDir = path.join(repo, ".context", "compound-engineering");
+				const reviewDir = path.join(repo, "docs", "reviews");
+				await mkdir(ceDir, { recursive: true });
+				await mkdir(reviewDir, { recursive: true });
+				await writeFile(path.join(reviewDir, "legacy.md"), "# Review\nLooks good.");
+				await writeFile(
+					path.join(ceDir, "context-state.json"),
+					JSON.stringify({
+						currentStage: "04-review",
+						nextStage: "05-learn",
+						contextHealth: "good",
+						artifacts: {},
+						activeFiles: [],
+						recentlyAccessedFiles: [],
+						currentTruth: [],
+						invalidatedAssumptions: [],
+						openDecisions: [],
+						compressionRisk: [],
+					}),
+				);
+
+				const sentMessages: string[] = [];
+				const notifications: string[] = [];
+				let navigated = false;
+				const pi = {
+					appendEntry: () => {},
+					sendUserMessage: (content: string) => sentMessages.push(content),
+					setModel: async () => true,
+					setThinkingLevel: () => {},
+					getThinkingLevel: () => "medium",
+				} as any;
+				const ctx = {
+					hasUI: true,
+					cwd: repo,
+					sessionManager: {
+						getLeafId: () => "leaf-1",
+						getBranch: () => [
+							{ type: "message", id: "msg-1", parentId: "root-1" } as SessionEntry,
+						],
+					},
+					model: { provider: "anthropic", id: "sonnet" },
+					modelRegistry: { find: () => undefined },
+					ui: { notify: (message: string) => notifications.push(message) },
+					navigateTree: async () => {
+						navigated = true;
+						return { cancelled: false };
+					},
+					waitForIdle: async () => {},
+				} as any;
+
+				await cmdPedNext(pi).handler("", ctx);
+
+				expect(navigated).toBe(false);
+				expect(sentMessages).toEqual([]);
+				expect(notifications.some((message) => message.includes("/ped-reload"))).toBe(
+					true,
+				);
+			} finally {
+				await rm(repo, { recursive: true, force: true });
+			}
+		});
+
+		test("queued auto-advance is revalidated before starting 05-learn", async () => {
+			const repo = await mkdtemp(path.join(tmpdir(), "pi-pedstack-auto-review-"));
+			try {
+				const ceDir = path.join(repo, ".context", "compound-engineering");
+				const reviewDir = path.join(repo, "docs", "reviews");
+				await mkdir(ceDir, { recursive: true });
+				await mkdir(reviewDir, { recursive: true });
+				const reviewPath = "docs/reviews/topic.md";
+				await writeFile(
+					path.join(repo, reviewPath),
+					[
+						"## Review Outcome",
+						"- Status: findings",
+						"- Findings: 1",
+						"- **Finding**: unresolved issue",
+					].join("\n"),
+				);
+				await writeFile(
+					path.join(ceDir, "context-state.json"),
+					JSON.stringify({
+						currentStage: "04-review",
+						nextStage: "05-learn",
+						contextHealth: "good",
+						artifacts: { review: reviewPath },
+						activeFiles: [],
+						recentlyAccessedFiles: [],
+						currentTruth: [],
+						invalidatedAssumptions: [],
+						openDecisions: [],
+						compressionRisk: [],
+					}),
+				);
+
+				const appendCalls: Array<{ type: string; data: any }> = [];
+				const sentMessages: string[] = [];
+				const pi = {
+					appendEntry(type: string, data?: any) {
+						appendCalls.push({ type, data });
+					},
+					sendUserMessage: (content: string) => sentMessages.push(content),
+					setModel: async () => true,
+					setThinkingLevel: () => {},
+					getThinkingLevel: () => "medium",
+				} as any;
+				const ctx = {
+					hasUI: false,
+					cwd: repo,
+					sessionManager: {
+						getLeafId: () => "leaf-1",
+						getBranch: () => [
+							{ type: "message", id: "msg-1", parentId: "root-1" } as SessionEntry,
+						],
+					},
+					model: { provider: "anthropic", id: "sonnet" },
+					modelRegistry: { find: () => undefined },
+					ui: { notify: () => {} },
+					navigateTree: async () => ({ cancelled: false }),
+					waitForIdle: async () => {},
+				} as any;
+
+				rememberCommandContext(ctx);
+				const started = await startStageFromRememberedContext(pi, "05-learn");
+
+				expect(started).toBe(true);
+				expect(appendCalls[0].data.stage).toBe("03-work");
+				expect(sentMessages[0]).toContain("Fix the unresolved review findings");
+			} finally {
+				resetPedstackState();
+				await rm(repo, { recursive: true, force: true });
+			}
 		});
 
 		test("with navigation cancelled notifies and stops", async () => {

@@ -309,6 +309,7 @@ describe("workflow_state", () => {
 		expect(result.context).toBeDefined();
 		expect(result.context.found).toBe(false);
 		expect(result.context.currentTruth).toEqual([]);
+		expect(result.context.artifacts).toEqual({});
 		expect(result.context.invalidatedAssumptions).toEqual([]);
 		expect(result.context.openDecisions).toEqual([]);
 		expect(result.context.recentlyAccessedFiles).toEqual([]);
@@ -332,6 +333,12 @@ describe("workflow_state", () => {
 				recentlyAccessedFiles: ["src/a.ts", "src/b.ts", "src/c.ts"],
 				blocker: "N/A",
 				verification: "bun test passed",
+				artifacts: {
+					review: "docs/reviews/topic.md",
+					reviewFindings:
+						".context/compound-engineering/review-findings/topic.json",
+					ignored: 42,
+				},
 				currentTruth: ["Fact A"],
 				invalidatedAssumptions: ["Old assumption"],
 				openDecisions: ["Decision X"],
@@ -362,6 +369,11 @@ describe("workflow_state", () => {
 		]);
 		expect(result.context.blocker).toBe("N/A");
 		expect(result.context.verification).toBe("bun test passed");
+		expect(result.context.artifacts).toEqual({
+			review: "docs/reviews/topic.md",
+			reviewFindings:
+				".context/compound-engineering/review-findings/topic.json",
+		});
 		expect(result.context.currentTruth).toEqual(["Fact A"]);
 		expect(result.context.invalidatedAssumptions).toEqual(["Old assumption"]);
 		expect(result.context.openDecisions).toEqual(["Decision X"]);
