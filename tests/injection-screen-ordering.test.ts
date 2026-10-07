@@ -11,8 +11,8 @@ import {
 import { filterBashOutput } from "../extensions/ce-core/tools/bash-output-filter";
 import { filterReadOutput } from "../extensions/ce-core/tools/read-output-filter";
 import ceCoreExtension, {
-	__setStartupFeaturesForTests,
 } from "../extensions/ce-core/index";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
 import { testFeatures } from "./helpers/feature-config";
 
 const INDEX_SOURCE = readFileSync(
@@ -186,13 +186,12 @@ function textOf(event: Record<string, unknown>): string {
 }
 
 afterEach(() => {
-	resetInjectionScreenState();
-	__setStartupFeaturesForTests(null);
+	resetInjectionScreenState();(null);
 });
 
 describe("index.ts wiring order", () => {
 	test("registers six tool_result handlers", () => {
-		__setStartupFeaturesForTests(
+		setStartupFeaturesForTests(
 			testFeatures({ injectionScreen: { mode: "shadow" } }),
 		);
 		const { pi, handlers } = createPi();
