@@ -442,12 +442,14 @@ describe("stage gate skill wiring (Unit 8)", () => {
 		}
 	});
 
-	test("work/debug/docsync docs reference their stage report path", () => {
+	test("work/debug/docsync docs reference their canonical stage report path", () => {
 		for (const stage of ["03-work", "04-5-debug", "06-docsync"]) {
 			const content = readFileSync(path.join(repoRoot, stageDocs[stage]), "utf8");
-			expect({ stage, hasReports: content.includes("stage-reports/") }).toEqual({
+			const expected =
+				`.context/compound-engineering/stage-reports/${stage}.md`;
+			expect({ stage, hasCanonicalReport: content.includes(expected) }).toEqual({
 				stage,
-				hasReports: true,
+				hasCanonicalReport: true,
 			});
 		}
 	});
