@@ -327,6 +327,7 @@ const THINKING_LEVEL_MAP: Record<string, ThinkingLevel> = {
 	medium: "medium",
 	high: "high",
 	xhigh: "xhigh",
+	max: "max",
 	"0": "low",
 	"1": "medium",
 	"2": "high",
@@ -488,7 +489,16 @@ function switchThinkingLevel(
 	if (!stepConfig.thinkingLevel) return;
 
 	const normalized =
-		THINKING_LEVEL_MAP[stepConfig.thinkingLevel.toLowerCase()] ?? "medium";
+		THINKING_LEVEL_MAP[stepConfig.thinkingLevel.toLowerCase()];
+	if (!normalized) {
+		if (ctx.hasUI) {
+			ctx.ui.notify(
+				`Invalid thinking level for ${stageKey}: ${stepConfig.thinkingLevel}`,
+				"warning",
+			);
+		}
+		return;
+	}
 	const currentLevel = pi.getThinkingLevel();
 	if (currentLevel !== normalized) {
 		pi.setThinkingLevel(normalized);
