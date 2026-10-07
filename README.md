@@ -472,10 +472,10 @@ Pi auto-compacts on a pure token walk and can cut **inside** a live multi-step o
 
 Stage discipline is not just prompt text. The ce-core extension hooks tool calls and checks them against the active stage's capability matrix before they execute.
 
-**`write`/`edit` (path-based).** Each target path is classified before the write executes. A call that targets a foreign class is blocked with a deterministic reason — for example, a `02-plan` session cannot edit `extensions/` source, and no stage may write `.context/` workflow state directly (it is managed by extension tools).
+**`write`/`edit` (path-based).** Each target path is classified before the write executes. A call that targets a foreign class is blocked with a deterministic reason — for example, a `02-plan` session cannot edit `extensions/` source, and `.context/` workflow state remains extension-managed. The only direct-write exception is the active stage's own canonical `.context/compound-engineering/stage-reports/<stage>.md` completion report.
 
 - Paths classify into 11 classes (brainstorm, plan, review, solution, docs, tests, source, config, deps, workflow-state, unknown).
-- The `workflow-state` invariant is evaluated first, so `.context/**` is always blocked regardless of basename.
+- `.context/**` remains blocked as extension-managed workflow state except for the exact active-stage report path `.context/compound-engineering/stage-reports/<active-stage>.md`; foreign stage reports and every other `.context/**` path stay blocked.
 - `unknown` paths always pass (fail-open) so third-party or unclassified files are never trapped.
 - The guard fails open on any internal error and reports at most once per session.
 
