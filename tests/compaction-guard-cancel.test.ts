@@ -115,7 +115,8 @@ async function checkCompaction(
 }
 
 beforeEach(async () => {
-	root = await fs.mkdtemp(path.join(os.tmpdir(), "compaction-cancel-"));(
+	root = await fs.mkdtemp(path.join(os.tmpdir(), "compaction-cancel-"));
+	setStartupFeaturesForTests(
 		testFeatures({
 			stageGate: { mode: "off" },
 			driftGuard: { mode: "off" },
@@ -125,7 +126,8 @@ beforeEach(async () => {
 	resetAllSessionState();
 });
 
-afterEach(async () => {(null);
+afterEach(async () => {
+	setStartupFeaturesForTests(null);
 	__setCompactionGuardJevFactory(null);
 	resetAllSessionState();
 	await fs.rm(root, { recursive: true, force: true });
