@@ -37,20 +37,8 @@ import { createSessionHistoryTool } from "./tools/session-history";
 import { createPatternExtractorTool } from "./tools/pattern-extractor";
 import { createContextHandoffTool } from "./tools/context-handoff";
 import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
-import { resolveStageGateMode } from "./stage-gate/store";
-import { resolveOverengineeringMode } from "./overengineering/compose";
-import {
-	resolveDocsVerificationFailClosed,
-	resolveDocsVerificationMode,
-} from "./docs-verification/store";
 import { createDocsVerificationWiring } from "./utils/docs-verification-wiring";
 import {
-	resolveReadinessFailClosed,
-	resolveReadinessMode,
-} from "./handoff-readiness/store";
-import {
-	resolveDriftFailClosed,
-	resolveDriftMode,
 	resolveSessionKey,
 	setCurrentDriftSessionKey,
 	getCurrentDriftSessionKey,
@@ -69,8 +57,6 @@ import {
 	getOrCreateSessionState,
 	resetAllSessionState,
 	resetEpisode,
-	resolveCompactionLive,
-	resolveCompactionMode,
 	setCurrentCompactionMode,
 	setCurrentCompactionSessionKey,
 } from "./compaction-guard/store";
@@ -106,13 +92,16 @@ import {
 	readPersistedActiveStage,
 } from "./utils/active-stage";
 import { evaluateWrite } from "./utils/capability-matrix";
-import { parseGuardMode } from "./utils/semantic-stage-guard";
 import {
 	createStageGuard,
 	type StageGuard,
 } from "./utils/stage-guard-runtime";
 import { createJevRuntime } from "./jev/runtime";
 import type { JevRuntime } from "./jev/types";
+import {
+	readPiPedstackConfigSync,
+	resolveFeaturesConfig,
+} from "./utils/config-types";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -525,40 +514,30 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const planDiff = createPlanDiffTool();
 	const sessionHistory = createSessionHistoryTool();
 	const patternExtractor = createPatternExtractorTool();
-	// ponytail: operator-only gate mode, resolved once at init like the guard.
-	const gateMode = resolveStageGateMode(process.env);
-	// ponytail: the overengineering mode is a separate shadow-first knob.
-	const overengineeringMode = resolveOverengineeringMode(process.env);
-	// ponytail: handoff-readiness mode/fail-closed are also resolved once.
-	// ponytail: docs-verification mode/fail-closed resolved once at init.
-	const docsWiring = createDocsVerificationWiring({
-		mode: resolveDocsVerificationMode(process.env),
-		failClosed: resolveDocsVerificationFailClosed(process.env),
-	});
-	// Drift mode/fail-closed are read once too; invalid values fail safe to shadow.
-	const driftModeRaw = process.env.PEDSTACK_DRIFT_GUARD;
-	const driftMode = resolveDriftMode(process.env);
-	const driftModeInvalid =
-		driftModeRaw !== undefined &&
-		driftModeRaw !== "off" &&
-		driftModeRaw !== "shadow" &&
-		driftModeRaw !== "enforce";
-	const driftFailClosed = resolveDriftFailClosed(process.env);
-	// Compaction-guard mode/live are read once too; invalid fails safe to shadow.
-	const compactionModeRaw = process.env.PEDSTACK_COMPACTION_GUARD;
-	const compactionMode = resolveCompactionMode(process.env);
-	const compactionModeInvalid =
-		compactionModeRaw !== undefined &&
-		compactionModeRaw !== "off" &&
-		compactionModeRaw !== "shadow" &&
-		compactionModeRaw !== "enforce";
-	const compactionLive = resolveCompactionLive(process.env);
+	// Runtime feature policy has exactly one source of truth: config.json.
+	// Resolve once at extension init, matching the previous startup semantics
+	// without allowing environment variables to silently diverge from JSON.
+	const startupConfig = readPiPedstackConfigSync(process.cwd());
+	const features = resolveFeaturesConfig(startupConfig);
+	const gateMode = features.stageGate.mode;
+	const overengineeringMode = features.overengineering.mode;
+	const driftMode = features.driftGuard.mode;
+	const driftFailClosed = features.driftGuard.failClosed;
+	const compactionMode = features.compactionGuard.mode;
+	const compactionLive = features.compactionGuard.live;
+	const guardMode = features.stageGuard.mode;
+	const guardFailClosed = features.stageGuard.failClosed;
+	const guardDisabled = features.stageGuard.disabled;
 	setCurrentCompactionMode(compactionMode);
+	const docsWiring = createDocsVerificationWiring({
+		mode: features.docsVerification.mode,
+		failClosed: features.docsVerification.failClosed,
+	});
 	const contextHandoff = createContextHandoffTool({
 		gateMode,
 		readiness: {
-			mode: resolveReadinessMode(process.env),
-			failClosed: resolveReadinessFailClosed(process.env),
+			mode: features.handoffReadiness.mode,
+			failClosed: features.handoffReadiness.failClosed,
 		},
 		docsVerification: docsWiring,
 		drift: {
@@ -582,9 +561,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		isGated: boolean;
 	} | null = null;
 
-	// ponytail: Operator escape hatch, read once at init. Any read error keeps
-	// the guard enforced (the `!== "1"` comparison cannot throw).
-	const guardDisabled = process.env.PEDSTACK_DISABLE_GUARD === "1";
 	let persistedStageResolved = false;
 	let persistedStage: string | null = null;
 	let guardNotified = false;
@@ -596,27 +572,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return jevRuntime;
 	}
 
-	// ponytail: Jev stage guard config, read once at init. Invalid values fail
-	// safe to shadow; the warning is deferred to the first tool call (no ctx yet).
-	const guardModeRaw = process.env.PEDSTACK_JEV_STAGE_GUARD;
-	const guardMode = parseGuardMode(guardModeRaw);
-	const guardModeInvalid =
-		guardModeRaw !== undefined &&
-		guardModeRaw !== "off" &&
-		guardModeRaw !== "shadow" &&
-		guardModeRaw !== "enforce";
-	const guardFailClosed =
-		process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED === "1";
-	let guardModeNotified = false;
 	let stageGuard: StageGuard | null = null;
-
-	// ponytail: drift guard state, resolved once at init; the Jev runtime is
-	// created lazily on the first evaluated turn.
-	let driftModeNotified = false;
 	let driftGuard: DriftGuard | null = null;
-
-	// ponytail: compaction guard state; Jev runtime created lazily on first use.
-	let compactionModeNotified = false;
 	let compactionGuard: CompactionGuard | null = null;
 
 	pi.registerTool({
@@ -968,19 +925,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return stageGuard;
 	}
 
-	/** Warn once when `PEDSTACK_JEV_STAGE_GUARD` is not a known mode. */
-	function notifyInvalidGuardModeOnce(ctx: ExtensionContext): void {
-		if (!guardModeInvalid || guardModeNotified) return;
-		guardModeNotified = true;
-		if (ctx.hasUI) {
-			ctx.ui.notify(
-				`Pedstack stage guard: invalid PEDSTACK_JEV_STAGE_GUARD value ` +
-					`"${guardModeRaw}"; using shadow mode.`,
-				"warning",
-			);
-		}
-	}
-
 	/** Lazily build the drift guard, memoizing the Jev runtime on first use. */
 	function getDriftGuard(): DriftGuard {
 		driftGuard ??= createDriftGuard({
@@ -993,19 +937,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return driftGuard;
 	}
 
-	/** Warn once when `PEDSTACK_DRIFT_GUARD` is not a known mode. */
-	function notifyInvalidDriftModeOnce(ctx: ExtensionContext): void {
-		if (!driftModeInvalid || driftModeNotified) return;
-		driftModeNotified = true;
-		if (ctx.hasUI) {
-			ctx.ui.notify(
-				`Pedstack drift guard: invalid PEDSTACK_DRIFT_GUARD value ` +
-					`"${driftModeRaw}"; using shadow mode.`,
-				"warning",
-			);
-		}
-	}
-
 	/** Lazily build the compaction guard, memoizing the Jev runtime on first use. */
 	function getCompactionGuard(): CompactionGuard {
 		compactionGuard ??= createCompactionGuard({
@@ -1016,19 +947,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				compactionJevFactory ? compactionJevFactory() : createJevRuntime(),
 		});
 		return compactionGuard;
-	}
-
-	/** Warn once when `PEDSTACK_COMPACTION_GUARD` is not a known mode. */
-	function notifyInvalidCompactionModeOnce(ctx: ExtensionContext): void {
-		if (!compactionModeInvalid || compactionModeNotified) return;
-		compactionModeNotified = true;
-		if (ctx.hasUI) {
-			ctx.ui.notify(
-				`Pedstack compaction guard: invalid PEDSTACK_COMPACTION_GUARD value ` +
-					`"${compactionModeRaw}"; using shadow mode.`,
-				"warning",
-			);
-		}
 	}
 
 	/** Capture the per-turn usage snapshot and fire the one-shot request nudge. */
@@ -1063,8 +981,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		if (guardDisabled) return undefined;
 
 		try {
-			notifyInvalidGuardModeOnce(ctx);
-
 			if (event.toolName === "bash") {
 				if (guardMode === "off") return undefined;
 				const command = (event.input as { command?: unknown }).command;
@@ -1112,13 +1028,11 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			const sessionKey = resolveSessionKey(ctx.sessionManager);
 
 			if (compactionMode !== "off") {
-				notifyInvalidCompactionModeOnce(ctx);
 				setCurrentCompactionSessionKey(sessionKey);
 				captureTurnSnapshot(ctx, sessionKey);
 			}
 
 			if (driftMode !== "off") {
-				notifyInvalidDriftModeOnce(ctx);
 				setCurrentDriftSessionKey(sessionKey);
 				const stage = await resolveGuardStage(ctx);
 				await getDriftGuard().evaluate({
@@ -1195,7 +1109,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
 	// Injection screen phase 1 — screens raw untrusted results before the size
 	// filters compress them (registered first; phase 2 below runs last).
-	const injectionScreen = registerInjectionScreen(pi);
+	const injectionScreen = registerInjectionScreen(pi, {
+		mode: features.injectionScreen.mode,
+	});
 
 	// Cheap semantic file reads/scouting: model-facing tools over one engine.
 	registerSemanticTools(pi);
@@ -1608,7 +1524,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	pi.on("session_before_compact", async (event, ctx) => {
 		try {
 			if (compactionMode === "off") return undefined;
-			notifyInvalidCompactionModeOnce(ctx);
 			const sessionKey = resolveSessionKey(ctx.sessionManager);
 			setCurrentCompactionSessionKey(sessionKey);
 			const result = await getCompactionGuard().evaluate(
