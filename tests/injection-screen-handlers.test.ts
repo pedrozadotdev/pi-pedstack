@@ -226,7 +226,7 @@ describe("phase 2", () => {
 	});
 
 	test("does not double-wrap the same toolCallId", async () => {
-				const repo = makeRepo();
+		const repo = makeRepo();
 		const { pi, handlers } = createPi();
 		register(pi, flaggedJev(), repo, undefined, "enforce").registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
@@ -246,7 +246,7 @@ describe("phase 2", () => {
 	test("shadow mode leaves content unchanged", async () => {
 		const repo = makeRepo();
 		const { pi, handlers } = createPi();
-		register(pi, flaggedJev(), repo, undefined, "enforce").registerFinalPhase();
+		register(pi, flaggedJev(), repo).registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
 		const phase2 = handlers.get("tool_result")![1] as never;
 		const { ctx } = createCtx();
@@ -261,7 +261,7 @@ describe("phase 2", () => {
 	});
 
 	test("a flagged+enforce result with no text records a wrap-miss and does not throw", async () => {
-				const repo = makeRepo();
+		const repo = makeRepo();
 		const logs: string[] = [];
 		const { pi, handlers } = createPi();
 		register(pi, flaggedJev(), repo, (l) => logs.push(l), "enforce").registerFinalPhase();
