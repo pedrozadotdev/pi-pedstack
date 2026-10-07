@@ -57,7 +57,7 @@ Code review is **technical evaluation**, not social performance:
 8. Verify each finding against codebase and update the report
 9. Run **`stage_gate`** for `04-review` and act on its `action`:
     - `accept` → do not run `multi_reviewer`; use the compiled report as the stage artifact.
-    - `revise` → apply fixes and re-run `stage_gate`; no independent audit.
+    - `revise` → revise the review report/artifact itself and re-run `stage_gate`; do not modify implementation.
     - `review` → invoke **`multi_reviewer`** with `stepName: "04-review"` and `mode: "single"`, passing the report content as the `primaryOutput` parameter; inspect the returned findings, verify each against the codebase, apply the confirmed ones to the compiled report (or add the missing issues it surfaced), then re-run `stage_gate`.
     - `escalate` → stop the current stage loop. Do not continue with the current execution model, and do not invoke `/ped-reload` yourself; ask the operator to run `/ped-reload`. The persisted escalation makes Pedstack re-enter this same `04-review` stage under `models.sota` when routing is enforced (`routing.shadow: false`); in shadow mode the decision is recorded but not applied.
     A missing `action` (unknown stage or a tool regression) is treated as `none`; use the compiled report as the stage artifact.
@@ -80,7 +80,7 @@ After code review complete, offer browser QA:
 >
 > - **A) Done** — stop here
 > - **B) Browser QA** — find visual/functional bugs
-> - **C) QA + regression tests** — find bugs, fix, add tests
+> - **C) QA + regression-test recommendations** — find bugs and specify the regression coverage `03-work` should add
 
 If B or C: read `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/qa-test-mode.md` and execute workflow.
 After QA: include any confirmed findings in the report/handoff. Do not fix implementation in `04-review`; route findings to `03-work`.
