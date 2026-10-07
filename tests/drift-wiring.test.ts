@@ -23,8 +23,8 @@ import {
 import { resetPedstackState } from "../extensions/ce-core/commands/pedstack.js";
 import ceCoreExtension, {
 	__setDriftJevFactory,
-	__setStartupFeaturesForTests,
 } from "../extensions/ce-core/index.js";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
 import { testFeatures } from "./helpers/feature-config.js";
 
 const SESSION = "sid-wiring";
@@ -178,8 +178,7 @@ async function readLog(): Promise<string> {
 }
 
 beforeEach(async () => {
-	root = await fs.mkdtemp(path.join(os.tmpdir(), "drift-wiring-"));
-	__setStartupFeaturesForTests(
+	root = await fs.mkdtemp(path.join(os.tmpdir(), "drift-wiring-"));(
 		testFeatures({
 			stageGate: { mode: "off" },
 			driftGuard: { mode: "shadow", failClosed: false },
@@ -188,8 +187,7 @@ beforeEach(async () => {
 	setActiveStage(STAGE);
 });
 
-afterEach(async () => {
-	__setStartupFeaturesForTests(null);
+afterEach(async () => {(null);
 	__setDriftJevFactory(null);
 	clearActiveStage();
 	resetPedstackState();
@@ -262,7 +260,7 @@ describe("turn_end wiring", () => {
 
 describe("one-shot correction", () => {
 	test("enforce mild injects exactly once and clears", async () => {
-		__setStartupFeaturesForTests(
+		setStartupFeaturesForTests(
 			testFeatures({
 				stageGate: { mode: "off" },
 				driftGuard: { mode: "enforce", failClosed: false },
@@ -298,7 +296,7 @@ describe("one-shot correction", () => {
 
 describe("session lifecycle", () => {
 	test("session_shutdown clears in-memory state but leaves records", async () => {
-		__setStartupFeaturesForTests(
+		setStartupFeaturesForTests(
 			testFeatures({
 				stageGate: { mode: "off" },
 				driftGuard: { mode: "enforce", failClosed: false },
@@ -331,7 +329,7 @@ describe("session lifecycle", () => {
 
 describe("handoff tool receives drift options", () => {
 	test("an unresolved strong record blocks the registered save", async () => {
-		__setStartupFeaturesForTests(
+		setStartupFeaturesForTests(
 			testFeatures({
 				stageGate: { mode: "off" },
 				driftGuard: { mode: "enforce", failClosed: false },
