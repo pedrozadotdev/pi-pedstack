@@ -163,6 +163,32 @@ describe("config-types — models and routing", () => {
 		expect(() => validatePiPedstackConfig({ routing: 3 })).toThrow(/routing/);
 	});
 
+	test("accepts max thinkingLevel for all model roles", () => {
+		const config = validatePiPedstackConfig({
+			models: {
+				default: { model: "cheap", thinkingLevel: "max" },
+				review: { model: "strong", thinkingLevel: "max" },
+				sota: { model: "strong", thinkingLevel: "max" },
+			},
+		});
+		expect(config.models?.default?.thinkingLevel).toBe("max");
+		expect(config.models?.review?.thinkingLevel).toBe("max");
+		expect(config.models?.sota?.thinkingLevel).toBe("max");
+	});
+
+	test("rejects unsupported thinkingLevel values instead of silently coercing", () => {
+		expect(() =>
+			validatePiPedstackConfig({
+				models: { default: { model: "cheap", thinkingLevel: "ultra" } },
+			}),
+		).toThrow(/thinkingLevel/);
+		expect(() =>
+			validatePiPedstackConfig({
+				plan: { model: "cheap", thinkingLevel: "ultra" },
+			}),
+		).toThrow(/thinkingLevel/);
+	});
+
 	test("rejects invalid models values", () => {
 		expect(() => validatePiPedstackConfig({ models: 3 })).toThrow(/models/);
 		expect(() =>
