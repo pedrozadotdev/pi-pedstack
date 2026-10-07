@@ -178,7 +178,8 @@ async function readLog(): Promise<string> {
 }
 
 beforeEach(async () => {
-	root = await fs.mkdtemp(path.join(os.tmpdir(), "drift-wiring-"));(
+	root = await fs.mkdtemp(path.join(os.tmpdir(), "drift-wiring-"));
+	setStartupFeaturesForTests(
 		testFeatures({
 			stageGate: { mode: "off" },
 			driftGuard: { mode: "shadow", failClosed: false },
@@ -187,7 +188,8 @@ beforeEach(async () => {
 	setActiveStage(STAGE);
 });
 
-afterEach(async () => {(null);
+afterEach(async () => {
+	setStartupFeaturesForTests(null);
 	__setDriftJevFactory(null);
 	clearActiveStage();
 	resetPedstackState();
