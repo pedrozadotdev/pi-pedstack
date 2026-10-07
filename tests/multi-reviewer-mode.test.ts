@@ -195,113 +195,11 @@ describe("multi_reviewer mode selector (Unit 3)", () => {
 		);
 	});
 
-	test("models.review equal to the per-stage override is ignored with a warning", async () => {
-		const warnings: string[] = [];
-		const originalWarn = console.warn;
-		console.warn = (...args: unknown[]) => {
-			warnings.push(args.map((arg) => String(arg)).join(" "));
-		};
-
-		try {
-			await withRepo(
-				{
-					plan: { model: "stage/plan" },
-					models: { review: { model: "stage/plan", thinkingLevel: "high" } },
-				},
-				async (repoRoot) => {
-					const result = await createMultiReviewerTool().execute({
-						stepName: "02-plan",
-						primaryOutput: "const x = 1",
-						repoRoot,
-					});
-					expect(spawnedModels()).toEqual([]);
-					expect(result.compiledSummary).toBe("No reviewers configured.");
-					expect(warnings.some((w) => w.includes("models.review"))).toBe(true);
-				},
-			);
-		} finally {
-			console.warn = originalWarn;
-		}
-	});
-});
-
-describe("multi_reviewer explicit reviewer independence (Unit 3)", () => {
-	test("drops a colliding explicit reviewer and keeps the independent one", async () => {
-		const warnings: string[] = [];
-		const originalWarn = console.warn;
-		console.warn = (...args: unknown[]) => {
-			warnings.push(args.map((arg) => String(arg)).join(" "));
-		};
-
-		try {
-			await withRepo(
-				{
-					plan: {
-						model: "stage/plan",
-						reviewers: [
-							{ model: "stage/plan", thinkingLevel: "high" },
-							{ model: "explicit/one", thinkingLevel: "high" },
-						],
-					},
-				},
-				async (repoRoot) => {
-					await createMultiReviewerTool().execute({
-						stepName: "02-plan",
-						primaryOutput: "const x = 1",
-						repoRoot,
-						mode: "deep",
-					});
-					expect(spawnedModels()).toEqual(["explicit/one"]);
-					expect(warnings.some((w) => w.includes("stage/plan"))).toBe(true);
-				},
-			);
-		} finally {
-			console.warn = originalWarn;
-		}
-	});
-
-	test("reports no reviewers when every explicit reviewer collides", async () => {
-		const warnings: string[] = [];
-		const originalWarn = console.warn;
-		console.warn = (...args: unknown[]) => {
-			warnings.push(args.map((arg) => String(arg)).join(" "));
-		};
-
-		try {
-			await withRepo(
-				{
-					plan: {
-						model: "stage/plan",
-						reviewers: [{ model: "stage/plan", thinkingLevel: "high" }],
-					},
-				},
-				async (repoRoot) => {
-					const result = await createMultiReviewerTool().execute({
-						stepName: "02-plan",
-						primaryOutput: "const x = 1",
-						repoRoot,
-					});
-					expect(spawnedModels()).toEqual([]);
-					expect(result.compiledSummary).toBe("No reviewers configured.");
-					expect(warnings.some((w) => w.includes("stage/plan"))).toBe(true);
-				},
-			);
-		} finally {
-			console.warn = originalWarn;
-		}
-	});
-
-	test("falls back to an independent models.review when all explicit reviewers are dropped", async () => {
+	test("models.review may reuse the per-stage execution model", async () => {
 		await withRepo(
 			{
-				plan: {
-					model: "stage/plan",
-					reviewers: [{ model: "stage/plan", thinkingLevel: "high" }],
-				},
-				models: {
-					default: { model: "role/default" },
-					review: { model: "role/review", thinkingLevel: "high" },
-				},
+				plan: { model: "stage/plan" },
+				models: { review: { model: "stage/plan", thinkingLevel: "high" } },
 			},
 			async (repoRoot) => {
 				await createMultiReviewerTool().execute({
@@ -309,7 +207,54 @@ describe("multi_reviewer explicit reviewer independence (Unit 3)", () => {
 					primaryOutput: "const x = 1",
 					repoRoot,
 				});
-				expect(spawnedModels()).toEqual(["role/review"]);
+				expect(spawnedModels()).toEqual(["stage/plan"]);
+			},
+		);
+	});
+
+	test("models.review may reuse the SOTA model", async () => {
+		await withRepo(
+			{
+				models: {
+					default: { model: "role/default" },
+					review: { model: "role/sota", thinkingLevel: "max" },
+					sota: { model: "role/sota", thinkingLevel: "max" },
+				},
+			},
+			async (repoRoot) => {
+				await createMultiReviewerTool().execute({
+					stepName: "02-plan",
+					primaryOutput: "const x = 1",
+					repoRoot,
+					mode: "single",
+				});
+				expect(spawnedModels()).toEqual(["role/sota"]);
+				expect(spawnedThinking()).toEqual(["max"]);
+			},
+		);
+	});
+});
+
+describe("multi_reviewer isolated invocation semantics (Unit 3)", () => {
+	test("keeps explicit reviewers that reuse the execution model", async () => {
+		await withRepo(
+			{
+				plan: {
+					model: "stage/plan",
+					reviewers: [
+						{ model: "stage/plan", thinkingLevel: "high" },
+						{ model: "explicit/one", thinkingLevel: "high" },
+					],
+				},
+			},
+			async (repoRoot) => {
+				await createMultiReviewerTool().execute({
+					stepName: "02-plan",
+					primaryOutput: "const x = 1",
+					repoRoot,
+					mode: "deep",
+				});
+				expect(spawnedModels()).toEqual(["stage/plan", "explicit/one"]);
 			},
 		);
 	});

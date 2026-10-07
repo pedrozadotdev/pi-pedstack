@@ -120,6 +120,7 @@ interface Harness {
 	pi: any;
 	ctx: any;
 	setModelCalls: Array<{ provider: string; id: string }>;
+	setThinkingLevelCalls: string[];
 	notifications: Array<{ message: string; level: string }>;
 	appendCalls: Array<{ type: string; data: any }>;
 	sentMessages: any[];
@@ -127,6 +128,7 @@ interface Harness {
 
 function makeHarness(repoRoot: string): Harness {
 	const setModelCalls: Array<{ provider: string; id: string }> = [];
+	const setThinkingLevelCalls: string[] = [];
 	const notifications: Array<{ message: string; level: string }> = [];
 	const appendCalls: Array<{ type: string; data: any }> = [];
 	const sentMessages: any[] = [];
@@ -142,7 +144,9 @@ function makeHarness(repoRoot: string): Harness {
 			setModelCalls.push(model);
 			return true;
 		},
-		setThinkingLevel: () => {},
+		setThinkingLevel: (level: string) => {
+			setThinkingLevelCalls.push(level);
+		},
 		getThinkingLevel: () => "medium",
 	} as any;
 
@@ -168,7 +172,15 @@ function makeHarness(repoRoot: string): Harness {
 		waitForIdle: async () => {},
 	} as any;
 
-	return { pi, ctx, setModelCalls, notifications, appendCalls, sentMessages };
+	return {
+		pi,
+		ctx,
+		setModelCalls,
+		setThinkingLevelCalls,
+		notifications,
+		appendCalls,
+		sentMessages,
+	};
 }
 
 afterEach(() => {
@@ -217,6 +229,24 @@ describe("switchStageConfig — stage-entry routing", () => {
 		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "cheap" }]);
 	});
 
+	test("enforce applies max thinkingLevel from models.default", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, {
+			models: {
+				default: { model: "test/cheap", thinkingLevel: "max" },
+				sota: { model: "test/strong", thinkingLevel: "max" },
+			},
+			routing: { shadow: false },
+		});
+		__setModelRoutingJevFactory(() => fakeJev(0.1));
+		const harness = makeHarness(repo);
+
+		await cmdPedStart(harness.pi).handler("build a CLI", harness.ctx);
+
+		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "cheap" }]);
+		expect(harness.setThinkingLevelCalls).toEqual(["max"]);
+	});
+
 	test("an explicit per-stage model overrides the role model", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, {
@@ -252,6 +282,24 @@ describe("switchStageConfig — stage-entry routing", () => {
 
 		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "strong" }]);
 		expect(fake.requests.length).toBe(1);
+	});
+
+	test("enforce applies max thinkingLevel from models.sota", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, {
+			models: {
+				default: { model: "test/cheap", thinkingLevel: "max" },
+				sota: { model: "test/strong", thinkingLevel: "max" },
+			},
+			routing: { shadow: false },
+		});
+		__setModelRoutingJevFactory(() => fakeJev(0.9));
+		const harness = makeHarness(repo);
+
+		await cmdPedStart(harness.pi).handler("build a CLI", harness.ctx);
+
+		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "strong" }]);
+		expect(harness.setThinkingLevelCalls).toEqual(["max"]);
 	});
 
 	test("a throwing Jev factory degrades to the default role without rejecting", async () => {

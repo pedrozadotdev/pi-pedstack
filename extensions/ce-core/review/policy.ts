@@ -81,30 +81,28 @@ export function collectExecutionModels(
 }
 
 /**
- * Splits explicit reviewers into those independent from every execution-model
- * writer and the colliding models that must be dropped. Pure; no I/O.
+ * Review isolation is provided by the separate no-session reviewer invocation,
+ * not by requiring a distinct model id. The reviewer may intentionally reuse
+ * the same model configured for default or SOTA execution.
  */
 export function filterIndependentReviewers<T extends { model: string }>(
 	reviewers: readonly T[],
-	config: PiPedstackConfig | null,
-	configKey: StepConfigKey | null,
+	_config: PiPedstackConfig | null,
+	_configKey: StepConfigKey | null,
 ): { reviewers: T[]; dropped: string[] } {
-	const executionModels = collectExecutionModels(config, configKey);
-	const kept: T[] = [];
-	const dropped: string[] = [];
-	for (const reviewer of reviewers) {
-		if (executionModels.includes(reviewer.model)) {
-			dropped.push(reviewer.model);
-		} else {
-			kept.push(reviewer);
-		}
-	}
-	return { reviewers: kept, dropped };
+	return {
+		reviewers: reviewers.filter(
+			(reviewer) =>
+				typeof reviewer.model === "string" && reviewer.model.trim().length > 0,
+		),
+		dropped: [],
+	};
 }
 
 /**
- * True when the stage has an independent explicit `reviewers[]` entry, or a
- * `models.review` that is independent from every execution-model writer.
+ * True when the stage has any explicit reviewer or a configured models.review
+ * role. The actual review still runs in a fresh no-session process, which is
+ * the independence boundary.
  */
 export function hasIndependentReviewer(
 	config: PiPedstackConfig | null,
@@ -113,16 +111,17 @@ export function hasIndependentReviewer(
 	const stage = config?.[configKey];
 	if (stage && "reviewers" in stage) {
 		const reviewers = stage.reviewers;
-		if (Array.isArray(reviewers) && reviewers.length > 0) {
-			const { reviewers: independent } = filterIndependentReviewers(
-				reviewers,
-				config,
-				configKey,
-			);
-			if (independent.length > 0) return true;
+		if (
+			Array.isArray(reviewers) &&
+			reviewers.some(
+				(reviewer) =>
+					typeof reviewer?.model === "string" &&
+					reviewer.model.trim().length > 0,
+			)
+		) {
+			return true;
 		}
 	}
 	const reviewModel = config?.models?.review?.model;
-	if (typeof reviewModel !== "string" || reviewModel.length === 0) return false;
-	return !collectExecutionModels(config, configKey).includes(reviewModel);
+	return typeof reviewModel === "string" && reviewModel.trim().length > 0;
 }
