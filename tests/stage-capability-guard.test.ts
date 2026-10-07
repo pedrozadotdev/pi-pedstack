@@ -93,11 +93,13 @@ async function seedWorkflowState(repo: string, stage: string): Promise<void> {
 }
 
 beforeEach(() => {
-	clearActiveStage();(testFeatures());
+	clearActiveStage();
+	setStartupFeaturesForTests(testFeatures());
 });
 
 afterEach(async () => {
-	clearActiveStage();(null);
+	clearActiveStage();
+	setStartupFeaturesForTests(null);
 	__setStageGuardJevFactory(null);
 	await Promise.all(
 		tempRepos.splice(0).map((repo) => rm(repo, { recursive: true, force: true })),
