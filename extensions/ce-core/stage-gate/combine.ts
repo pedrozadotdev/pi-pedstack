@@ -24,7 +24,7 @@ export interface CombineInput {
 	/** Prior `revise` records for this stage at evaluation time. */
 	attempts: number;
 	jevUnavailable: boolean;
-	/** True only when `PEDSTACK_OVERENGINEERING=enforce` (absent means false). */
+	/** True only when features.overengineering.mode is "enforce". */
 	overengineeringEnforced?: boolean;
 }
 
