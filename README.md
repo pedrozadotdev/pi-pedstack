@@ -199,9 +199,9 @@ The flip is reversible: set `routing.shadow = true` again to recompute and log d
 
 **Migration note.** If upgrading from the old per-stage model configuration, manually define `models.default`, `models.review`, and `models.sota`, then remove obsolete per-stage `model` assignments unless they are intended as explicit overrides.
 
-**Per-stage overrides.** A per-stage `"model"` (with optional `"thinkingLevel"`) remains supported as an **explicit operator override**: it wins verbatim over stage-gate escalation and Jev routing. It is not the recommended normal configuration style — declare the three `models` roles instead.
+**Per-stage overrides.** A per-stage `"model"` (with optional `"thinkingLevel"`) remains supported as an **explicit operator override**: it wins verbatim over stage-gate escalation and Jev routing. It is not the recommended normal configuration style — declare the three `models` roles instead. Valid thinking levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max` (legacy `"0" | "1" | "2"` aliases remain accepted). Invalid values are rejected rather than silently coerced.
 
-**Independence guard completeness:** the review-independence guard compares `models.review` against the union of **every** execution-model writer — `models.default`, `models.sota`, and the per-stage `config[<stage>].model` override (`collectExecutionModels`) — so a review model that would equal any execution model is ignored with a warning. See the [independence-guard solution card](docs/solutions/workflow/independence-guards-must-enumerate-every-execution-model-source.md).
+**Reviewer isolation:** independent review is provided by the separate `multi_reviewer` no-session process and reviewer-specific prompt. `models.review` may intentionally reuse the same model id as `models.sota`, `models.default`, or a per-stage execution override; model-id equality does not make the reviewer unavailable.
 
 #### Conditional independent review
 
