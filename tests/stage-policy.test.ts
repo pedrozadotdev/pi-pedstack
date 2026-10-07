@@ -27,7 +27,7 @@ describe("getStageDiscipline", () => {
 		expect(discipline?.completionInstruction).toContain("Findings: 0");
 
 		const append = buildSystemPromptAppend("/skills/04-review/SKILL.md", []);
-		expect(append).toContain("targeting **03-work**");
+		expect(append).toContain("target **03-work**");
 		expect(append).toContain("target **05-learn**");
 		expect(append).not.toContain("targeting the next stage: **05-learn**");
 	});
