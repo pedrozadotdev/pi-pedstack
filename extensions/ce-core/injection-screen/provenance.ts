@@ -2,8 +2,8 @@
  * Pure provenance classifier + bounded sample builder + screen-mode resolver.
  *
  * Decides whether a `bash`/`read` result came from a source the agent does not
- * control, produces a byte-bounded raw sample for the Jev screen, and resolves
- * `PEDSTACK_INJECTION_SCREEN`. No I/O, no Pi imports, no Jev imports.
+ * control and produces a byte-bounded raw sample for the Jev screen. Runtime
+ * mode comes from config.json wiring; this module has no config I/O.
  *
  * @module injection-screen/provenance
  */
