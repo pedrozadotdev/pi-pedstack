@@ -5,6 +5,7 @@ import type {
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import * as path from "node:path";
+import { readFile } from "node:fs/promises";
 
 import {
 	readPiPedstackConfig,
@@ -32,6 +33,11 @@ import {
 	readPersistedActiveStage,
 } from "../utils/active-stage";
 import { resetWorkflowRoutingState } from "../utils/workflow-reset";
+import {
+	countStructuredFindings,
+	parseReviewOutcome,
+	requiredNextStageForReview,
+} from "../utils/review-outcome";
 
 // ── Skill registry (populated from before_agent_start) ─────────────
 
@@ -701,13 +707,33 @@ export async function startStageFromRememberedContext(
 ): Promise<boolean> {
 	const ctx = rememberedCommandContext;
 	if (!ctx) return false;
+
+	let resolvedStage = stageKey;
+	let entryPrompt = optionalPrompt;
+	const state = await createWorkflowStateTool().execute({ repoRoot: ctx.cwd });
+	const reviewNext = await resolveReviewNextRoute(ctx.cwd, state);
+	if (!reviewNext.ok) {
+		if (ctx.hasUI) ctx.ui.notify(reviewNext.blocker, "warning");
+		return false;
+	}
+	if (reviewNext.route) {
+		resolvedStage = reviewNext.route.stage;
+		entryPrompt ??= reviewFixForwardPrompt(reviewNext.route);
+		if (ctx.hasUI && stageKey !== resolvedStage) {
+			ctx.ui.notify(
+				`Review outcome overrides queued auto-advance: ${stageKey} -> ${resolvedStage}`,
+				"info",
+			);
+		}
+	}
+
 	return beginStageTransition(
 		pi,
 		ctx,
-		stageKey,
-		optionalPrompt || `Stage: ${stageKey}`,
+		resolvedStage,
+		entryPrompt || `Stage: ${resolvedStage}`,
 		"ped-stage-start",
-		optionalPrompt,
+		entryPrompt,
 	);
 }
 
@@ -834,6 +860,139 @@ export function cmdPedStart(
 	};
 }
 
+interface ReviewNextRoute {
+	stage: "03-work" | "05-learn";
+	reportPath: string;
+	legacyInferred: boolean;
+}
+
+type ReviewNextResolution =
+	| { ok: true; route: ReviewNextRoute | null }
+	| { ok: false; blocker: string };
+
+function normalizeReviewReportPath(
+	repoRoot: string,
+	candidate: string | undefined,
+): { absolute: string; relative: string } | null {
+	if (!candidate) return null;
+	const absolute = path.resolve(repoRoot, candidate);
+	const relative = path.relative(repoRoot, absolute).replace(/\\/g, "/");
+	if (
+		relative.startsWith("../") ||
+		path.isAbsolute(relative) ||
+		!relative.startsWith("docs/reviews/") ||
+		!relative.endsWith(".md")
+	) {
+		return null;
+	}
+	return { absolute, relative };
+}
+
+/**
+ * Revalidate a completed 04-review at transition time.
+ *
+ * PR #47 made new handoff saves outcome-aware, but an already-saved/stale
+ * `04-review -> 05-learn` handoff can predate that contract. /ped-next and
+ * same-session auto-advance must therefore derive the destination from the
+ * review report instead of blindly trusting persisted nextStage.
+ */
+async function resolveReviewNextRoute(
+	repoRoot: string,
+	state: WorkflowStateResult,
+): Promise<ReviewNextResolution> {
+	if (state.context.currentStage !== "04-review") {
+		return { ok: true, route: null };
+	}
+
+	const artifactCandidate = normalizeReviewReportPath(
+		repoRoot,
+		state.context.artifacts?.review,
+	);
+	const latestCandidate = normalizeReviewReportPath(
+		repoRoot,
+		state.reviews.latest
+			? path.join("docs", "reviews", state.reviews.latest)
+			: undefined,
+	);
+	const candidate = artifactCandidate ?? latestCandidate;
+	if (!candidate) {
+		return {
+			ok: false,
+			blocker:
+				"Cannot advance from 04-review: no compiled docs/reviews/*.md report is available to validate the review outcome. Run /ped-reload and complete 04-review again.",
+		};
+	}
+
+	let markdown: string;
+	try {
+		markdown = await readFile(candidate.absolute, "utf8");
+	} catch {
+		return {
+			ok: false,
+			blocker:
+				`Cannot advance from 04-review: review report "${candidate.relative}" could not be read. Run /ped-reload and complete 04-review again.`,
+		};
+	}
+
+	const outcome = parseReviewOutcome(markdown);
+	if (outcome.valid) {
+		return {
+			ok: true,
+			route: {
+				stage: requiredNextStageForReview(outcome),
+				reportPath: candidate.relative,
+				legacyInferred: false,
+			},
+		};
+	}
+
+	// Backward compatibility only for reports created before Review Outcome
+	// existed. A legacy report with explicit structured findings is safely
+	// treated as unresolved; a legacy report with zero detectable findings is
+	// ambiguous and must be re-reviewed rather than assumed clean.
+	if (outcome.reason === 'missing "## Review Outcome" section') {
+		const findings = countStructuredFindings(markdown);
+		if (findings > 0) {
+			return {
+				ok: true,
+				route: {
+					stage: "03-work",
+					reportPath: candidate.relative,
+					legacyInferred: true,
+				},
+			};
+		}
+	}
+
+	return {
+		ok: false,
+		blocker:
+			`Cannot advance from 04-review: review report "${candidate.relative}" does not have a valid Review Outcome (${outcome.reason}). Run /ped-reload and complete 04-review again; Pedstack will not assume a stale 05-learn route is safe.`,
+	};
+}
+
+function withValidatedReviewNextStage(
+	state: WorkflowStateResult,
+	route: ReviewNextRoute | null,
+): WorkflowStateResult {
+	if (!route) return state;
+	return {
+		...state,
+		context: {
+			...state.context,
+			nextStage: route.stage,
+		},
+	};
+}
+
+function reviewFixForwardPrompt(route: ReviewNextRoute): string | undefined {
+	if (route.stage !== "03-work") return undefined;
+	return (
+		`Fix the unresolved review findings in ${route.reportPath}. ` +
+		"This is a 04-review -> 03-work fix-forward re-entry. Verify each finding against current code, fix every confirmed issue with targeted regression coverage, then return to 04-review."
+	);
+}
+
 // ── /ped-next command ──────────────────────────────────────────────
 
 /**
@@ -865,7 +1024,13 @@ export function cmdPedNext(
 				return;
 			}
 
-			const resolution = resolveNextPipelineStage(state);
+			const reviewNext = await resolveReviewNextRoute(ctx.cwd, state);
+			if (!reviewNext.ok) {
+				if (ctx.hasUI) ctx.ui.notify(reviewNext.blocker, "warning");
+				return;
+			}
+			const routedState = withValidatedReviewNextStage(state, reviewNext.route);
+			const resolution = resolveNextPipelineStage(routedState);
 
 			if (!resolution.ok) {
 				await handleResolutionAbort(ctx, resolution);
@@ -874,14 +1039,32 @@ export function cmdPedNext(
 
 			const stageKey = resolution.stage;
 			const optionalPrompt = _args.trim() || undefined;
+			const reviewPrompt = reviewNext.route
+				? reviewFixForwardPrompt(reviewNext.route)
+				: undefined;
+			const entryPrompt = optionalPrompt ?? reviewPrompt;
+
+			if (
+				ctx.hasUI &&
+				reviewNext.route &&
+				state.context.nextStage !== reviewNext.route.stage
+			) {
+				ctx.ui.notify(
+					`Review outcome overrides stale handoff route: ${state.context.nextStage ?? "unset"} -> ${reviewNext.route.stage}` +
+						(reviewNext.route.legacyInferred
+							? " (legacy report with structured findings)"
+							: ""),
+					"info",
+				);
+			}
 
 			await beginStageTransition(
 				pi,
 				ctx,
 				stageKey,
-				optionalPrompt || `Stage: ${stageKey}`,
+				entryPrompt || `Stage: ${stageKey}`,
 				"ped-stage-start",
-				optionalPrompt,
+				entryPrompt,
 			);
 		},
 	};
