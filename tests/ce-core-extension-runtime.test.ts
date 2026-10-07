@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, mock } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
 import * as path from "node:path";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -80,6 +80,8 @@ import {
 import { resetPedstackState } from "../extensions/ce-core/commands/pedstack";
 import ceCoreExtension from "../extensions/ce-core/index";
 import { createMultiReviewerTool } from "../extensions/ce-core/tools/multi-reviewer";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
+import { testFeatures } from "./helpers/feature-config";
 
 const PLAN_FIXTURE = `# Plan: fixture
 
@@ -97,6 +99,21 @@ ${'Detailed problem context. '.repeat(40)}
 `;
 
 describe("ce-core extension runtime registration", () => {
+	afterEach(() => {
+		setStartupFeaturesForTests(null);
+	});
+
+	function disableHandoffPolicyForWrapperContract(): void {
+		setStartupFeaturesForTests(
+			testFeatures({
+				stageGate: { mode: "off" },
+				handoffReadiness: { mode: "off" },
+				docsVerification: { mode: "off" },
+				driftGuard: { mode: "off" },
+			}),
+		);
+	}
+
 	test("registers 19 workflow control tools (no subagent tools)", () => {
 		const registeredNames: string[] = [];
 		const eventHandlers = new Map<string, any[]>();
@@ -245,6 +262,7 @@ describe("ce-core extension runtime registration", () => {
 	});
 
 	test("context_handoff wrapper passes structured runtime-memory fields through", async () => {
+		disableHandoffPolicyForWrapperContract();
 		const definitions = new Map<string, any>();
 		const pi = {
 			registerTool(definition: { name: string }) {
@@ -290,6 +308,7 @@ describe("ce-core extension runtime registration", () => {
 	});
 
 	test("context_handoff wrapper supports validate operation with probes and checks", async () => {
+		disableHandoffPolicyForWrapperContract();
 		const definitions = new Map<string, any>();
 		const pi = {
 			registerTool(definition: { name: string }) {
