@@ -309,6 +309,8 @@ describe("evaluateAutoAdvance — gated transitions", () => {
 			expect(result.title).toBeTruthy();
 			expect(result.message).toBeTruthy();
 			expect(result.title).toContain("05-learn");
+			expect(result.message).toContain("clean");
+			expect(result.message).toContain("0 findings");
 		}
 	});
 
