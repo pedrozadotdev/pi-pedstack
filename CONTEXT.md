@@ -198,7 +198,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   backticked token is only a candidate package; it is promoted to a fact by intersection with the
   nearest manifest, never by a regex allowlist alone. A declared `Files` path is contained
   (`canonicalRel`/`isInside`) before any `exists`/`readFile`/hash.
-- **Mode** — `features.docsVerification.mode = "off" | "shadow" | "enforce"` (default `shadow`);
+- **Mode** — `features.docsVerification.mode = "off" | "shadow" | "enforce"` (default `enforce`);
   `features.docsVerification.failClosed = true` opts into blocking in `enforce` on a degraded
   semantic layer (default `false`, fail-open).
 
