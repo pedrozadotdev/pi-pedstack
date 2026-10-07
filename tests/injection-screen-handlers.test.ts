@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -96,20 +96,22 @@ function readEvent(toolCallId: string, filePath: string, text = "file body") {
 	};
 }
 
-function register(pi: unknown, jev: unknown, repoRoot: string, appendLog?: (l: string) => void) {
+function register(
+	pi: unknown,
+	jev: unknown,
+	repoRoot: string,
+	appendLog?: (l: string) => void,
+	mode: "off" | "shadow" | "enforce" = "shadow",
+) {
 	return registerInjectionScreen(pi as never, {
+		mode,
 		jev: jev as never,
 		repoRoot,
 		appendLog,
 	});
 }
 
-beforeEach(() => {
-	process.env.PEDSTACK_INJECTION_SCREEN = "shadow";
-});
-
 afterEach(() => {
-	delete process.env.PEDSTACK_INJECTION_SCREEN;
 	resetInjectionScreenState();
 	for (const root of tempRoots.splice(0)) {
 		rmSync(root, { recursive: true, force: true });
@@ -142,7 +144,7 @@ describe("phase 1", () => {
 		const repo = makeRepo();
 		const jev = flaggedJev();
 		const { pi, handlers } = createPi();
-		register(pi, jev, repo).registerFinalPhase();
+		register(pi, jev, repo, undefined, "enforce").registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
 		const { ctx } = createCtx();
 
@@ -175,7 +177,7 @@ describe("phase 1", () => {
 		const repo = makeRepo();
 		const jev = flaggedJev();
 		const { pi, handlers } = createPi();
-		register(pi, jev, repo).registerFinalPhase();
+		register(pi, jev, repo, undefined, "enforce").registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
 		const { ctx } = createCtx();
 
@@ -203,10 +205,9 @@ describe("phase 1", () => {
 
 describe("phase 2", () => {
 	test("enforce + flagged wraps the final content with identical inner bytes", async () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "enforce";
-		const repo = makeRepo();
+				const repo = makeRepo();
 		const { pi, handlers } = createPi();
-		register(pi, flaggedJev(), repo).registerFinalPhase();
+		register(pi, flaggedJev(), repo, undefined, "enforce").registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
 		const phase2 = handlers.get("tool_result")![1] as never;
 		const { ctx } = createCtx();
@@ -225,10 +226,9 @@ describe("phase 2", () => {
 	});
 
 	test("does not double-wrap the same toolCallId", async () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "enforce";
-		const repo = makeRepo();
+				const repo = makeRepo();
 		const { pi, handlers } = createPi();
-		register(pi, flaggedJev(), repo).registerFinalPhase();
+		register(pi, flaggedJev(), repo, undefined, "enforce").registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
 		const phase2 = handlers.get("tool_result")![1] as never;
 		const { ctx } = createCtx();
@@ -246,7 +246,7 @@ describe("phase 2", () => {
 	test("shadow mode leaves content unchanged", async () => {
 		const repo = makeRepo();
 		const { pi, handlers } = createPi();
-		register(pi, flaggedJev(), repo).registerFinalPhase();
+		register(pi, flaggedJev(), repo, undefined, "enforce").registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
 		const phase2 = handlers.get("tool_result")![1] as never;
 		const { ctx } = createCtx();
@@ -261,11 +261,10 @@ describe("phase 2", () => {
 	});
 
 	test("a flagged+enforce result with no text records a wrap-miss and does not throw", async () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "enforce";
-		const repo = makeRepo();
+				const repo = makeRepo();
 		const logs: string[] = [];
 		const { pi, handlers } = createPi();
-		register(pi, flaggedJev(), repo, (l) => logs.push(l)).registerFinalPhase();
+		register(pi, flaggedJev(), repo, (l) => logs.push(l), "enforce").registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
 		const phase2 = handlers.get("tool_result")![1] as never;
 		const { ctx } = createCtx();
@@ -290,11 +289,10 @@ describe("phase 2", () => {
 
 describe("degraded and lifecycle", () => {
 	test("enforce + degraded notifies once and never changes content", async () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "enforce";
-		const repo = makeRepo();
+				const repo = makeRepo();
 		const jev = createFakeJevRuntime({ handler: () => new Error("jev down") });
 		const { pi, handlers } = createPi();
-		register(pi, jev, repo).registerFinalPhase();
+		register(pi, jev, repo, undefined, "enforce").registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
 		const phase2 = handlers.get("tool_result")![1] as never;
 		const { ctx, notifyCalls } = createCtx(true);
@@ -311,10 +309,9 @@ describe("degraded and lifecycle", () => {
 	});
 
 	test("session_shutdown clears the verdict map and the wrap tracker", async () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "enforce";
-		const repo = makeRepo();
+				const repo = makeRepo();
 		const { pi, handlers } = createPi();
-		const handle = register(pi, flaggedJev(), repo);
+		const handle = register(pi, flaggedJev(), repo, undefined, "enforce");
 		handle.registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
 		const phase2 = handlers.get("tool_result")![1] as never;
@@ -336,10 +333,9 @@ describe("degraded and lifecycle", () => {
 	});
 
 	test("turn_end sweeps leftovers and reports a notify without throwing", async () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "enforce";
-		const repo = makeRepo();
+				const repo = makeRepo();
 		const { pi, handlers } = createPi();
-		register(pi, flaggedJev(), repo).registerFinalPhase();
+		register(pi, flaggedJev(), repo, undefined, "enforce").registerFinalPhase();
 		const phase1 = handlers.get("tool_result")![0] as never;
 		const turnEnd = handlers.get("turn_end")![0] as never;
 		const { ctx, notifyCalls } = createCtx(true);
@@ -354,17 +350,4 @@ describe("degraded and lifecycle", () => {
 		expect(notifyCalls).toHaveLength(1);
 	});
 
-	test("an invalid mode warns once on the first UI handler call", async () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "ENFORCE";
-		const repo = makeRepo();
-		const { pi, handlers } = createPi();
-		register(pi, flaggedJev(), repo).registerFinalPhase();
-		const phase1 = handlers.get("tool_result")![0] as never;
-		const { ctx, notifyCalls } = createCtx(true);
-
-		await (phase1 as Function)(bashEvent("t1", "curl https://example.com"), ctx);
-		await (phase1 as Function)(bashEvent("t2", "curl https://example.com"), ctx);
-
-		expect(notifyCalls).toHaveLength(1);
-	});
 });
