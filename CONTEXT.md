@@ -55,7 +55,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 ## Model roles & routing (#6)
 
 - **Model role** — one of `default` (cheap normal-execution workhorse), `review`
-  (independent stronger reviewer), or `sota` (highest-capability escalation), declared once
+  (isolated reviewer; may reuse the SOTA model id), or `sota` (highest-capability escalation), declared once
   in the optional top-level `models` block.
 - **Execution role** — the role actually applied to a stage turn: `default | sota` only.
   `review` is never an execution target.
@@ -100,11 +100,10 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   loop, counted from the retained prior attempts whose verdict is `review` since the newest
   `accept`. A second `review` maps to `escalate`.
 - **Independent reviewer** — a reviewer whose model differs from every execution-model writer
-  (`models.default`, `models.sota`, and the per-stage `config[<stage>].model`; the union
-  enumerated by `collectExecutionModels`). Explicit `reviewers[]` entries that collide are
-  dropped with a warning (`filterIndependentReviewers`); a stage with no surviving
-  independent reviewer maps `review → escalate` with a reason, so an unconfigured operator
-  cannot deadlock.
+  via a separate no-session reviewer invocation. The review model may reuse the same model id
+  as `models.sota`, `models.default`, or a per-stage execution override; model-id equality no
+  longer makes the reviewer unavailable. A stage with no configured reviewer at all still maps
+  `review → escalate` with a reason, so an unconfigured operator cannot deadlock.
 - **Findings freshness** — a findings sidecar satisfies a `review` demand only when its
   `observedAt` (`generatedAt`, else the file mtime) is on or after the demanding gate
   record's `updatedAt`. A sidecar predating the demand is stale and contributes no review
