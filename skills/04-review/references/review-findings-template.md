@@ -7,6 +7,15 @@ Scope:
 - Insertions:
 - Deletions:
 
+## Review Outcome
+
+<!-- REQUIRED before handoff. Replace both values after verifying the report. -->
+- Status: REPLACE_WITH_clean_OR_findings
+- Findings: REPLACE_WITH_integer
+
+`Status: clean` is valid only when `Findings: 0`.
+`Status: findings` is required when one or more confirmed `- **Finding**:` entries remain.
+
 ## Merged Reviewer Findings
 
 ### 🔴 High Severity
