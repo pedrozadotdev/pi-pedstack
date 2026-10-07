@@ -114,6 +114,34 @@ describe("planCommandGuard deterministic policy", () => {
 		}
 	});
 
+	test("bash may publish only the active stage's canonical report", () => {
+		const own = plan(
+			"03-work",
+			"cp stage-reports/03-work.md .context/compound-engineering/stage-reports/03-work.md",
+		);
+		expect(own.needsJev).toBe(false);
+		expect(own.verdict?.verdict).toBe("allow");
+		expect(
+			own.targets.some(
+				(target) =>
+					target.pathClass === "stage-report" && target.allow === true,
+			),
+		).toBe(true);
+
+		const foreign = plan(
+			"03-work",
+			"cp stage-reports/03-work.md .context/compound-engineering/stage-reports/04-5-debug.md",
+		);
+		expect(foreign.needsJev).toBe(false);
+		expect(foreign.verdict?.verdict).toBe("block");
+		expect(
+			foreign.targets.some(
+				(target) =>
+					target.pathClass === "stage-report" && target.allow === false,
+			),
+		).toBe(true);
+	});
+
 	test("read-only is allowed in every stage", () => {
 		for (const stage of [
 			"01-brainstorm",
