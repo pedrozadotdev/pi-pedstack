@@ -674,7 +674,7 @@ function strongDriftBlocker(record: DriftRecord): string {
 		`strong drift: ${dims}. ${reason}` +
 		`Do in-scope work for ${DRIFT_CLEAR_STREAK} turn${DRIFT_CLEAR_STREAK === 1 ? "" : "s"} to clear, delete ` +
 		`${driftRecordRelPath(record.stage)} to clear, or set ` +
-		`PEDSTACK_DRIFT_GUARD=off (restart required).`
+		`"features.driftGuard.mode": "off" in config.json (restart required).`
 	);
 }
 
@@ -682,8 +682,8 @@ function degradedDriftBlocker(stage: string): string {
 	return (
 		`Cannot save cross-stage handoff: drift status for stage ` +
 		`"${stage}" is degraded (the last evaluated turn failed) and ` +
-		`PEDSTACK_DRIFT_GUARD_FAILCLOSED=1. Re-run in-scope work, delete ` +
-		`${driftStatusRelPath(stage)} to clear, or set PEDSTACK_DRIFT_GUARD=off ` +
+		`features.driftGuard.failClosed=true. Re-run in-scope work, delete ` +
+		`${driftStatusRelPath(stage)} to clear, or set "features.driftGuard.mode": "off" ` +
 		`(restart required).`
 	);
 }
