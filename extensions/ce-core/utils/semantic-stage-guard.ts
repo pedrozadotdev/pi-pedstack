@@ -246,7 +246,9 @@ function decideDeterministic(
 /**
  * Plan the deterministic decision for a raw bash command.
  *
- * Absent/unknown stages fail open (no Jev call), exactly like `evaluateWrite`.
+ * Absent/unknown stages fail open for ordinary project paths, matching
+ * `evaluateWrite`, but protected `.context` targets that `evaluateWrite`
+ * rejects remain deterministically blocked.
  */
 export function planCommandGuard(
 	stage: string | null | undefined,
@@ -262,6 +264,10 @@ export function planCommandGuard(
 	const stageKey = knownStage(stage);
 
 	if (!stageKey) {
+		const blocked = targets.find((target) => !target.allow);
+		if (blocked) {
+			return deterministicBlock(plan, stage ?? "no-active-stage", blocked);
+		}
 		return { ...plan, needsJev: false, verdict: allowVerdict(plan) };
 	}
 	return decideDeterministic(
