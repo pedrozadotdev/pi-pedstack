@@ -15,7 +15,7 @@ When the review is complete:
 7. Never carry unresolved review findings into `05-learn`. `context_handoff save` validates the route against the report and blocks an inconsistent transition.
 8. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).
 9. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`.
-10. Before the handoff save, run `stage_gate` for `04-review`; deterministic failures block the save. An `escalate` action means: stop the stage loop and ask the operator to run `/ped-reload`. Do not continue with the current execution model.
+10. Before the handoff save, run `stage_gate` for `04-review`; deterministic failures block the save. An `escalate` action means: stop the stage loop and ask the operator to run `/ped-reload`. Under enforced routing (`routing.shadow: false`), the persisted escalation re-enters this same stage under `models.sota`; in shadow mode the decision is recorded but not applied. Do not continue with the current execution model or invoke `/ped-reload` yourself.
 
 ## Fix-forward loop
 
