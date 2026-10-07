@@ -89,7 +89,7 @@ export function createStageGateTool(deps: StageGateToolDeps) {
 					verdict: "accept",
 					action: "none",
 					actionReason:
-						"stage gate disabled (PEDSTACK_STAGE_GATE=off); no review action",
+						"stage gate disabled (features.stageGate.mode=off); no review action",
 					enforcing: false,
 					skipped: true,
 				};
