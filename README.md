@@ -16,10 +16,10 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 
 ## Highlights
 
-- **REST-like pipeline loop** — brainstorm → plan → work → review → learn → docsync, with automatic skill routing. Enter debug on demand via `/ped-debug`.
+- **REST-like pipeline loop** — brainstorm → plan → work → review; confirmed review findings loop back to work until review is clean, then learn → docsync. Enter debug on demand via `/ped-debug`.
 - **Checkpoint resume** — interrupted? Resume from the exact unit you left off
 - **TDD enforcement** — every unit follows RED → GREEN → REFACTOR with hard gates
-- **Evidence-first review** — auto-assigned reviewers across five axes, autofix loop
+- **Evidence-first review** — auto-assigned reviewers across five axes, with deterministic findings → work fix-forward routing
 - **Knowledge compounding** — solved problems become searchable solution artifacts
 - **Semantic solution search** — the `solution_search` tool and stage auto-injection rank `docs/solutions/` cards with a Jev semantic layer over a deterministic, never-weaker fallback; ships shadow-first (inert until `solutionRanking.shadow=false`)
 - **Cheap semantic file reads** — `semantic_read` (one file) and `semantic_scout` (files/dirs/globs) return typed per-path answers plus byte facts — **never file bodies** — so the agent opens only the files it truly needs; a Jev outage degrades to explicit `read`/`grep` guidance
@@ -50,7 +50,7 @@ You: I want to build a CLI tool that helps indie devs find early users
 → 01-brainstorm: structured discovery → requirements artifact
 → 02-plan: TDD-gated implementation units → plan artifact
 → 03-work: inline execution, checkpoint resume
-→ 04-review: five-axis findings, autofix loop
+→ 04-review: five-axis findings; unresolved findings loop back to 03-work
 → 05-learn: knowledge compounding
 → 06-docsync: synchronize documentation
 
@@ -81,7 +81,9 @@ Skill invocation, reload, and model/thinking level switching are handled automat
 ## The REST-like Pipeline Loop
 
 ```
-01-brainstorm → 02-plan → 03-work → 04-review → 05-learn → 06-docsync
+01-brainstorm → 02-plan → 03-work → 04-review ──clean──→ 05-learn → 06-docsync
+                               ↑        │
+                               └─findings┘
     think         plan      build      review       learn      docsync
 ```
 
@@ -92,7 +94,7 @@ Skill invocation, reload, and model/thinking level switching are handled automat
 | **01-brainstorm** | Structured multi-round discovery, domain vocabulary persistence | `brainstorm_dialog`, `artifact_helper` |
 | **02-plan** | TDD-gated implementation units, mandatory Strict Review before `multi_reviewer` | `plan_diff`, `context_handoff`, `artifact_helper`, `multi_reviewer`, `solution_search` |
 | **03-work** | Execution with checkpoint resume, strict TDD | `session_checkpoint`, `task_splitter`, `context_handoff` |
-| **04-review** | Auto-assigned reviewers, five-axis findings, autofix loop | `review_router`, `multi_reviewer`, `context_handoff`, `solution_search` |
+| **04-review** | Auto-assigned reviewers, five-axis findings, deterministic clean/findings outcome; findings route back to 03-work | `review_router`, `multi_reviewer`, `context_handoff`, `solution_search` |
 | **04-5-debug** *(on-demand)* | Debug and fix issues with a 5-phase workflow: Information Gathering, Root Cause Analysis, Implementation, Verification, Report. Enter via `/ped-debug`. | `context_handoff`, `solution_search` |
 | **05-learn** | Pattern extraction → searchable solution artifacts | `pattern_extractor`, `context_handoff`, `artifact_helper`, `solution_search` |
 | **06-docsync** | Synchronize project documentation after completion | `context_handoff`, `stage_gate` |
@@ -701,7 +703,7 @@ fails open on any internal error.
 | `/ped-fix-issues <#1,#2,...>` | Prompt-inject GitHub issue context into 01-brainstorm |
 | `/ped-debug <prompt>` | Enter 04-5-debug on demand with gating (warns if before 04-review). Prompt is required. |
 
-Auto-advance: `/ped-next` is automatically queued after every successful handoff save, except for two gated transitions (`02-plan→03-work` and `04-review→05-learn`) which prompt for confirmation. The authorization persists per-session.
+Auto-advance: `/ped-next` is automatically queued after every successful handoff save. `04-review→03-work` is an automatic fix-forward when the report contains findings; `04-review→05-learn` is possible only for a validated clean review (`Findings: 0`) and remains confirmation-gated. `02-plan→03-work` is also confirmation-gated. The authorization persists per-session.
 
 ---
 
