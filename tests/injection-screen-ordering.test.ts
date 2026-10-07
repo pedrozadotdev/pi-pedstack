@@ -10,8 +10,7 @@ import {
 } from "../extensions/ce-core/injection-screen/wrapper";
 import { filterBashOutput } from "../extensions/ce-core/tools/bash-output-filter";
 import { filterReadOutput } from "../extensions/ce-core/tools/read-output-filter";
-import ceCoreExtension, {
-} from "../extensions/ce-core/index";
+import ceCoreExtension from "../extensions/ce-core/index";
 import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
 import { testFeatures } from "./helpers/feature-config";
 
