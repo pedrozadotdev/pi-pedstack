@@ -20,7 +20,7 @@ const authorizedPairs = new Set<string>();
  *
  * Gated transitions:
  *   - 02-plan → 03-work : user should read the plan first
- *   - 04-review → 05-learn : user may want /ped-debug instead
+ *   - 04-review → 05-learn : clean review completed; confirm learning transition
  */
 const GATED_TRANSITIONS = new Set<string>([
 	"02-plan->03-work",
@@ -44,8 +44,7 @@ const CONFIRM_DIALOGS: Record<string, { title: string; message: string }> = {
 	"04-review->05-learn": {
 		title: "Continue to 05-learn?",
 		message:
-			"Code review complete. Proceed to learn (05-learn), " +
-			"or use /ped-debug if bugs were found.",
+			"Review outcome is clean (0 findings). Proceed to learn (05-learn)?",
 	},
 };
 

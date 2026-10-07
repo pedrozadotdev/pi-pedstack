@@ -4,13 +4,13 @@ After code review is complete, offer the user browser-based QA testing using `ag
 
 ## When to offer
 
-After the review findings are produced and any autofixes applied, ask the user:
+After the code review report is produced, ask the user:
 
 > Code review complete. Want me to also run the app through browser-based QA?
 >
 > - **A) Just code review** — done, no browser testing (existing behavior)
 > - **B) Run browser QA** — use agent-browser to test the live app, find visual/functional bugs
-> - **C) Browser QA + write regression tests** — find bugs, fix them, and add regression tests
+> - **C) Browser QA + regression-test recommendations** — find bugs and document the regression tests `03-work` should add
 
 If the user picks A, proceed directly to the handoff.
 
@@ -23,8 +23,8 @@ Before starting QA, ensure:
 
 ## QA tiers
 
-| Tier | What gets fixed | Time |
-|------|----------------|------|
+| Tier | What gets reviewed | Time |
+|------|-------------------|------|
 | Quick | Critical + high severity | ~2 min |
 | Standard | + medium severity | ~5-10 min |
 | Exhaustive | + low/cosmetic severity | ~15-20 min |
@@ -71,26 +71,19 @@ Document each issue immediately with:
 - Category (visual/functional/UX/content/performance/accessibility)
 - Reproduction steps
 
-### Phase 4: Fix loop (modes B and C)
+### Phase 4: Route findings to work
 
-For each fixable issue, in severity order:
+Do not edit source, tests, config, or dependencies in `04-review`.
 
-1. **Locate source** — grep for the component, find the responsible file
-2. **Fix** — minimal change that resolves the issue
-3. **Commit** — `git commit -m "fix(qa): ISSUE-NNN — description"`
-4. **Re-test** — navigate back and verify the fix with a screenshot
-5. **Classify** — verified / best-effort / reverted
+For each confirmed QA issue, in severity order:
 
-Self-regulation: Stop every 5 fixes and check with the user. Hard cap at 50 fixes.
+1. **Locate evidence** — identify the responsible file/component and reproduction path.
+2. **Document** — add a canonical `- **Finding**:` entry to the compiled review report.
+3. **Recommend** — state the minimal fix and, for mode C, the regression test `03-work` should add.
+4. **Update outcome** — include the QA issue in the exact `Review Outcome` finding count.
+5. **Handoff** — route the completed report to `03-work`; the next `04-review` run verifies the fixes.
 
-### Phase 5: Regression tests (mode C only)
-
-For each verified fix, write a regression test:
-- Trace the bug's codepath through the code you just fixed
-- Set up the exact precondition that triggered the bug
-- Assert the correct behavior (NOT "it renders" — test what it DOES)
-- Include attribution comment: `// Regression: ISSUE-NNN — {what broke}`
-- Run the test, commit if passing
+No commits or implementation edits occur in QA mode.
 
 ## Issue severity rubric
 

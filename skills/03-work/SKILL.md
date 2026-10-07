@@ -70,7 +70,14 @@ If the same tool, command, or implementation unit fails 3 consecutive times, sto
 ## Workflow
 
 1. **Load context**: consume latest handoff before any broad file reads — `context_handoff load` or read `.context/compound-engineering/handoffs/latest.md`. If found, use `activeFiles`, `blocker`, `verification`, `activeRules` as starting point. If not found, proceed normally.
-2. Detect input type (plan path vs bare prompt)
+2. **Review-fix re-entry:** if the handoff came from `04-review` and `artifacts.review` is present, enter fix-forward mode before normal plan execution:
+   - read the compiled review report first;
+   - treat each confirmed `- **Finding**:` entry as the bounded work list;
+   - verify the finding against current code before changing anything;
+   - fix every confirmed high/moderate/low finding that is still applicable, using RED → GREEN → REFACTOR and targeted regression coverage;
+   - do not edit the review report in `03-work`; the next `04-review` run owns re-review and a fresh outcome;
+   - after fixes and verification, produce the normal work completion report and hand off to `04-review`.
+3. Detect input type (plan path vs bare prompt)
 3. Read implementation units if plan path
 4. Load `session_checkpoint` to skip completed units
 5. Use `task_splitter` for dependency analysis

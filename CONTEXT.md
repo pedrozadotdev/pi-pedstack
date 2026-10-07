@@ -6,8 +6,9 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 ## Workflow
 
 - **Stage** — one step of the strict pipeline: `01-brainstorm` → `02-plan` →
-  `03-work` → `04-review` → `05-learn` → `06-docsync`, plus on-demand
-  `04-5-debug` (entered via `/ped-debug`). Stages are never skipped or combined.
+  `03-work` → `04-review`. A review with confirmed findings routes back to `03-work`
+  and must be reviewed again; only a clean review continues to `05-learn` → `06-docsync`.
+  `04-5-debug` remains on-demand via `/ped-debug`. Unresolved findings are never skipped.
 - **Capability matrix** — the pure TypeScript table (`extensions/ce-core/utils/capability-matrix.ts`)
   that classifies a repo-relative path and decides whether the active stage may write it.
 - **Artifact** — a dated workflow document under `docs/` (`brainstorms/`, `plans/`,

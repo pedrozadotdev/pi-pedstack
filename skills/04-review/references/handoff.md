@@ -2,22 +2,29 @@
 
 When the review is complete:
 
-1. Summarize the highest-priority structured findings.
-2. State whether fixes or re-review are needed.
-3. If findings are **autofixable**, apply the fixes and re-review the changes.
-4. After autofix, report what was changed and whether re-review confirms the fix.
-5. The extension will prompt the user for authorization (gated transition: decide whether to use `/ped-debug` first) and then advance to `05-learn`. `/ped-next` is the manual escape hatch.
-6. Mention any relevant plan or solution artifacts referenced during review.
-7. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).
-8. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`.
-9. Before the handoff save, run `stage_gate` for `04-review`; deterministic failures block the save in both `shadow` and `enforce`. An `escalate` action means: stop the stage loop and ask the operator to run `/ped-reload` (under enforced routing the persisted escalation re-enters this stage under `models.sota`; in shadow mode the decision is recorded but not applied); do not continue with the current execution model.
+1. Keep this stage **review-only**. Do not modify source, tests, config, or dependencies to address findings here.
+2. Verify every finding against the codebase. Remove false positives from the compiled report.
+3. Finalize the report's `## Review Outcome`:
+   - confirmed findings remain → `Status: findings` and the exact non-zero `Findings` count
+   - no confirmed findings remain → `Status: clean` and `Findings: 0`
+4. Put the compiled `docs/reviews/*.md` path in `artifacts.review`.
+5. If `multi_reviewer` returned `findingsRelativePath`, put it in `artifacts.reviewFindings`; do not replace `artifacts.review` with the JSON sidecar.
+6. Route based on the report outcome:
+   - `findings` → save the handoff with `nextStage: "03-work"`; carry the highest-priority findings and report path so work fixes them.
+   - `clean` → save the handoff with `nextStage: "05-learn"`.
+7. Never carry unresolved review findings into `05-learn`. `context_handoff save` validates the route against the report and blocks an inconsistent transition.
+8. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).
+9. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`.
+10. Before the handoff save, run `stage_gate` for `04-review`; deterministic failures block the save. An `escalate` action means: stop the stage loop and ask the operator to run `/ped-reload`. Under enforced routing (`routing.shadow: false`), the persisted escalation re-enters this same stage under `models.sota`; in shadow mode the decision is recorded but not applied. Do not continue with the current execution model or invoke `/ped-reload` yourself.
 
-## Autofix loop
+## Fix-forward loop
 
-When findings have `autofixable: true`:
+```text
+03-work
+  → 04-review
+      → findings → 03-work
+                    → 04-review
+                        → clean → 05-learn
+```
 
-1. Apply the fix for each autofixable finding.
-2. Re-run affected tests.
-3. Re-review only the changed lines.
-4. If re-review produces new findings, repeat (max 3 iterations).
-5. Report final state: fixed, partially fixed, or needs manual intervention.
+The review gate judges whether the **review artifact** is complete and trustworthy. A gate `accept` does not mean the implementation is clean; the report's validated Review Outcome controls the next stage.

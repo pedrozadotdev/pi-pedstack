@@ -269,7 +269,7 @@ describe("skill package contracts", () => {
 		expect(handoff).toContain("04-review");
 	});
 
-	test("04-review detects scope, reads plans and solutions, uses review_router and autofix", () => {
+	test("04-review stays review-only and routes findings back to work", () => {
 		const content = readFileSync(
 			path.join(repoRoot, "skills", "04-review", "SKILL.md"),
 			"utf8",
@@ -314,7 +314,10 @@ describe("skill package contracts", () => {
 		expect(content).toContain("docs/reviews");
 		expect(content).toContain("structured findings");
 		expect(content).toContain("review_router");
-		expect(content).toContain("autofix");
+		expect(content).toContain("Review Outcome");
+		expect(content).toContain('nextStage: "03-work"');
+		expect(content).toContain('nextStage: "05-learn"');
+		expect(content).toContain("artifacts.reviewFindings");
 		expect(content).toContain("YAGNI");
 		expect(content).toContain("technical evaluation");
 		// Must use the shared solution_search engine, not hand-ranked grep
@@ -330,8 +333,11 @@ describe("skill package contracts", () => {
 		expect(reviewerSelection).toContain("review_router");
 		expect(reviewerSelection).toContain("correctness-reviewer");
 		expect(reviewerSelection).toContain("security-reviewer");
-		expect(handoff).toContain("/ped-debug");
-		expect(handoff).toContain("autofix");
+		expect(handoff).toContain("03-work");
+		expect(handoff).toContain("05-learn");
+		expect(handoff).toContain("Review Outcome");
+		expect(handoff).toContain("review-only");
+		expect(handoff).toContain("artifacts.reviewFindings");
 	});
 
 	test("05-learn solution-search-strategy defines tool-based overlap retrieval", () => {

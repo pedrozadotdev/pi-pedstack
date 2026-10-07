@@ -8,6 +8,35 @@ function readRepoFile(relativePath: string): string {
 	return readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
+function writeReviewReport(
+	repoRoot: string,
+	status: "clean" | "findings",
+	findings: number,
+): string {
+	const relative = "docs/reviews/test-review.md";
+	const absolute = path.join(repoRoot, relative);
+	mkdirSync(path.dirname(absolute), { recursive: true });
+	const entries = Array.from(
+		{ length: findings },
+		(_, index) =>
+			`- **Finding**: issue ${index + 1}\n  - **Evidence**: src/file.ts:${index + 1}\n  - **Recommended Action**: fix it`,
+	).join("\n");
+	writeFileSync(
+		absolute,
+		[
+			"# Review Findings Report",
+			"",
+			"## Review Outcome",
+			`- Status: ${status}`,
+			`- Findings: ${findings}`,
+			"",
+			"## Merged Reviewer Findings",
+			entries,
+		].join("\n"),
+	);
+	return relative;
+}
+
 describe("context_handoff", () => {
 	test("load/latest/status returns safe empty state when no handoff exists", async () => {
 		const repoRoot = `/tmp/pi-ce-handoff-empty-${Date.now()}`;
@@ -93,6 +122,93 @@ describe("context_handoff", () => {
 			"utf8",
 		);
 		expect(savedText).toContain("## Current Task");
+	});
+
+	test("04-review with findings cannot advance to 05-learn", async () => {
+		const repoRoot = `/tmp/pi-ce-review-findings-route-${Date.now()}`;
+		const report = writeReviewReport(repoRoot, "findings", 2);
+		const tool = createContextHandoffTool();
+
+		const result = await tool.execute({
+			operation: "save",
+			repoRoot,
+			currentStage: "04-review",
+			nextStage: "05-learn",
+			artifacts: { review: report },
+		});
+
+		expect(result.path).toBeUndefined();
+		expect(result.blocker).toContain("03-work");
+		expect(result.blocker).toContain("2 unresolved finding");
+	});
+
+	test("04-review with findings may hand back to 03-work", async () => {
+		const repoRoot = `/tmp/pi-ce-review-findings-work-${Date.now()}`;
+		const report = writeReviewReport(repoRoot, "findings", 2);
+		const tool = createContextHandoffTool();
+
+		const result = await tool.execute({
+			operation: "save",
+			repoRoot,
+			currentStage: "04-review",
+			nextStage: "03-work",
+			artifacts: { review: report },
+		});
+
+		expect(result.blocker).toBeUndefined();
+		expect(result.nextStage).toBe("03-work");
+		expect(result.path).toContain("04-review-to-03-work");
+	});
+
+	test("clean 04-review may advance only to 05-learn", async () => {
+		const repoRoot = `/tmp/pi-ce-review-clean-route-${Date.now()}`;
+		const report = writeReviewReport(repoRoot, "clean", 0);
+		const tool = createContextHandoffTool();
+
+		const wrong = await tool.execute({
+			operation: "save",
+			repoRoot,
+			currentStage: "04-review",
+			nextStage: "03-work",
+			artifacts: { review: report },
+		});
+		expect(wrong.blocker).toContain("05-learn");
+
+		const correct = await tool.execute({
+			operation: "save",
+			repoRoot,
+			currentStage: "04-review",
+			nextStage: "05-learn",
+			artifacts: { review: report },
+		});
+		expect(correct.blocker).toBeUndefined();
+		expect(correct.nextStage).toBe("05-learn");
+	});
+
+	test("04-review completion requires artifacts.review with a valid outcome", async () => {
+		const repoRoot = `/tmp/pi-ce-review-outcome-required-${Date.now()}`;
+		const tool = createContextHandoffTool();
+
+		const missing = await tool.execute({
+			operation: "save",
+			repoRoot,
+			currentStage: "04-review",
+			nextStage: "05-learn",
+		});
+		expect(missing.blocker).toContain("artifacts.review");
+
+		const relative = "docs/reviews/bad.md";
+		const absolute = path.join(repoRoot, relative);
+		mkdirSync(path.dirname(absolute), { recursive: true });
+		writeFileSync(absolute, "# Review\n- **Finding**: issue");
+		const invalid = await tool.execute({
+			operation: "save",
+			repoRoot,
+			currentStage: "04-review",
+			nextStage: "03-work",
+			artifacts: { review: relative },
+		});
+		expect(invalid.blocker).toContain("invalid Review Outcome");
 	});
 
 	test("status recommends new session only for heavy/critical cross-phase", async () => {
