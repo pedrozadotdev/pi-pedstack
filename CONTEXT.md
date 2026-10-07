@@ -99,11 +99,11 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Review budget** — `MAX_INDEPENDENT_REVIEW = 1`: at most one independent review per stage
   loop, counted from the retained prior attempts whose verdict is `review` since the newest
   `accept`. A second `review` maps to `escalate`.
-- **Independent reviewer** — a reviewer whose model differs from every execution-model writer
-  via a separate no-session reviewer invocation. The review model may reuse the same model id
-  as `models.sota`, `models.default`, or a per-stage execution override; model-id equality no
-  longer makes the reviewer unavailable. A stage with no configured reviewer at all still maps
-  `review → escalate` with a reason, so an unconfigured operator cannot deadlock.
+- **Independent reviewer** — an isolated reviewer invocation: `multi_reviewer` runs in a
+  separate no-session process with a reviewer-specific prompt. The review model may reuse the
+  same model id as `models.sota`, `models.default`, or a per-stage execution override;
+  model-id equality does not make the reviewer unavailable. A stage with no configured reviewer
+  at all still maps `review → escalate` with a reason, so an unconfigured operator cannot deadlock.
 - **Findings freshness** — a findings sidecar satisfies a `review` demand only when its
   `observedAt` (`generatedAt`, else the file mtime) is on or after the demanding gate
   record's `updatedAt`. A sidecar predating the demand is stale and contributes no review
