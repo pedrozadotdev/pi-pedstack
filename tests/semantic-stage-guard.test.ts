@@ -184,7 +184,7 @@ describe("applyJevAnswers", () => {
 		);
 		expect(verdict.verdict).toBe("block");
 		expect(verdict.reason).toContain("02-plan");
-		expect(verdict.reason).toContain("PEDSTACK_DISABLE_GUARD=1");
+		expect(verdict.reason).toContain("features.stageGuard.disabled");
 	});
 
 	test("mutates without intent allows", () => {
