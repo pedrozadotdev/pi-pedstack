@@ -1,4 +1,4 @@
-import { describe, expect, test, mock, afterEach } from "bun:test";
+import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
 import path from "node:path";
 import { mkdir, writeFile, readFile, rm, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -778,6 +778,13 @@ describe("commands/pedstack: session-traversal helpers", () => {
 // ── /ped-reload command ────────────────────────────────────────────
 
 describe("cmdPedReload", () => {
+	beforeEach(() => {
+		clearActiveStage();
+	});
+
+	afterEach(() => {
+		clearActiveStage();
+	});
 	test("without current stage falls back to 01-brainstorm", async () => {
 		const appendCalls: Array<{ type: string; data: any }> = [];
 		const sentMessages: Array<{ content: any; opts?: any }> = [];
