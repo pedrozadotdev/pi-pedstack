@@ -142,7 +142,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   classifies as `null` and is never screened.
 - **Untrusted source** — a provenance kind the injection screen treats as external input.
 - **Screen mode** — `off | shadow | enforce`, resolved from `features.injectionScreen.mode`
-  once at init; omitted values default to `shadow`; invalid values are rejected by config validation.
+  once at init; omitted values default to `enforce`; invalid values are rejected by config validation.
 - **Flagged / clean / degraded** — the three screen outcomes. `degraded` is the
   fail-open result produced when Jev is unavailable; it never adds a warning.
 - **Untrusted wrapper** — the fixed deterministic delimiter + warning prefix applied
@@ -172,7 +172,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Degraded** — the fail-open source recorded when Jev is unavailable or returns an
   unusable answer set; non-blocking unless `FAILCLOSED` is set in `enforce`.
 - **Shadow mode** — compute, record, and log the readiness verdict without blocking
-  (the default). `features.handoffReadiness.mode = "off" | "shadow" | "enforce"`.
+  when explicitly selected. `features.handoffReadiness.mode = "off" | "shadow" | "enforce"` defaults to `enforce`.
 
 ## Docs verification (#15)
 
@@ -233,7 +233,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   excerpt). An unchanged signature reuses the last judged outcome without a second Jev
   call (`source: "deterministic"`, reason `unchanged turn`).
 - **Drift mode** — `off | shadow | enforce`, resolved from `features.driftGuard.mode` once
-  at init; omitted values default to `shadow`; invalid values are rejected by config validation. Only `enforce` blocks or
+  at init; omitted values default to `enforce`; invalid values are rejected by config validation. Only `enforce` blocks or
   injects.
 - **Drift record** — the latest **state** (not a hash-fresh judgment) written by a Jev
   verdict for one stage, at `.context/compound-engineering/drift/<stage>.json`. Fresh
@@ -322,4 +322,4 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   or a `request_too_large` trim. A skipped dimension is absent from `sem` with a reason in
   `skippedDimensions[]` — never a sentinel score.
 - **Shadow mode** — compute, persist, and log the dimensions without changing
-  `weightedScore` or `verdict` (the default). `features.overengineering.mode = "off" | "shadow" | "enforce"`.
+  `weightedScore` or `verdict` when explicitly selected. `features.overengineering.mode = "off" | "shadow" | "enforce"` defaults to `enforce`.
