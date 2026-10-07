@@ -2,7 +2,7 @@
 
 `02-plan` **always** runs a Strict Review of the plan artifact before handing off to `03-work`. There is no "Just go" / "CEO Review" / "Strict Review" choice — the full Strict Review is a mandatory step in the planning flow. Strict Review is self-review: it never invokes the `multi_reviewer` tool.
 
-The independent-review pass that follows Strict Review is **conditional on the gate `action`**: `review` runs exactly one reviewer via `multi_reviewer mode: "single"`; `accept` / `none` skips it; `escalate` stops the current stage loop so the operator can run `/ped-reload` (the persisted escalation re-enters `02-plan` under `models.sota`). See "When to run" below for the branch.
+The independent-review pass that follows Strict Review is **conditional on the gate `action`**: `review` runs exactly one reviewer via `multi_reviewer mode: "single"`; `accept` / `none` skips it; `escalate` stops the current stage loop so the operator can run `/ped-reload` (under enforced routing the persisted escalation re-enters `02-plan` under `models.sota`; in shadow mode the decision is recorded but not applied). See "When to run" below for the branch.
 
 The review has two layers:
 
@@ -22,7 +22,7 @@ Strict Review runs on every plan, after the plan artifact is written to `docs/pl
    - `review` → invoke `multi_reviewer` with `stepName: "02-plan"` and `mode: "single"`, then re-run `stage_gate`. This conditional pass runs **after** Strict Review.
    - `accept` / `none` → skip the independent-review pass.
    - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
-   - `escalate` → stop the current stage loop. Do not continue with the current execution model, and do not invoke `/ped-reload` yourself; ask the operator to run `/ped-reload`. The persisted escalation makes Pedstack re-enter this same `02-plan` stage under `models.sota`.
+   - `escalate` → stop the current stage loop. Do not continue with the current execution model, and do not invoke `/ped-reload` yourself; ask the operator to run `/ped-reload`. The persisted escalation makes Pedstack re-enter this same `02-plan` stage under `models.sota` when routing is enforced (`routing.shadow: false`); in shadow mode the decision is recorded but not applied.
    A missing `action` (unknown stage or a tool regression) is treated as `none`.
 5. Proceed to the `03-work` handoff via `references/handoff.md`.
 
@@ -138,5 +138,5 @@ After Strict Review:
 
 1. Update the plan artifact with any changes identified during the review.
 2. Note the review mode (`Strict Review`) and the key decisions/changes in the plan.
-3. Run `stage_gate` for `02-plan` and branch on its `action` as described in "When to run": `review` → `multi_reviewer` with `stepName: "02-plan"` and `mode: "single"`; `accept` / `none` → skip; `escalate` → stop the stage loop and ask the operator to run `/ped-reload` (the persisted escalation re-enters `02-plan` under `models.sota`).
+3. Run `stage_gate` for `02-plan` and branch on its `action` as described in "When to run": `review` → `multi_reviewer` with `stepName: "02-plan"` and `mode: "single"`; `accept` / `none` → skip; `escalate` → stop the stage loop and ask the operator to run `/ped-reload` (under enforced routing the persisted escalation re-enters `02-plan` under `models.sota`; in shadow mode the decision is recorded but not applied).
 4. Proceed to the `03-work` handoff via `references/handoff.md`.

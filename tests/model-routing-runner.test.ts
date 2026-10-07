@@ -6,6 +6,7 @@ import { createFakeJevRuntime } from "../extensions/ce-core/jev/runtime";
 import type { JevProcessOutput, JevRequest } from "../extensions/ce-core/jev/types";
 import { resolveStageRouting } from "../extensions/ce-core/utils/model-routing";
 import { readRoutingRecord } from "../extensions/ce-core/utils/routing-store";
+import { resetWorkflowRoutingState } from "../extensions/ce-core/utils/workflow-reset";
 
 const tempRoots: string[] = [];
 
@@ -125,6 +126,37 @@ describe("resolveStageRouting — shadow mode", () => {
 		expect(record?.role).toBe("sota");
 		expect(record?.updatedAt).toBe("2026-10-06T00:00:00.000Z");
 		// Shadow must not consume the escalation budget.
+		expect(record?.escalations).toBe(0);
+	});
+
+	test("a deterministic gate escalate is recorded but never applied under shadow", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS, routing: { shadow: true } });
+		writeStageGate(repo, "03-work", {
+			schema: 1,
+			stage: "03-work",
+			verdict: "escalate",
+		});
+		const jev = createFakeJevRuntime({
+			handler: () => new Error("Jev must not be called"),
+		});
+
+		const result = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+
+		expect(result.decision.role).toBe("sota");
+		expect(result.decision.reason).toBe("gate_escalate");
+		expect(result.shadow).toBe(true);
+		expect(result.appliedModel).toBeNull();
+		expect(jev.requests.length).toBe(0);
+
+		const record = await readRoutingRecord(repo, "03-work");
+		expect(record?.role).toBe("sota");
+		expect(record?.reason).toBe("gate_escalate");
+		// Shadow applies nothing, so it also consumes nothing.
 		expect(record?.escalations).toBe(0);
 	});
 });
@@ -407,5 +439,63 @@ describe("resolveStageRouting — partial role config", () => {
 		expect(result.decision.role).toBe("sota");
 		expect(result.appliedModel).toBeNull();
 		expect(await readRoutingRecord(repo, "03-work")).not.toBeNull();
+	});
+
+	test("a gate escalate with no sota role falls back to default, never review", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, {
+			models: {
+				default: { model: "cheap" },
+				review: { model: "reviewer" },
+			},
+			routing: { shadow: false },
+		});
+		writeStageGate(repo, "03-work", {
+			schema: 1,
+			stage: "03-work",
+			verdict: "escalate",
+		});
+		const jev = createFakeJevRuntime({
+			handler: () => new Error("Jev must not be called"),
+		});
+
+		const result = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+
+		expect(result.decision.role).toBe("sota");
+		expect(result.appliedModel).toBe("cheap");
+		expect(result.appliedModel).not.toBe("reviewer");
+	});
+
+	test("a workflow reset restores the proactive Jev budget", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
+		const jev = createFakeJevRuntime({ handler: routingHandler() });
+
+		const first = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+		const exhausted = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+		expect(first.decision.role).toBe("sota");
+		expect(exhausted.decision.reason).toBe("budget_exhausted");
+
+		await resetWorkflowRoutingState(repo);
+
+		const fresh = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+		expect(fresh.decision.role).toBe("sota");
+		expect(fresh.decision.reason).toBe("jev");
 	});
 });

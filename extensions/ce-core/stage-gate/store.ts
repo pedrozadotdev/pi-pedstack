@@ -150,6 +150,18 @@ export async function appendRecord(
 	return filePath;
 }
 
+/**
+ * Remove every persisted stage-gate record. Called only when a genuinely new
+ * workflow starts, so no stale `escalate` verdict (or prior review budget)
+ * influences the new workflow; the continuation commands never clear it.
+ */
+export async function clearStageGateRecords(repoRoot: string): Promise<void> {
+	await fs.rm(path.join(repoRoot, STAGE_GATES_DIR), {
+		recursive: true,
+		force: true,
+	});
+}
+
 /** Baseline paths recorded on a schema-2 attempt; malformed values read as []. */
 function baselinePathsOf(record: StageGateAttempt): string[] {
 	const overengineering = record.overengineering;

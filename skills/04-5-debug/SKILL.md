@@ -51,5 +51,5 @@ Once the bug is fixed and verified, provide a concise summary to the user detail
 - After completing the report, save a context handoff targeting 05-learn.
 - Write the debug stage report to `.context/compound-engineering/stage-reports/04-5-debug.md`.
 - Before the handoff save, run `stage_gate` for `04-5-debug`; deterministic failures block the save in both `shadow` and `enforce`.
-- If `stage_gate` returns `action: "escalate"`, stop the current stage loop and ask the operator to run `/ped-reload`; the persisted escalation re-enters this same stage under `models.sota`. Do not continue with the current execution model and do not invoke `/ped-reload` yourself.
+- If `stage_gate` returns `action: "escalate"`, stop the current stage loop and ask the operator to run `/ped-reload`; under enforced routing (`routing.shadow: false`) the persisted escalation re-enters this same stage under `models.sota`; in shadow mode the decision is recorded but not applied. Do not continue with the current execution model and do not invoke `/ped-reload` yourself.
 - Follow Ponytail discipline: fix the root cause, not the symptom. Don't scope creep.

@@ -138,6 +138,7 @@ Instead of maintaining a model per stage, you can declare **three roles once** a
 - **`routing.shadow`** — when `true` (default) routing computes and persists a decision but keeps applying the explicit per-stage model (if any).
 - **`routing.sotaMinScore` / `sotaMinConfidence`** — deterministic thresholds (`[0, 1]`) a Jev judgment must clear before it may select `sota`.
 - **`routing.maxEscalationsPerStage`** — spend cap (`>= 1`) on **proactive Jev-triggered** `sota` selections per stage. A deterministic stage-gate escalation is never suppressed by this cost budget.
+- **`routing` workflow scope** — routing records and stage-gate records are workflow-scoped: `/ped-start` and `/ped-fix-issues` start a genuinely new workflow and clear the previous one's `.context/compound-engineering/routing/` and `stage-gates/` records, so the proactive budget and any stale gate escalation reset. `/ped-next`, `/ped-reload`, and `/ped-debug` preserve them, so a manual `/ped-reload` still sees the escalation that triggered it.
 
 **Precedence at stage entry** (deterministic before semantic):
 
@@ -146,7 +147,7 @@ Instead of maintaining a model per stage, you can declare **three roles once** a
 3. Otherwise Jev answers five bounded `noul` questions (`complexity`, `risk`, `cross_cutting`, `deep_reasoning`, `ambiguity`); TypeScript combines them with fixed weights and thresholds. Cleared with budget available → `sota`; threshold cleared but budget spent → `budget_exhausted`.
 4. Anything else — including a Jev outage or invalid answer → `default`.
 
-**Manual escalation.** When `stage_gate.action === "escalate"`, stop the current stage loop and ask the operator to run `/ped-reload`; the persisted escalation makes stage-entry routing re-enter the same stage under `models.sota`. The model never invokes `/ped-reload` automatically and never switches models mid-turn.
+**Manual escalation.** When `stage_gate.action === "escalate"`, stop the current stage loop and ask the operator to run `/ped-reload`. Under enforced routing (`routing.shadow = false`) the persisted escalation makes stage-entry routing re-enter the same stage under `models.sota`; under shadow mode (the default) the decision is recorded but not applied. The model never invokes `/ped-reload` automatically and never switches models mid-turn.
 
 Every decision is persisted to `.context/compound-engineering/routing/<stage>.json` with its `role`, `reason` (`override | gate_escalate | jev | budget_exhausted | fallback`), `source`, and (for Jev) the atomic scores.
 

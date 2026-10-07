@@ -73,6 +73,15 @@ export async function readRoutingRecord(
 	};
 }
 
+/**
+ * Remove every persisted routing record. Called only when a genuinely new
+ * workflow starts, so the proactive escalation budget starts fresh; the
+ * continuation commands never clear it.
+ */
+export async function clearRoutingRecords(repoRoot: string): Promise<void> {
+	await fs.rm(path.join(repoRoot, ROUTING_DIR), { recursive: true, force: true });
+}
+
 /** Persist a record (creating parent directories) and return its path. */
 export async function writeRoutingRecord(
 	repoRoot: string,
