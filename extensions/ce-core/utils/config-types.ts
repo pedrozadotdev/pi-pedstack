@@ -12,14 +12,26 @@ import {
 // Config types
 // ---------------------------------------------------------------------------
 
+export type ThinkingLevelConfig =
+  | "off"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "0"
+  | "1"
+  | "2"
+
 export interface StepConfig {
   model: string
-  thinkingLevel?: string
+  thinkingLevel?: ThinkingLevelConfig
 }
 
 export interface ReviewerConfig {
   model: string
-  thinkingLevel?: string
+  thinkingLevel?: ThinkingLevelConfig
 }
 
 export interface ReviewableStepConfig extends StepConfig {
@@ -178,11 +190,28 @@ export function getConfigKeyForSkill(skillName: string): StepConfigKey | null {
 // Validation
 // ---------------------------------------------------------------------------
 
+const THINKING_LEVEL_VALUES = new Set<ThinkingLevelConfig>([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "0",
+  "1",
+  "2",
+])
+
+function isThinkingLevel(value: unknown): value is ThinkingLevelConfig {
+  return typeof value === "string" && THINKING_LEVEL_VALUES.has(value as ThinkingLevelConfig)
+}
+
 function isStepConfig(value: unknown): value is StepConfig {
   if (!value || typeof value !== "object") return false
   const obj = value as Record<string, unknown>
   if (typeof obj.model !== "string") return false
-  if (obj.thinkingLevel !== undefined && typeof obj.thinkingLevel !== "string") return false
+  if (obj.thinkingLevel !== undefined && !isThinkingLevel(obj.thinkingLevel)) return false
   return true
 }
 
@@ -277,7 +306,7 @@ function validateModels(raw: unknown): ModelRolesConfig {
     if (obj[role] === undefined) continue
     if (!isStepConfig(obj[role])) {
       throw new Error(
-        `pi-pedstack config: "models.${role}" must have "model" (string) and optional "thinkingLevel" (string)`,
+        `pi-pedstack config: "models.${role}" must have "model" (string) and optional "thinkingLevel" (off|minimal|low|medium|high|xhigh|max)`,
       )
     }
     result[role] = obj[role] as StepConfig
@@ -616,7 +645,7 @@ function applySimpleStepConfigs(
     if (obj[key] === undefined) continue
     if (!isStepConfig(obj[key])) {
       throw new Error(
-        `pi-pedstack config: "${key}" must have "model" (string) and optional "thinkingLevel" (string)`,
+        `pi-pedstack config: "${key}" must have "model" (string) and optional "thinkingLevel" (off|minimal|low|medium|high|xhigh|max)`,
       )
     }
     config[key] = obj[key] as StepConfig
@@ -631,7 +660,7 @@ function applyReviewableStepConfigs(
     if (obj[key] === undefined) continue
     if (!isReviewableStepConfig(obj[key])) {
       throw new Error(
-        `pi-pedstack config: "${key}" must have "model" (string), optional "thinkingLevel" (string), and optional "reviewers" array of {model, thinkingLevel}`,
+        `pi-pedstack config: "${key}" must have "model" (string), optional "thinkingLevel" (off|minimal|low|medium|high|xhigh|max), and optional "reviewers" array of {model, thinkingLevel}`,
       )
     }
     config[key] = obj[key] as ReviewableStepConfig
