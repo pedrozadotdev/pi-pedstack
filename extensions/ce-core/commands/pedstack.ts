@@ -26,8 +26,10 @@ import {
 import { createContextHandoffTool } from "../tools/context-handoff";
 import {
 	setActiveStage,
+	getActiveStage,
 	clearActiveStage,
 	persistActiveStage,
+	readPersistedActiveStage,
 } from "../utils/active-stage";
 import { resetWorkflowRoutingState } from "../utils/workflow-reset";
 
@@ -662,10 +664,13 @@ async function beginStageTransition(
 	entryPrompt?: string,
 ): Promise<boolean> {
 	rememberCommandContext(ctx);
-	await activateStage(ctx.cwd, stageKey);
 
 	const nav = await prepareStageNavigation(ctx);
 	if (!nav) return false;
+
+	// Navigation is the commit point for a stage transition. Do not advertise
+	// the target stage to guards/reload until the new context actually exists.
+	await activateStage(ctx.cwd, stageKey);
 
 	pi.appendEntry(entryType, {
 		returnTo: nav.departureLeafId,
@@ -1066,14 +1071,37 @@ export function cmdPedDebug(
 	};
 }
 
+/**
+ * Resolve the stage that /ped-reload should restart.
+ *
+ * The active-stage store represents the stage executing right now, while
+ * context-state.currentStage represents the latest durable handoff and may
+ * legitimately lag during an in-progress stage. Prefer live memory, then the
+ * persisted active-stage side file for process/session resume, and use the
+ * handoff state only as a compatibility fallback.
+ */
+async function resolveReloadStage(repoRoot: string): Promise<PipelineStageKey | null> {
+	const memoryStage = getActiveStage();
+	if (memoryStage && isValidStageKey(memoryStage)) return memoryStage;
+
+	const persistedStage = await readPersistedActiveStage(repoRoot);
+	if (persistedStage && isValidStageKey(persistedStage)) return persistedStage;
+
+	const state = await createWorkflowStateTool().execute({ repoRoot });
+	const handoffStage = state.context.currentStage;
+	return handoffStage && isValidStageKey(handoffStage) ? handoffStage : null;
+}
+
 // ── /ped-reload command ────────────────────────────────────────────
 
 /**
  * Command factory for `/ped-reload`.
  *
- * Reads the current stage from workflow state and restarts it cleanly:
- * fresh context branch, re-applied skill config (model/thinking/APPEND.md),
- * and a clean skill prompt. Falls back to 01-brainstorm if no stage exists.
+ * Restarts the actually active stage cleanly: fresh context branch,
+ * re-applied skill config (model/thinking/APPEND.md), and a clean skill prompt.
+ * Active-stage memory/persistence is authoritative; workflow handoff state is
+ * only a fallback because it can lag while a stage is still in progress.
+ * Falls back to 01-brainstorm if no valid stage exists.
  */
 export function cmdPedReload(
 	pi: ExtensionAPI,
@@ -1087,17 +1115,12 @@ export function cmdPedReload(
 
 			const optionalPrompt = args.trim() || undefined;
 
-			// Determine the current stage from workflow state
 			let stageKey: PipelineStageKey;
 			try {
-				const state = await createWorkflowStateTool().execute({
-					repoRoot: ctx.cwd,
-				});
-				const current = state.context.currentStage;
-				if (current && isValidStageKey(current)) {
-					stageKey = current;
+				const resolved = await resolveReloadStage(ctx.cwd);
+				if (resolved) {
+					stageKey = resolved;
 				} else {
-					// No context or invalid stage — fall back to brainstorm
 					stageKey = "01-brainstorm";
 					if (ctx.hasUI) {
 						ctx.ui.notify(
@@ -1107,11 +1130,10 @@ export function cmdPedReload(
 					}
 				}
 			} catch (err) {
-				// Error reading state — fall back gracefully
 				stageKey = "01-brainstorm";
 				if (ctx.hasUI) {
 					ctx.ui.notify(
-						`Could not read workflow state: ${formatError(err)}. Falling back to 01-brainstorm.`,
+						`Could not resolve active stage: ${formatError(err)}. Falling back to 01-brainstorm.`,
 						"warning",
 					);
 				}

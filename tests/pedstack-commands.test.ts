@@ -1,4 +1,4 @@
-import { describe, expect, test, mock, afterEach } from "bun:test";
+import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
 import path from "node:path";
 import { mkdir, writeFile, readFile, rm, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -778,6 +778,13 @@ describe("commands/pedstack: session-traversal helpers", () => {
 // ── /ped-reload command ────────────────────────────────────────────
 
 describe("cmdPedReload", () => {
+	beforeEach(() => {
+		clearActiveStage();
+	});
+
+	afterEach(() => {
+		clearActiveStage();
+	});
 	test("without current stage falls back to 01-brainstorm", async () => {
 		const appendCalls: Array<{ type: string; data: any }> = [];
 		const sentMessages: Array<{ content: any; opts?: any }> = [];
@@ -1130,6 +1137,109 @@ describe("cmdPedReload", () => {
 		await rm(testRepo, { recursive: true, force: true }).catch(() => {});
 	});
 
+	test("reload prefers the in-memory active stage over stale handoff state", async () => {
+		const appendCalls: Array<{ type: string; data: any }> = [];
+		const sentMessages: Array<{ content: any; opts?: any }> = [];
+		const repo = await mkdtemp(path.join(tmpdir(), "pi-pedstack-reload-memory-"));
+		try {
+			const ceDir = path.join(repo, ".context", "compound-engineering");
+			await mkdir(ceDir, { recursive: true });
+			await writeFile(
+				path.join(ceDir, "context-state.json"),
+				JSON.stringify({
+					currentStage: "01-brainstorm",
+					nextStage: "02-plan",
+				}),
+			);
+			setActiveStage("02-plan");
+
+			const pi = {
+				appendEntry(type: string, data?: any) {
+					appendCalls.push({ type, data });
+				},
+				sendUserMessage(content: any, opts?: any) {
+					sentMessages.push({ content, opts });
+				},
+				setModel: async () => true,
+				setThinkingLevel: () => {},
+				getThinkingLevel: () => "medium",
+			} as any;
+			const ctx = {
+				hasUI: false,
+				cwd: repo,
+				sessionManager: {
+					getLeafId: () => "leaf-1",
+					getBranch: () => [
+						{ type: "message", id: "msg-1", parentId: "root-1" } as SessionEntry,
+					],
+				},
+				model: { provider: "anthropic", id: "sonnet" },
+				modelRegistry: { find: () => undefined },
+				ui: { notify: () => {} },
+				navigateTree: async () => ({ cancelled: false }),
+				waitForIdle: async () => {},
+			} as any;
+
+			await cmdPedReload(pi).handler("", ctx);
+
+			expect(appendCalls[0].data.stage).toBe("02-plan");
+			expect(sentMessages[0].content).toContain("Reloading stage: 02-plan");
+		} finally {
+			clearActiveStage();
+			await rm(repo, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
+	test("reload uses persisted active stage after memory is cleared", async () => {
+		const appendCalls: Array<{ type: string; data: any }> = [];
+		const repo = await mkdtemp(path.join(tmpdir(), "pi-pedstack-reload-persisted-"));
+		try {
+			const ceDir = path.join(repo, ".context", "compound-engineering");
+			await mkdir(ceDir, { recursive: true });
+			await writeFile(
+				path.join(ceDir, "context-state.json"),
+				JSON.stringify({ currentStage: "01-brainstorm", nextStage: "02-plan" }),
+			);
+			await writeFile(
+				path.join(ceDir, "active-stage.json"),
+				JSON.stringify({ activeStage: "02-plan", updatedAt: new Date().toISOString() }),
+			);
+			clearActiveStage();
+
+			const pi = {
+				appendEntry(type: string, data?: any) {
+					appendCalls.push({ type, data });
+				},
+				sendUserMessage: () => {},
+				setModel: async () => true,
+				setThinkingLevel: () => {},
+				getThinkingLevel: () => "medium",
+			} as any;
+			const ctx = {
+				hasUI: false,
+				cwd: repo,
+				sessionManager: {
+					getLeafId: () => "leaf-1",
+					getBranch: () => [
+						{ type: "message", id: "msg-1", parentId: "root-1" } as SessionEntry,
+					],
+				},
+				model: { provider: "anthropic", id: "sonnet" },
+				modelRegistry: { find: () => undefined },
+				ui: { notify: () => {} },
+				navigateTree: async () => ({ cancelled: false }),
+				waitForIdle: async () => {},
+			} as any;
+
+			await cmdPedReload(pi).handler("", ctx);
+
+			expect(appendCalls[0].data.stage).toBe("02-plan");
+		} finally {
+			clearActiveStage();
+			await rm(repo, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
 	test("with only whitespace prompt falls back to default message", async () => {
 		const sentMessages: Array<{ content: any; opts?: any }> = [];
 
@@ -1287,6 +1397,41 @@ describe("commands/pedstack: active-stage wiring", () => {
 			);
 			expect(JSON.parse(raw).activeStage).toBe("04-review");
 		} finally {
+			await rm(repo, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
+	test("cancelled stage navigation does not change the active stage", async () => {
+		const { pi, appendCalls, sentMessages } = makePi();
+		const repo = await makeTempRepo();
+		try {
+			setActiveStage("01-brainstorm");
+			const ctx = makeCtx(repo);
+			ctx.navigateTree = async () => ({ cancelled: true });
+
+			// Seed workflow state so /ped-next resolves a real transition to 02-plan.
+			const ceDir = path.join(repo, ".context", "compound-engineering");
+			await mkdir(ceDir, { recursive: true });
+			await writeFile(
+				path.join(ceDir, "context-state.json"),
+				JSON.stringify({
+					currentStage: "01-brainstorm",
+					nextStage: "02-plan",
+					activeFiles: [],
+					currentTruth: [],
+					invalidatedAssumptions: [],
+					openDecisions: [],
+					compressionRisk: [],
+				}),
+			);
+
+			await cmdPedNext(pi).handler("", ctx);
+
+			expect(getActiveStage()).toBe("01-brainstorm");
+			expect(appendCalls).toEqual([]);
+			expect(sentMessages).toEqual([]);
+		} finally {
+			clearActiveStage();
 			await rm(repo, { recursive: true, force: true }).catch(() => {});
 		}
 	});
