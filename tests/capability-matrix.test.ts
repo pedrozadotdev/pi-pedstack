@@ -23,6 +23,7 @@ const CLASS_PATHS: Record<PathClass, string> = {
 	source: "extensions/ce-core/index.ts",
 	config: "package.json",
 	deps: "bun.lock",
+	"stage-report": ".context/compound-engineering/stage-reports/03-work.md",
 	"workflow-state": ".context/compound-engineering/active-stage.json",
 	unknown: "assets/logo.png",
 };
@@ -38,8 +39,9 @@ const STAGES: readonly PipelineStageKey[] = [
 ];
 
 /**
- * Authoritative writable classes from the plan's 7x11 matrix.
- * Every stage always allows `unknown`; no stage ever allows `workflow-state`.
+ * Authoritative ordinary writable classes from the capability matrix.
+ * Every stage always allows `unknown`; `stage-report` is handled separately
+ * because only the active stage's own canonical report is writable.
  */
 const WRITABLE: Record<PipelineStageKey, readonly PathClass[]> = {
 	"01-brainstorm": ["brainstorm", "unknown"],
@@ -67,8 +69,8 @@ const IDLE_WRITABLE: readonly PathClass[] = [
 // ── classifyPath ───────────────────────────────────────────────────
 
 describe("classifyPath", () => {
-	test("exposes all 11 path classes", () => {
-		expect(ALL_PATH_CLASSES.length).toBe(11);
+	test("exposes all 12 path classes", () => {
+		expect(ALL_PATH_CLASSES.length).toBe(12);
 		expect([...ALL_PATH_CLASSES].sort()).toEqual(
 			([
 				"brainstorm",
@@ -79,6 +81,7 @@ describe("classifyPath", () => {
 				"review",
 				"solution",
 				"source",
+				"stage-report",
 				"tests",
 				"unknown",
 				"workflow-state",
@@ -125,6 +128,33 @@ describe("classifyPath", () => {
 		expect(classifyPath(ROOT, 42 as unknown as string)).toBe("unknown");
 	});
 
+	test("classifies canonical stage reports separately from workflow state", () => {
+		expect(
+			classifyPath(
+				ROOT,
+				".context/compound-engineering/stage-reports/03-work.md",
+			),
+		).toBe("stage-report");
+		expect(
+			classifyPath(
+				ROOT,
+				".context/compound-engineering/stage-reports/not-a-stage.md",
+			),
+		).toBe("workflow-state");
+		expect(
+			classifyPath(
+				ROOT,
+				".context/compound-engineering/stage-reports/03-work.json",
+			),
+		).toBe("workflow-state");
+		expect(
+			classifyPath(
+				ROOT,
+				".context/compound-engineering/stage-reports/nested/03-work.md",
+			),
+		).toBe("workflow-state");
+	});
+
 	test("workflow-state invariant wins over conflicting basenames (C1)", () => {
 		const fixtures = [
 			".context/compound-engineering/package.json",
@@ -151,19 +181,21 @@ describe("STAGE_CAPABILITIES", () => {
 		}
 	});
 
-	test("never grants workflow-state, always grants unknown", () => {
+	test("never broadly grants workflow-state or stage-report, always grants unknown", () => {
 		for (const stage of STAGES) {
 			expect(STAGE_CAPABILITIES[stage].has("workflow-state")).toBe(false);
+			expect(STAGE_CAPABILITIES[stage].has("stage-report")).toBe(false);
 			expect(STAGE_CAPABILITIES[stage].has("unknown")).toBe(true);
 		}
 	});
 });
 
-// ── evaluateWrite: exhaustive 7x11 matrix ──────────────────────────
+// ── evaluateWrite: exhaustive ordinary matrix + stage reports ─────
 
 describe("evaluateWrite matrix", () => {
 	for (const stage of STAGES) {
 		for (const cls of ALL_PATH_CLASSES) {
+			if (cls === "stage-report") continue;
 			const expected = WRITABLE[stage].includes(cls);
 			const label = `${stage} ${expected ? "allows" : "blocks"} ${cls}`;
 			test(label, () => {
@@ -177,7 +209,23 @@ describe("evaluateWrite matrix", () => {
 		}
 	}
 
-	test("idle (null stage) allows everything except workflow-state", () => {
+	test("each stage may write only its own canonical stage report", () => {
+		for (const stage of STAGES) {
+			const own = `.context/compound-engineering/stage-reports/${stage}.md`;
+			const ownVerdict = evaluateWrite(stage, ROOT, own);
+			expect(ownVerdict).toEqual({ allow: true, pathClass: "stage-report" });
+
+			const foreignStage = STAGES.find((candidate) => candidate !== stage)!;
+			const foreign =
+				`.context/compound-engineering/stage-reports/${foreignStage}.md`;
+			const foreignVerdict = evaluateWrite(stage, ROOT, foreign);
+			expect(foreignVerdict.allow).toBe(false);
+			expect(foreignVerdict.pathClass).toBe("stage-report");
+			expect(foreignVerdict.reason).toContain("own canonical stage report");
+		}
+	});
+
+	test("idle (null stage) blocks workflow-state and stage reports", () => {
 		for (const cls of ALL_PATH_CLASSES) {
 			const expected = IDLE_WRITABLE.includes(cls);
 			const verdict = evaluateWrite(null, ROOT, CLASS_PATHS[cls]);
@@ -193,10 +241,12 @@ describe("evaluateWrite matrix", () => {
 		).toBe(false);
 	});
 
-	test("unknown stage string fails open for all classes except workflow-state", () => {
+	test("unknown stage string fails open except for workflow-state and stage reports", () => {
 		for (const cls of ALL_PATH_CLASSES) {
 			const verdict = evaluateWrite("99-other", ROOT, CLASS_PATHS[cls]);
-			expect(verdict.allow).toBe(cls !== "workflow-state");
+			expect(verdict.allow).toBe(
+				cls !== "workflow-state" && cls !== "stage-report",
+			);
 		}
 	});
 
@@ -225,6 +275,24 @@ describe("evaluateWrite matrix", () => {
 		expect(verdict.pathClass).toBe("workflow-state");
 		expect(verdict.reason).toContain("workflow-state");
 		expect(verdict.reason).toContain("features.stageGuard.disabled");
+	});
+
+	test("stage-report exception never opens other workflow-state paths", () => {
+		const protectedPaths = [
+			".context/compound-engineering/context-state.json",
+			".context/compound-engineering/active-stage.json",
+			".context/compound-engineering/routing/03-work.json",
+			".context/compound-engineering/stage-gates/03-work.json",
+			".context/compound-engineering/handoffs/x.md",
+			".context/compound-engineering/checkpoints/x.json",
+		];
+		for (const stage of STAGES) {
+			for (const protectedPath of protectedPaths) {
+				const verdict = evaluateWrite(stage, ROOT, protectedPath);
+				expect(verdict.allow).toBe(false);
+				expect(verdict.pathClass).toBe("workflow-state");
+			}
+		}
 	});
 
 	test("blocks conflicting-basename .context paths in every stage (C1)", () => {
