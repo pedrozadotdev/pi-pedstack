@@ -60,7 +60,7 @@ stage_gate
   stage: <stageKey>
 ```
 
-`PEDSTACK_STAGE_GATE` controls the gate: `off` disables it, `shadow` (default)
+`features.stageGate.mode` controls the gate: `off` disables it, `shadow` (default)
 records the verdict and blocks only deterministic failures, and `enforce` also
 requires a fresh `accept` record. Deterministic failures block in **both**
 `shadow` and `enforce`; semantic verdicts warn in `shadow` and block in
