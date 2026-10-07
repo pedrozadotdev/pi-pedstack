@@ -18,9 +18,11 @@ import {
 	isRecordFresh,
 	planSlugFromPath,
 	readDocsRecord,
-	resolveDocsVerificationFailClosed,
-	resolveDocsVerificationMode,
 } from "../docs-verification/store";
+import {
+	readPiPedstackConfigSync,
+	resolveFeaturesConfig,
+} from "../utils/config-types";
 import { extractUnits, parsePlannedPackages } from "../docs-verification/units";
 import type {
 	DocsObligation,
@@ -57,9 +59,9 @@ export interface GatherEvidenceOptions {
 	stage: StageKey;
 	hint?: string[];
 	gitDiff?: string | null;
-	/** Test seam; defaults to the resolved `PEDSTACK_DOCS_VERIFICATION` mode. */
+	/** Test seam; defaults to config.json features.docsVerification.mode. */
 	docsVerificationMode?: DocsVerificationMode;
-	/** Test seam; defaults to the resolved `..._FAILCLOSED` flag. */
+	/** Test seam; defaults to config.json features.docsVerification.failClosed. */
 	docsVerificationFailClosed?: boolean;
 	/** Prior fresh gate decision, threaded read-only into the predicates (Unit 4). */
 	priorGate?: {
@@ -441,11 +443,12 @@ export async function gatherEvidence(
 		errors,
 	);
 	const plan = await newestPlan(repoRoot);
-	const mode =
-		options.docsVerificationMode ?? resolveDocsVerificationMode(process.env);
+	const docsFeature = resolveFeaturesConfig(
+		readPiPedstackConfigSync(repoRoot),
+	).docsVerification;
+	const mode = options.docsVerificationMode ?? docsFeature.mode;
 	const failClosed =
-		options.docsVerificationFailClosed ??
-		resolveDocsVerificationFailClosed(process.env);
+		options.docsVerificationFailClosed ?? docsFeature.failClosed;
 	return {
 		stage,
 		repoRoot,
