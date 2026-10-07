@@ -220,6 +220,11 @@ export interface ReadonlySessionLike {
 	getBranch(): SessionEntry[];
 }
 
+/**
+ * Pi thinking levels. `"max"` is supported by `@earendil-works/pi-agent-core`
+ * 0.80.6+ (the devDependency range); older harnesses clamp an unknown level
+ * when it is applied.
+ */
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /** Pipeline stage keys corresponding to skills in 00-next. */
