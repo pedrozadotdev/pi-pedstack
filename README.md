@@ -445,7 +445,7 @@ The capability matrix (#3) and the bash stage guard (#4) only act on a specific 
 
 Records are persisted per stage at `.context/compound-engineering/drift/<stage>.json`, with a sibling last-evaluation health marker at `.context/compound-engineering/drift/<stage>.status.json`. Both use a **6 h TTL**. The block messages **name these paths**: delete the stage's `.json` / `.status.json` files to clear the block (a missing file means no block), or set ``features.driftGuard.mode = "off"`` (restart required). A session only honors records and statuses whose `sessionKey` matches the current session, so a fresh session starts clean.
 
-**Shadow is not free.** The default `enforce` mode still calls Jev on the awaited `turn_end` handler — up to 24 distinct non-trivial turns per session, 8 s timeout each — so it adds latency even though it never blocks or injects. See the [shadow-mode-is-not-free card](docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md).
+**Shadow is not free.** If you explicitly switch `features.driftGuard.mode` to `shadow`, it still calls Jev on the awaited `turn_end` handler — up to 24 distinct non-trivial turns per session, 8 s timeout each — so shadow remains useful for calibration but is not latency-free. See the [shadow-mode-is-not-free card](docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md).
 
 **Stay in `shadow` and calibrate first.** Shadow computes and logs every judgment (including `dimensions`, `triggered`, and `jevCalled`, plus `statusWriteFailed: true` when a status marker write was swallowed) to `.context/compound-engineering/drift.jsonl` (rotated at 1 MiB) while blocking nothing. **Promote to `enforce` only after** at least 100 judged turns over a representative multi-stage run, a mild-correction rate below 20% of non-trivial turns, zero false-positive strong verdicts on a manually labeled in-scope set, a degraded rate below 5%, and no drift-caused blocked save with a false positive.
 
@@ -481,7 +481,7 @@ Stage discipline is not just prompt text. The ce-core extension hooks tool calls
 
 **`bash` (indirect surface).** A deterministic shell-effect classifier splits a command (quote-aware), classifies each segment by effect (`read_only`, `mutates_workspace`, `deletes_or_destructive`, `installs_dependencies`, `runs_tests_or_builds`, `package_runner`, `pipe_to_shell`, `container_or_remote`, `ambiguous`), and reuses the same path classifier for literal targets. Commands the classifier cannot prove are routed to the local Jev semantic layer for a bounded effect/intent answer. The deterministic verdict always wins — a model answer can only add a block, never weaken one.
 
-- Default mode is **shadow**: verdicts are recorded to `.context/compound-engineering/jev-stage-guard.jsonl` (rotated at 1 MiB) but nothing is blocked, so you can calibrate before enforcing.
+- Default mode is **enforce**: forbidden deterministic/semantic operations are blocked. Set `features.stageGuard.mode = "shadow"` explicitly when calibration-only logging is desired.
 - ``features.stageGuard.mode = "enforce"`` blocks forbidden/ambiguous commands; `off` disables the bash guard; an omitted value defaults to `enforce`; invalid values are rejected by config validation.
 - When the semantic layer is unavailable, ambiguous commands **fail open** by default. Set ``features.stageGuard.failClosed = true`` (with `enforce`) to block instead; a one-time degraded notice is shown.
 - Set ``features.stageGuard.disabled = true`` to bypass both guards entirely.
@@ -528,9 +528,9 @@ The agent reads content it does not control — remote HTTP fetches, `gh` issue/
 - **Bounded and metadata-only.** At most 128 verdicts are retained for the current turn; sanitized one-line records (no content, source ref stripped of credentials/query/fragment) are appended to `.context/compound-engineering/injection-screens.jsonl`.
 
 - ``features.injectionScreen.mode = "off" | "shadow" | "enforce"`` (default `enforce`). Omitting the setting defaults to `enforce`; invalid values are rejected by config validation.
-- **Shadow-first:** `shadow` computes and logs verdicts but leaves every result unchanged; `enforce` is opt-in and wraps only `flagged` results.
+- **Enforce by default:** `enforce` wraps only `flagged` untrusted results. Set `features.injectionScreen.mode = "shadow"` explicitly to compute/log verdicts without wrapping.
 
-**Enforcement checkpoint:** flip the default to `enforce` only after shadow calibration shows a non-trivial flagged rate that has been reviewed. The thresholds (`noul ≥ 0.60` and `confidence ≥ 0.50`) stay provisional until that data exists.
+**Calibration option:** switch to `shadow` temporarily if you want to inspect flagged rates without wrapping content. The thresholds (`noul ≥ 0.60` and `confidence ≥ 0.50`) remain explicit and reviewable.
 
 **Known limitations (v1):** middle-only payloads beyond the 16 KiB sample window, content the bash tool truncated out of `event.content` (`fullOutputPath`), and in-repo copies of untrusted content are not screened.
 
