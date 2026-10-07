@@ -22,6 +22,7 @@ export interface RoutingRecord {
 	weighted: number | null;
 	confidence: number | null;
 	attempts: number;
+	/** Proactive Jev-triggered `sota` selections applied for this stage. */
 	escalations: number;
 	/** Retained attempts with verdict `revise` (bounded by the stage-gate ATTEMPT_CAP). */
 	revisions: number;

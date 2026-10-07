@@ -59,7 +59,7 @@ Code review is **technical evaluation**, not social performance:
     - `accept` → do not run `multi_reviewer`; use the compiled report as the stage artifact.
     - `revise` → apply fixes and re-run `stage_gate`; no independent audit.
     - `review` → invoke **`multi_reviewer`** with `stepName: "04-review"` and `mode: "single"`, passing the report content as the `primaryOutput` parameter; inspect the returned findings, verify each against the codebase, apply the confirmed ones to the compiled report (or add the missing issues it surfaced), then re-run `stage_gate`.
-    - `escalate` → do not loop; proceed to escalated execution.
+    - `escalate` → stop the current stage loop. Do not continue with the current execution model, and do not invoke `/ped-reload` yourself; ask the operator to run `/ped-reload`. The persisted escalation makes Pedstack re-enter this same `04-review` stage under `models.sota`.
     A missing `action` (unknown stage or a tool regression) is treated as `none`; use the compiled report as the stage artifact.
     Use `mode: "deep"` only on an explicit user request. The tool auto-persists the structured findings JSON to `.context/compound-engineering/review-findings/<timestamp>-<stepName>.json` (gitignored) — including a `count: 0` sidecar for a clean review — and returns `findingsRelativePath`; use this path in the handoff's `artifacts.review` field. **Do NOT write your own `review-findings.json` to the repo root** — the tool already handles persistence inside `.context/`.
 10. Apply autofixes, re-run tests, re-review if needed

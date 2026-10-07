@@ -67,24 +67,24 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   `ATTEMPT_CAP = 3`); a legacy record without them reads as `0`.
 - **Deterministic escalation** — a `sota` choice justified by the newest stage-gate
   `escalate` verdict, independent of Jev; it short-circuits any Jev call.
-- **Escalation budget** — `routing.maxEscalationsPerStage` (default 1). A Jev judgment that
-  would select `sota` after the budget is spent is recorded as `budget_exhausted`/`budget`,
-  never `fallback`, so a spend cap is distinguishable from an outage.
+- **Escalation budget** — `routing.maxEscalationsPerStage` (default 1): a cost cap on
+  **proactive Jev-triggered** `sota` selections. A Jev judgment that would select `sota`
+  after the budget is spent is recorded as `budget_exhausted`/`budget`, never `fallback`, so
+  a spend cap is distinguishable from an outage. Deterministic stage-gate escalation is
+  exempt: it is honored even when the budget is exhausted.
+- **Manual stage-gate escalation** — when `stage_gate.action === "escalate"`, the current
+  stage loop stops and the operator runs `/ped-reload`; stage-entry routing reads the
+  persisted escalation and re-enters the same stage under `models.sota`. The model never
+  invokes `/ped-reload` automatically and never switches models mid-turn.
 - **Shadow-first routing** — `routing.shadow` defaults `true`: the decision is computed and
-  persisted while the legacy per-stage model is still applied. Routing runs at all only when
-  a `models` or `routing` block exists. Promotion to `enforce` is gated on the documented
-  README criteria (Model roles → Promotion to enforce) and measured from
+  persisted while the explicit per-stage model (if any) is still applied. Routing runs at all
+  only when a `models` or `routing` block exists. Promotion to `enforce` is gated on the
+  documented README criteria (Model roles → Promotion to enforce) and measured from
   `.context/compound-engineering/routing/*.json`; the flip is reversible.
-- **Role migration plan** — the pure `buildRoleMigration` result
-  (`extensions/ce-core/utils/role-migration.ts`): `migratable | not_migratable | noop`, with
-  `distinctModels`, the resolved `roles`, the `foldedStages`, and a full `nextConfig` that is
-  deep-equal to the input unless `migratable`. Lossless-or-refuse: a model whose foldable
-  stages disagree on `thinkingLevel` (an explicit level versus another explicit level, or
-  versus no level) is `not_migratable`, a generated role that would overwrite an authored
-  `models` entry is `not_migratable`, and more than three distinct per-stage `model` values is
-  `not_migratable`. Authored roles the fold does not generate survive verbatim. The CLI
-  (`bun run migrate:roles`) is dry-run-first, writes only with `--write` on a `migratable`
-  plan, and fails non-zero on a malformed `--config` instead of falling back.
+- **Per-stage override** — an explicit `model`/`thinkingLevel` under a stage key
+  (`brainstorm`, `plan`, `work`, `review`, `debug`, `learn`, `docsync`). It wins verbatim over
+  stage-gate escalation and Jev routing as an intentional operator override; the three
+  `models` roles are the normal configuration style.
 
 ## Conditional review loop (#7)
 

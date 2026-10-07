@@ -307,6 +307,91 @@ describe("resolveStageRouting — enforce mode", () => {
 	});
 });
 
+describe("resolveStageRouting — budget semantics", () => {
+	test("a deterministic gate escalate is honored after the proactive Jev budget is spent", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
+		const jev = createFakeJevRuntime({ handler: routingHandler() });
+
+		// The first run consumes the single configured proactive Jev escalation.
+		const first = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+		expect(first.decision.reason).toBe("jev");
+
+		writeStageGate(repo, "03-work", {
+			schema: 1,
+			stage: "03-work",
+			verdict: "escalate",
+		});
+		const escalated = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+
+		expect(escalated.decision.role).toBe("sota");
+		expect(escalated.decision.reason).toBe("gate_escalate");
+		expect(escalated.appliedModel).toBe("strong");
+	});
+
+	test("a deterministic gate escalate does not consume the proactive Jev budget", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
+		writeStageGate(repo, "03-work", {
+			schema: 1,
+			stage: "03-work",
+			verdict: "escalate",
+		});
+		const jev = createFakeJevRuntime({ handler: routingHandler() });
+
+		const escalated = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+		expect(escalated.decision.reason).toBe("gate_escalate");
+		expect(jev.requests.length).toBe(0);
+		expect((await readRoutingRecord(repo, "03-work"))?.escalations).toBe(0);
+
+		// Clear the gate escalation; the proactive Jev budget must still be available.
+		writeStageGate(repo, "03-work", {
+			schema: 1,
+			stage: "03-work",
+			verdict: "accept",
+		});
+		const routed = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+
+		expect(routed.decision.role).toBe("sota");
+		expect(routed.decision.reason).toBe("jev");
+	});
+
+	test("models.review is never applied as an execution model", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, {
+			models: { review: { model: "reviewer" } },
+			routing: { shadow: false },
+		});
+		const jev = createFakeJevRuntime({ handler: routingHandler() });
+
+		const result = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+
+		expect(result.decision.role).toBe("sota");
+		expect(result.appliedModel).toBeNull();
+		expect(result.appliedModel).not.toBe("reviewer");
+	});
+});
+
 describe("resolveStageRouting — partial role config", () => {
 	test("routing without models still computes but applies nothing", async () => {
 		const repo = makeRepo();

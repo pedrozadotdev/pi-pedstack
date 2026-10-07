@@ -108,7 +108,7 @@ The configuration is loaded with the following priority:
 1. **Project-level**: `.pi/pi-pedstack/config.json`
 2. **Global-level**: `~/.pi/pi-pedstack/config.json`
 
-Model and thinking level switching is handled automatically by the ce-core extension when you invoke a pipeline stage via `/ped-start <prompt>` or `/ped-next [prompt]`. Each command reads the per-stage config and switches the active model and thinking level before invoking the skill.
+Model and thinking level switching is handled automatically by the ce-core extension when you invoke a pipeline stage via `/ped-start <prompt>`, `/ped-next [prompt]`, or `/ped-reload`. The command resolves the stage's execution role (`models.default` / `models.sota`) or an explicit per-stage override before invoking the skill.
 
 All pipeline skills declare `disable-model-invocation: true` in their frontmatter to ensure they can only be invoked by the user via explicit commands, strictly guaranteeing that model routing rules are enforced.
 
@@ -135,9 +135,9 @@ Instead of maintaining a model per stage, you can declare **three roles once** a
 - **`models.default`** — the cheap normal-execution workhorse.
 - **`models.review`** — the independent reviewer, used only when a stage has no explicit `reviewers[]` and never when it equals `models.default`/`models.sota`.
 - **`models.sota`** — the escalation model, reached only through deterministic evidence or a qualifying Jev judgment.
-- **`routing.shadow`** — when `true` (default) routing computes and persists a decision but keeps applying the legacy per-stage model.
+- **`routing.shadow`** — when `true` (default) routing computes and persists a decision but keeps applying the explicit per-stage model (if any).
 - **`routing.sotaMinScore` / `sotaMinConfidence`** — deterministic thresholds (`[0, 1]`) a Jev judgment must clear before it may select `sota`.
-- **`routing.maxEscalationsPerStage`** — spend cap (`>= 1`) on applied `sota` escalations per stage.
+- **`routing.maxEscalationsPerStage`** — spend cap (`>= 1`) on **proactive Jev-triggered** `sota` selections per stage. A deterministic stage-gate escalation is never suppressed by this cost budget.
 
 **Precedence at stage entry** (deterministic before semantic):
 
@@ -145,6 +145,8 @@ Instead of maintaining a model per stage, you can declare **three roles once** a
 2. A stage-gate `escalate` verdict for the stage → `sota` (no Jev call).
 3. Otherwise Jev answers five bounded `noul` questions (`complexity`, `risk`, `cross_cutting`, `deep_reasoning`, `ambiguity`); TypeScript combines them with fixed weights and thresholds. Cleared with budget available → `sota`; threshold cleared but budget spent → `budget_exhausted`.
 4. Anything else — including a Jev outage or invalid answer → `default`.
+
+**Manual escalation.** When `stage_gate.action === "escalate"`, stop the current stage loop and ask the operator to run `/ped-reload`; the persisted escalation makes stage-entry routing re-enter the same stage under `models.sota`. The model never invokes `/ped-reload` automatically and never switches models mid-turn.
 
 Every decision is persisted to `.context/compound-engineering/routing/<stage>.json` with its `role`, `reason` (`override | gate_escalate | jev | budget_exhausted | fallback`), `source`, and (for Jev) the atomic scores.
 
@@ -169,7 +171,9 @@ jq -r '.review.action // "none"' .context/compound-engineering/stage-gates/*.jso
 
 The flip is reversible: set `routing.shadow = true` again to recompute and log decisions without applying roles.
 
-**Migration strategy:** roles coexist with per-stage config. Run the default **shadow phase** first (`routing.shadow = true`; legacy models still apply, decisions are logged and persisted), then set `routing.shadow = false` to enforce, and finally fold per-stage keys into `models` with the dry-run-first migration helper — `bun run migrate:roles` (`scripts/migrate-roles.ts` over the pure `buildRoleMigration` in `extensions/ce-core/utils/role-migration.ts`). The helper never guesses model strength: it reports `not_migratable` and writes nothing when more than three distinct per-stage models exist, when one model's stages disagree on `thinkingLevel`, or when a generated role would overwrite an authored `models` entry; authored roles it does not generate are preserved. It writes only with `--write`, only when it reports the mapping as lossless, and it fails non-zero on a malformed `--config` rather than falling back. The CLI wrapper lives in `scripts/`, which is not part of the published package, so the helper is a repo-local operator tool. Operators with neither `models` nor `routing` configured keep byte-identical behavior and spawn no Jev subprocess.
+**Migration note.** If upgrading from the old per-stage model configuration, manually define `models.default`, `models.review`, and `models.sota`, then remove obsolete per-stage `model` assignments unless they are intended as explicit overrides.
+
+**Per-stage overrides.** A per-stage `"model"` (with optional `"thinkingLevel"`) remains supported as an **explicit operator override**: it wins verbatim over stage-gate escalation and Jev routing. It is not the recommended normal configuration style — declare the three `models` roles instead.
 
 **Independence guard completeness:** the review-independence guard compares `models.review` against the union of **every** execution-model writer — `models.default`, `models.sota`, and the per-stage `config[<stage>].model` override (`collectExecutionModels`) — so a review model that would equal any execution model is ignored with a warning. See the [independence-guard solution card](docs/solutions/workflow/independence-guards-must-enumerate-every-execution-model-source.md).
 
@@ -190,9 +194,7 @@ A strong artifact no longer pays for a reviewer. The `stage_gate` result carries
 - **Conditional findings predicates.** The two critical findings predicates (`multi_reviewer_findings`, `review_findings_persisted`) require a findings sidecar only when the prior **fresh** gate action is `review`. A well-formed zero-finding sidecar (`count: 0`) satisfies them, and the tool persists that empty sidecar, so a clean review is auditable and cannot deadlock the gate. A malformed sidecar (`count !== findings.length`) always fails, and a stale record contributes no review demand.
 - **Stage-entry routing.** The decision is persisted on the attempt (`review`) and returned as `action`/`actionReason`; routing treats a persisted `escalate` action exactly like an `escalate` verdict.
 
-**Lossless-or-refuse migration:** the role-migration helper never reports `migratable` unless it can carry every preserved field. It refuses (`not_migratable`, writing nothing) when a model's foldable stages disagree on `thinkingLevel` — including one stage that declared a level and one that declared none — naming the model, stages, and conflicting levels, and when a generated role would overwrite an operator-authored `models` entry. Authored roles the fold does not generate (for example an existing `models.review`) survive verbatim, and a plan is `noop` when there is nothing to fold. `--config` with a missing or empty value fails non-zero (`[migrate:roles] --config requires a path`) instead of falling back to the project/global config, so `--write` can never mutate a file the operator did not name. The deterministic behavior and RED tests are recorded in the [lossless-config-migration card](docs/solutions/architecture/lossless-config-migration-must-key-on-every-preserved-field.md) and the [operator-CLI card](docs/solutions/tooling/operator-cli-shipping-surface-four-checks.md).
-
-Here is a complete configuration schema example:
+Here is a complete configuration schema example (the per-stage `model` entries below are explicit overrides):
 
 ```json
 {
@@ -284,9 +286,9 @@ Here is a complete configuration schema example:
   - `select` — when `true` (default), `semantic_scout` runs the second-pass Choice recommendation. Unknown keys warn and are ignored; invalid values throw.
 - **`models`**: Named model roles (`default`, `review`, `sota`). Each role takes `{ "model": string, "thinkingLevel"?: string }`; all three keys are optional. Unknown keys warn and are ignored; invalid values throw. See [Model roles & task-shaped routing](#model-roles--task-shaped-routing-jev).
 - **`routing`**: Tunables for role resolution. All keys are optional and fall back to the defaults shown above.
-  - `shadow` — when `true` (default), routing computes and persists a decision but keeps applying the legacy per-stage model. Set to `false` to enforce role-based switching.
+  - `shadow` — when `true` (default), routing computes and persists a decision but keeps applying the explicit per-stage model (if any). Set to `false` to enforce role-based switching.
   - `sotaMinScore` / `sotaMinConfidence` — a Jev judgment must reach both (`weighted >= sotaMinScore` and `confidence >= sotaMinConfidence`) before it may select `sota`; numbers in `[0, 1]`.
-  - `maxEscalationsPerStage` — cap on applied `sota` escalations per stage (integer `>= 1`).
+  - `maxEscalationsPerStage` — cap on **proactive Jev-triggered** `sota` selections per stage (integer `>= 1`). A deterministic stage-gate escalation is honored even when the budget is exhausted.
 
 ### Dynamic Append Instructions
 
@@ -606,10 +608,9 @@ Rules in `rules/` cover 11 common topics + language-specific sets (TypeScript, R
 bun install           # install dependencies
 bun test              # run the suite (transpile-only — it does NOT type-check)
 bun run typecheck     # bun x tsc --noEmit (strict); CI runs this after bun install
-bun run migrate:roles # dry-run role migration for an existing per-stage config
 ```
 
-A green `bun test` is not a type-safety verdict: Bun transpiles without type-checking, so the CI job runs `bun x tsc --noEmit` after `bun install` (`.github/workflows/test.yml`), and `scripts/**` is included in the `tsconfig` `include` so operator CLIs are type-checked too. The reasoning is in the [transpile-only runner card](docs/solutions/testing/green-test-runner-is-not-a-type-check.md).
+A green `bun test` is not a type-safety verdict: Bun transpiles without type-checking, so the CI job runs `bun x tsc --noEmit` after `bun install` (`.github/workflows/test.yml`). The reasoning is in the [transpile-only runner card](docs/solutions/testing/green-test-runner-is-not-a-type-check.md).
 
 ---
 
