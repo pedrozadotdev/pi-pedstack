@@ -1294,12 +1294,18 @@ describe("commands/pedstack: active-stage wiring", () => {
 	test("persistence failure does not reject the command", async () => {
 		const { pi } = makePi();
 		const repo = await makeTempRepo();
-		const blockingFile = path.join(repo, "not-a-dir");
-		await writeFile(blockingFile, "x", "utf8");
+		// A directory at the active-stage file path makes `persistActiveStage`
+		// fail to write, while the workflow-root reset stays unaffected.
+		const blockingDir = path.join(
+			repo,
+			".context",
+			"compound-engineering",
+			"active-stage.json",
+		);
+		await mkdir(blockingDir, { recursive: true });
 		try {
-			// cwd points at a regular file, so `persistActiveStage` cannot mkdir.
 			await expect(
-				cmdPedStart(pi).handler("build a CLI", makeCtx(blockingFile)),
+				cmdPedStart(pi).handler("build a CLI", makeCtx(repo)),
 			).resolves.toBeUndefined();
 			expect(getActiveStage()).toBe("01-brainstorm");
 		} finally {
