@@ -47,7 +47,7 @@ describe("Unit 7 — README operator surface", () => {
 		const readme = read("README.md");
 		expect(readme).toContain("features.compactionGuard.mode");
 		expect(readme).toContain("features.compactionGuard.live");
-		expect(readme).toContain("off | shadow | enforce");
+		expect(readme).toContain('"off" | "shadow" | "enforce"');
 		expect(readme).toContain("compaction-guard.jsonl");
 		expect(readme).toContain("calibrate");
 	});
