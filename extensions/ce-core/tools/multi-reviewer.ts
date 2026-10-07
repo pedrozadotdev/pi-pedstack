@@ -385,12 +385,12 @@ function explicitReviewers(
 		model: reviewer.model,
 		thinkingLevel: reviewer.thinkingLevel,
 	}));
-	const { reviewers } = filterIndependentReviewers(
+	const { reviewers: filteredReviewers } = filterIndependentReviewers(
 		mapped,
 		config,
 		configKey,
 	);
-	return reviewers.length > 0 ? reviewers : undefined;
+	return filteredReviewers.length > 0 ? filteredReviewers : undefined;
 }
 
 export function createMultiReviewerTool() {
