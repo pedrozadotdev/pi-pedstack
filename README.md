@@ -155,7 +155,7 @@ Pedstack has a single runtime policy source: project-level `.pi/pi-pedstack/conf
 }
 ```
 
-Every `mode` accepts only `"off"`, `"shadow"`, or `"enforce"`. There are no `PEDSTACK_*` environment switches for these behaviors. `routing.shadow`, `solutionRanking.shadow`, and `semanticRead` remain JSON configuration because they already live in the same authoritative file.
+Every `mode` accepts only `"off"`, `"shadow"`, or `"enforce"`. There are no environment-variable overrides for these behaviors. `routing.shadow`, `solutionRanking.shadow`, and `semanticRead` remain JSON configuration because they already live in the same authoritative file.
 
 - **`models.default`** — the cheap normal-execution workhorse.
 - **`models.review`** — the independent reviewer, used only when a stage has no explicit `reviewers[]` and never when it equals `models.default`/`models.sota`.
