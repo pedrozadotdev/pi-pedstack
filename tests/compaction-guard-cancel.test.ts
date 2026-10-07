@@ -15,8 +15,8 @@ import {
 } from "../extensions/ce-core/compaction-guard/store.js";
 import ceCoreExtension, {
 	__setCompactionGuardJevFactory,
-	__setStartupFeaturesForTests,
 } from "../extensions/ce-core/index.js";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
 import { testFeatures } from "./helpers/feature-config.js";
 
 let root: string;
@@ -115,8 +115,7 @@ async function checkCompaction(
 }
 
 beforeEach(async () => {
-	root = await fs.mkdtemp(path.join(os.tmpdir(), "compaction-cancel-"));
-	__setStartupFeaturesForTests(
+	root = await fs.mkdtemp(path.join(os.tmpdir(), "compaction-cancel-"));(
 		testFeatures({
 			stageGate: { mode: "off" },
 			driftGuard: { mode: "off" },
@@ -126,8 +125,7 @@ beforeEach(async () => {
 	resetAllSessionState();
 });
 
-afterEach(async () => {
-	__setStartupFeaturesForTests(null);
+afterEach(async () => {(null);
 	__setCompactionGuardJevFactory(null);
 	resetAllSessionState();
 	await fs.rm(root, { recursive: true, force: true });
