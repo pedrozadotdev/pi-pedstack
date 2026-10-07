@@ -1024,6 +1024,18 @@ export function cmdPedNext(
 				return;
 			}
 
+			// Preserve resolver priorities 1-2 before review-route recovery.
+			if (
+				state.context.contextHealth === "critical" ||
+				(state.context.blocker && state.context.blocker !== "N/A")
+			) {
+				const blocked = resolveNextPipelineStage(state);
+				if (!blocked.ok) {
+					await handleResolutionAbort(ctx, blocked);
+					return;
+				}
+			}
+
 			const reviewNext = await resolveReviewNextRoute(ctx.cwd, state);
 			if (!reviewNext.ok) {
 				if (ctx.hasUI) ctx.ui.notify(reviewNext.blocker, "warning");
