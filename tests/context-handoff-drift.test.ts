@@ -133,7 +133,7 @@ describe("save gating", () => {
 		expect(result.blocker).toContain(STAGE);
 		expect(result.blocker).toContain("forbidden_work");
 		expect(result.blocker).toContain("drift/02-plan.json");
-		expect(result.blocker).toContain("PEDSTACK_DRIFT_GUARD=off");
+		expect(result.blocker).toContain("features.driftGuard.mode");
 		expect(handoffWritten()).toBe(false);
 	});
 
@@ -262,7 +262,7 @@ describe("save gating", () => {
 		const result = await tool.execute(saveInput());
 		expect(result.blocker).toContain("is degraded");
 		expect(result.blocker).toContain("02-plan.status.json");
-		expect(result.blocker).toContain("PEDSTACK_DRIFT_GUARD_FAILCLOSED=1");
+		expect(result.blocker).toContain("features.driftGuard.failClosed=true");
 		expect(handoffWritten()).toBe(false);
 	});
 
