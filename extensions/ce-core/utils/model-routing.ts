@@ -90,9 +90,10 @@ function plainDecision(
 
 /**
  * Deterministic role resolution. Precedence is fixed and ordered:
- * override -> gate_escalate -> jev -> fallback. A qualifying Jev judgment is
- * only downgraded to `budget_exhausted` when the escalation budget is spent;
- * deterministic gate escalation is honored regardless of budget.
+ * override -> gate_escalate -> jev -> fallback. The escalation budget caps
+ * only proactive Jev-triggered `sota` selection; a deterministic gate
+ * escalation is honored regardless of the budget so correctness always
+ * outranks cost.
  */
 export function resolveExecutionRole(input: RoleResolutionInput): RoleDecision {
 	const override = input.overrideModel?.trim();
@@ -430,10 +431,15 @@ export async function resolveStageRouting(
 
 		const shadow = routing.shadow;
 		const applied = resolveAppliedRole(decision, roles, shadow);
-		const appliedSota = applied.model !== null && decision.role === "sota";
+		// The budget caps only proactive Jev selection that actually applies a
+		// role model. Deterministic gate escalation is exempt (a cost cap must
+		// never suppress a quality escalation), and shadow mode applies nothing
+		// so it consumes nothing.
+		const proactiveJevEscalation =
+			!shadow && decision.reason === "jev" && applied.model !== null;
 		const counts = await readAttemptCounts(input.repoRoot, input.stage);
 		await persistRoutingRecord(input, decision, {
-			escalations: priorEscalations + (appliedSota ? 1 : 0),
+			escalations: priorEscalations + (proactiveJevEscalation ? 1 : 0),
 			...counts,
 		});
 

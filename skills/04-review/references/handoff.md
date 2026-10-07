@@ -10,7 +10,7 @@ When the review is complete:
 6. Mention any relevant plan or solution artifacts referenced during review.
 7. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).
 8. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`.
-9. Before the handoff save, run `stage_gate` for `04-review`; deterministic failures block the save in both `shadow` and `enforce`.
+9. Before the handoff save, run `stage_gate` for `04-review`; deterministic failures block the save in both `shadow` and `enforce`. An `escalate` action means: stop the stage loop and ask the operator to run `/ped-reload` (the persisted escalation re-enters this stage under `models.sota`); do not continue with the current execution model.
 
 ## Autofix loop
 

@@ -13,6 +13,17 @@ Model routing and thinking level switching are handled automatically by the ce-c
 
 No manual `/model` or `/thinking` command is needed. The skill itself does not need to handle model switching.
 
+## Escalation behavior
+
+Routing applies `models.default` to normal work and `models.sota` to complex work or escalation.
+
+- **Proactive Jev routing** may select `sota` at stage entry when the task looks complex. `routing.maxEscalationsPerStage` caps this proactive selection per stage.
+- **Deterministic stage-gate escalation** (`stage_gate.action === "escalate"`) is never suppressed by that cost budget: correctness wins. When it happens:
+  1. Stop the current stage loop. Do not continue with the current execution model.
+  2. Ask the operator to run `/ped-reload`. Never invoke `/ped-reload` automatically and never switch models in the middle of the current turn.
+  3. `/ped-reload` re-enters the same stage; stage-entry routing reads the persisted escalation and starts the stage under `models.sota`.
+- An explicit per-stage `"model"` in the config remains an intentional override and wins over all routing.
+
 ## Start of skill: context loading
 
 Before reading any project files or running repository-wide scans, load the most recent handoff:
@@ -49,8 +60,10 @@ stage_gate
 records the verdict and blocks only deterministic failures, and `enforce` also
 requires a fresh `accept` record. Deterministic failures block in **both**
 `shadow` and `enforce`; semantic verdicts warn in `shadow` and block in
-`enforce`. A `revise`/`review`/`escalate` verdict means: fix the artifact and
-re-run `stage_gate` before saving.
+`enforce`. A `revise` or `review` verdict means: fix the artifact and re-run
+`stage_gate` before saving. An `escalate` verdict means: stop the current stage
+loop and ask the operator to run `/ped-reload` — the persisted escalation
+re-enters this same stage under `models.sota`.
 
 ```
 context_handoff save

@@ -9,4 +9,4 @@ When the plan is ready:
 5. Provide `🧠 Context Status` (health, handoff path, active files, new-session recommendation).
 6. Save/mention handoff-lite path under `.context/compound-engineering/handoffs/` using the shared `Handoff-lite template` in `skills/references/pipeline-config.md`.
 7. Recommend new session only when cross-phase + health is heavy/critical, and include a copyable prompt.
-8. Before the handoff save, run `stage_gate` for `02-plan`; deterministic failures block the save in both `shadow` and `enforce`.
+8. Before the handoff save, run `stage_gate` for `02-plan`; deterministic failures block the save in both `shadow` and `enforce`. An `escalate` action means: stop the stage loop and ask the operator to run `/ped-reload` (the persisted escalation re-enters this stage under `models.sota`); do not continue with the current execution model.
