@@ -30,19 +30,6 @@ export function stageGatePath(repoRoot: string, stage: StageKey): string {
 }
 
 /**
- * Resolves `PEDSTACK_STAGE_GATE` (the only layer). Missing/empty/invalid
- * values resolve to `shadow`; never `off` by accident (R11).
- */
-export function resolveStageGateMode(
-	env: Record<string, string | undefined>,
-): StageGateMode {
-	const value = env.PEDSTACK_STAGE_GATE;
-	if (value === "off") return "off";
-	if (value === "enforce") return "enforce";
-	return "shadow";
-}
-
-/**
  * True when a save ends a scored stage. Fails open for an unknown/missing
  * `currentStage`; an explicit same-stage checkpoint is never gated; an omitted
  * or unrecognized `nextStage` is treated as a completion save (R8).
