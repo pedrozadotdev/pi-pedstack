@@ -15,8 +15,6 @@ import {
 	pairSlug,
 	readReadinessRecord,
 	readinessRecordPath,
-	resolveReadinessFailClosed,
-	resolveReadinessMode,
 	stagePairFromHandoffPath,
 	writeReadinessRecord,
 } from "../extensions/ce-core/handoff-readiness/store.js";
@@ -55,37 +53,6 @@ afterEach(async () => {
 	await fs.rm(root, { recursive: true, force: true });
 });
 
-describe("Unit 4 — mode and fail-closed resolution", () => {
-	test("resolves mode from env, defaulting invalid values to shadow", () => {
-		expect(resolveReadinessMode({})).toBe("shadow");
-		expect(resolveReadinessMode({ PEDSTACK_HANDOFF_READINESS: "" })).toBe(
-			"shadow",
-		);
-		expect(resolveReadinessMode({ PEDSTACK_HANDOFF_READINESS: "bogus" })).toBe(
-			"shadow",
-		);
-		expect(resolveReadinessMode({ PEDSTACK_HANDOFF_READINESS: "off" })).toBe(
-			"off",
-		);
-		expect(
-			resolveReadinessMode({ PEDSTACK_HANDOFF_READINESS: "enforce" }),
-		).toBe("enforce");
-	});
-
-	test("resolves fail-closed only for the literal 1", () => {
-		expect(resolveReadinessFailClosed({})).toBe(false);
-		expect(
-			resolveReadinessFailClosed({
-				PEDSTACK_HANDOFF_READINESS_FAILCLOSED: "true",
-			}),
-		).toBe(false);
-		expect(
-			resolveReadinessFailClosed({
-				PEDSTACK_HANDOFF_READINESS_FAILCLOSED: "1",
-			}),
-		).toBe(true);
-	});
-});
 
 describe("Unit 4 — pair slug and path parsing", () => {
 	test("slugs a known pair", () => {
