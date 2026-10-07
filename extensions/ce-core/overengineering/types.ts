@@ -3,7 +3,7 @@
 //
 // The four dimensions ride the existing stage-gate Jev request. They are
 // floor-only (excluded from `weightedAverage`) and remain inert until
-// `PEDSTACK_OVERENGINEERING=enforce` (see `OVERENGINEERING_FLOOR`).
+// features.overengineering.mode is "enforce" (see `OVERENGINEERING_FLOOR`).
 
 /** The four dimensions, in frozen scoring order. */
 export const OVERENGINEERING_DIMENSION_IDS = [
