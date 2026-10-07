@@ -12,7 +12,7 @@
 import path from "node:path";
 import type { PipelineStageKey } from "../commands/pedstack";
 
-/** The 11 path classes used by classification and the capability matrix. */
+/** The 12 path classes used by classification and the capability matrix. */
 export type PathClass =
 	| "brainstorm"
 	| "plan"
@@ -83,8 +83,9 @@ const SOURCE_EXTENSION = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 const TEST_BASENAME = /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/;
 
 /**
- * Writable classes per stage. `unknown` is always writable (fail-open);
- * `workflow-state` is never writable in any stage.
+ * Writable ordinary classes per stage. `unknown` is always writable (fail-open);
+ * `workflow-state` is never writable; `stage-report` is conditionally writable
+ * only for the matching active stage and is handled in `evaluateWrite`.
  */
 export const STAGE_CAPABILITIES: Record<
 	PipelineStageKey,
