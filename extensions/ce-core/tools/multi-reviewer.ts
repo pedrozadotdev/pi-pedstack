@@ -8,7 +8,7 @@ import {
 	type PiPedstackConfig,
 	type StepConfigKey,
 } from "../utils/config-types";
-import { collectExecutionModels, filterIndependentReviewers } from "../review/policy";
+import { filterIndependentReviewers } from "../review/policy";
 import { normalizeSlug } from "../utils/name-utils";
 
 export interface ReviewerConfig {
@@ -338,25 +338,16 @@ Format your response as a JSON array of findings wrapped in a markdown code bloc
 }
 
 /**
- * Resolve the `models.review` role as a single reviewer, but never when it is
- * not independent from an execution model (a model must not review itself).
- * The comparison set is the union of every execution-model writer, including
- * the per-stage override (`collectExecutionModels`).
+ * Resolve the `models.review` role as a single reviewer. Review independence
+ * comes from the dedicated no-session reviewer process, so this role may reuse
+ * the same model id as default/SOTA execution.
  */
 function resolveReviewRole(
 	config: PiPedstackConfig | null,
-	configKey: StepConfigKey | null,
+	_configKey: StepConfigKey | null,
 ): ReviewerConfig[] | undefined {
 	const review = config?.models?.review;
 	if (!review?.model) return undefined;
-
-	if (collectExecutionModels(config, configKey).includes(review.model)) {
-		console.warn(
-			`[multi-reviewer] models.review (${review.model}) matches an execution role model; review independence requires a distinct model. Ignoring.`,
-		);
-		return undefined;
-	}
-
 	return [{ model: review.model, thinkingLevel: review.thinkingLevel ?? "high" }];
 }
 
@@ -380,7 +371,7 @@ function resolveConfigKey(stepName: string): StepConfigKey | null {
 	return getConfigKeyForSkill(normalized) ?? BARE_CONFIG_KEYS.get(normalized) ?? null;
 }
 
-/** Non-empty, independent explicit `reviewers[]` for the stage, or undefined. */
+/** Non-empty explicit `reviewers[]` for the stage, or undefined. */
 function explicitReviewers(
 	config: PiPedstackConfig | null,
 	configKey: StepConfigKey | null,
@@ -394,17 +385,12 @@ function explicitReviewers(
 		model: reviewer.model,
 		thinkingLevel: reviewer.thinkingLevel,
 	}));
-	const { reviewers: independent, dropped } = filterIndependentReviewers(
+	const { reviewers } = filterIndependentReviewers(
 		mapped,
 		config,
 		configKey,
 	);
-	for (const model of dropped) {
-		console.warn(
-			`[multi-reviewer] explicit reviewer (${model}) matches an execution role model; review independence requires a distinct model. Ignoring.`,
-		);
-	}
-	return independent.length > 0 ? independent : undefined;
+	return reviewers.length > 0 ? reviewers : undefined;
 }
 
 export function createMultiReviewerTool() {
