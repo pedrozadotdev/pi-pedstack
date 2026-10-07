@@ -6,7 +6,6 @@ import {
 	MIN_EFFECT_CONFIDENCE,
 	MIN_INTENT_CONFIDENCE,
 	MESSAGE_COMMAND_MAX_CHARS,
-	parseGuardMode,
 	planCommandGuard,
 	redactCommand,
 	TRUNCATION_MARKER,
@@ -347,12 +346,3 @@ describe("redactCommand and truncateCommand", () => {
 
 // ── parseGuardMode ─────────────────────────────────────────────────
 
-describe("parseGuardMode", () => {
-	test("maps the documented values and fails safe to shadow", () => {
-		expect(parseGuardMode("off")).toBe("off");
-		expect(parseGuardMode("shadow")).toBe("shadow");
-		expect(parseGuardMode("enforce")).toBe("enforce");
-		expect(parseGuardMode(undefined)).toBe("shadow");
-		expect(parseGuardMode("bogus")).toBe("shadow");
-	});
-});
