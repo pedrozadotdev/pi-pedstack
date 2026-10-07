@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe("features config", () => {
-	test("defaults preserve the existing shadow-first fail-open policy", () => {
+	test("defaults enforce every feature while keeping fail-open booleans", () => {
 		expect(resolveFeaturesConfig(null)).toEqual(DEFAULT_FEATURES);
 	});
 
@@ -41,8 +41,8 @@ describe("features config", () => {
 		expect(resolveFeaturesConfig(config)).toEqual({
 			...DEFAULT_FEATURES,
 			stageGate: { mode: "enforce" },
-			docsVerification: { mode: "shadow", failClosed: true },
-			compactionGuard: { mode: "shadow", live: true },
+			docsVerification: { mode: "enforce", failClosed: true },
+			compactionGuard: { mode: "enforce", live: true },
 			stageGuard: { mode: "enforce", failClosed: false, disabled: true },
 		});
 	});

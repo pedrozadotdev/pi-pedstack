@@ -75,14 +75,14 @@ export interface ResolvedFeaturesConfig {
 }
 
 export const DEFAULT_FEATURES: ResolvedFeaturesConfig = {
-  stageGate: { mode: "shadow" },
-  overengineering: { mode: "shadow" },
-  handoffReadiness: { mode: "shadow", failClosed: false },
-  docsVerification: { mode: "shadow", failClosed: false },
-  driftGuard: { mode: "shadow", failClosed: false },
-  compactionGuard: { mode: "shadow", live: false },
-  injectionScreen: { mode: "shadow" },
-  stageGuard: { mode: "shadow", failClosed: false, disabled: false },
+  stageGate: { mode: "enforce" },
+  overengineering: { mode: "enforce" },
+  handoffReadiness: { mode: "enforce", failClosed: false },
+  docsVerification: { mode: "enforce", failClosed: false },
+  driftGuard: { mode: "enforce", failClosed: false },
+  compactionGuard: { mode: "enforce", live: false },
+  injectionScreen: { mode: "enforce" },
+  stageGuard: { mode: "enforce", failClosed: false, disabled: false },
 }
 
 /** Partial, operator-supplied `routing` config block. */
