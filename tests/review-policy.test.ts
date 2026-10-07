@@ -128,22 +128,23 @@ describe("review policy — reviewer availability (Unit 1)", () => {
 		expect(hasIndependentReviewer(config, "plan")).toBe(true);
 	});
 
-	test("is false when models.review collides with a role model", () => {
+	test("is true when models.review reuses the SOTA model", () => {
 		const config = {
 			models: {
 				default: { model: "role/default" },
-				review: { model: "role/default" },
+				review: { model: "role/sota" },
+				sota: { model: "role/sota" },
 			},
 		} as PiPedstackConfig;
-		expect(hasIndependentReviewer(config, "plan")).toBe(false);
+		expect(hasIndependentReviewer(config, "plan")).toBe(true);
 	});
 
-	test("is false when models.review collides with the per-stage override", () => {
+	test("is true when models.review reuses the per-stage model", () => {
 		const config = {
 			plan: { model: "stage/plan" },
 			models: { review: { model: "stage/plan" } },
 		} as PiPedstackConfig;
-		expect(hasIndependentReviewer(config, "plan")).toBe(false);
+		expect(hasIndependentReviewer(config, "plan")).toBe(true);
 	});
 
 	test("is false with no reviewer config at all", () => {
@@ -151,8 +152,8 @@ describe("review policy — reviewer availability (Unit 1)", () => {
 	});
 });
 
-describe("review policy — explicit reviewer independence (Unit 3)", () => {
-	test("drops explicit reviewers that collide with an execution model", () => {
+describe("review policy — isolated reviewer invocation (Unit 3)", () => {
+	test("keeps explicit reviewers even when they reuse an execution model", () => {
 		const config = {
 			plan: {
 				model: "stage/plan",
@@ -165,24 +166,15 @@ describe("review policy — explicit reviewer independence (Unit 3)", () => {
 			"plan",
 		);
 		expect(reviewers.map((reviewer) => reviewer.model)).toEqual([
+			"stage/plan",
 			"explicit/one",
 		]);
-		expect(dropped).toEqual(["stage/plan"]);
+		expect(dropped).toEqual([]);
 	});
 
-	test("hasIndependentReviewer ignores a fully colliding explicit list", () => {
+	test("hasIndependentReviewer accepts a same-model explicit reviewer", () => {
 		const config = {
 			plan: { model: "stage/plan", reviewers: [{ model: "stage/plan" }] },
-		} as PiPedstackConfig;
-		expect(hasIndependentReviewer(config, "plan")).toBe(false);
-	});
-
-	test("hasIndependentReviewer is true when one explicit reviewer survives", () => {
-		const config = {
-			plan: {
-				model: "stage/plan",
-				reviewers: [{ model: "stage/plan" }, { model: "explicit/one" }],
-			},
 		} as PiPedstackConfig;
 		expect(hasIndependentReviewer(config, "plan")).toBe(true);
 	});
