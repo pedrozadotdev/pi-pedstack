@@ -147,19 +147,3 @@ export function buildSample(raw: string, maxBytes = MAX_SAMPLE_BYTES): Sample {
 	};
 }
 
-/**
- * Resolve `PEDSTACK_INJECTION_SCREEN`. Missing/empty values and any
- * unrecognized value resolve to `shadow`; the latter is flagged `invalid` so
- * the operator gets one warning. Never resolves to `off` by accident.
- */
-export function resolveScreenMode(
-	env: Record<string, string | undefined>,
-): ScreenModeReading {
-	const value = env.PEDSTACK_INJECTION_SCREEN;
-	if (value === "off") return { mode: "off", invalid: false };
-	if (value === "enforce") return { mode: "enforce", invalid: false };
-	if (value === "shadow" || value === undefined || value === "") {
-		return { mode: "shadow", invalid: false };
-	}
-	return { mode: "shadow", invalid: true };
-}
