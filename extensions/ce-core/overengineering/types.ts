@@ -89,7 +89,7 @@ export interface OverengineeringSignal {
 	reason?: "no_baseline" | "request_too_large";
 }
 
-/** Operator-resolved overengineering mode (env only; default `shadow`). */
+/** Operator-resolved overengineering mode from config.json; default `enforce`. */
 export type OverengineeringMode = "off" | "shadow" | "enforce";
 
 /**
