@@ -72,9 +72,11 @@ export function buildSystemPromptAppend(
 	// 1. Pipeline Discipline guard
 	if (discipline) {
 		const d = discipline;
-		const nextStageNote = d.nextStage
-			? `When you have completed this stage's work, save a context handoff (using the context_handoff tool with operation="save") targeting the next stage: **${d.nextStage}**. Do NOT proceed to the next stage yourself — stop after the handoff.`
-			: 'When all documentation is synced, save a final context handoff (using the context_handoff tool with operation="save") marking the pipeline as complete. This is the terminal stage.';
+		const nextStageNote =
+			d.completionInstruction ??
+			(d.nextStage
+				? `When you have completed this stage's work, save a context handoff (using the context_handoff tool with operation="save") targeting the next stage: **${d.nextStage}**. Do NOT proceed to the next stage yourself — stop after the handoff.`
+				: 'When all documentation is synced, save a final context handoff (using the context_handoff tool with operation="save") marking the pipeline as complete. This is the terminal stage.');
 
 		blocks.push(
 			`\n\n---\n## 🚦 Pipeline Discipline: Stage Focus\n\n` +
