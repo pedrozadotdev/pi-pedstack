@@ -52,15 +52,15 @@ export interface StageGuard {
 
 const DEGRADED_NOTICE =
 	"Pedstack Jev stage guard degraded: semantic decisions are unavailable, so " +
-	"ambiguous commands fail open. Set PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED=1 with " +
-	"enforce mode to block instead.";
+	'ambiguous commands fail open. Set "features.stageGuard.failClosed": true ' +
+	'with "features.stageGuard.mode": "enforce" to block instead.';
 
 function degradedBlockReason(stage: string | null): string {
 	const label = stage ? `stage "${stage}"` : "the current stage";
 	return (
 		`Pedstack stage guard blocked this bash command: ${label} and the Jev ` +
-		`semantic decision layer is unavailable (FAILCLOSED=1). ` +
-		`Set PEDSTACK_DISABLE_GUARD=1 to bypass.`
+		`semantic decision layer is unavailable (failClosed=true). ` +
+		`Set "features.stageGuard.disabled": true in config.json to bypass.`
 	);
 }
 
