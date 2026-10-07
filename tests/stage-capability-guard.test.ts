@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import ceCoreExtension, {
 	__setStageGuardJevFactory,
-	__setStartupFeaturesForTests,
 } from "../extensions/ce-core/index";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
 import { testFeatures } from "./helpers/feature-config";
 import {
 	clearActiveStage,
@@ -93,13 +93,11 @@ async function seedWorkflowState(repo: string, stage: string): Promise<void> {
 }
 
 beforeEach(() => {
-	clearActiveStage();
-	__setStartupFeaturesForTests(testFeatures());
+	clearActiveStage();(testFeatures());
 });
 
 afterEach(async () => {
-	clearActiveStage();
-	__setStartupFeaturesForTests(null);
+	clearActiveStage();(null);
 	__setStageGuardJevFactory(null);
 	await Promise.all(
 		tempRepos.splice(0).map((repo) => rm(repo, { recursive: true, force: true })),
@@ -257,7 +255,7 @@ describe("stage capability guard", () => {
 	});
 
 	test("features.stageGuard.disabled allows every write", async () => {
-		__setStartupFeaturesForTests(
+		setStartupFeaturesForTests(
 			testFeatures({ stageGuard: { disabled: true } }),
 		);
 		const { pi, eventHandlers, makeCtx } = createPiMock();
@@ -498,7 +496,7 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 			options.mode === "enforce"
 				? options.mode
 				: "shadow";
-		__setStartupFeaturesForTests(
+		setStartupFeaturesForTests(
 			testFeatures({
 				stageGuard: {
 					mode,
@@ -626,7 +624,7 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 
 	test("features.stageGuard.disabled suppresses bash classification and logging", async () => {
 		const repo = await makeRepo();
-		__setStartupFeaturesForTests(
+		setStartupFeaturesForTests(
 			testFeatures({ stageGuard: { mode: "shadow", disabled: true } }),
 		);
 		const fake = fakeJev({});
