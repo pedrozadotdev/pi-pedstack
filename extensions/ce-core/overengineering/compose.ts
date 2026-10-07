@@ -19,19 +19,6 @@ import {
 	type OverengineeringSkip,
 } from "./types";
 
-/**
- * Resolves `PEDSTACK_OVERENGINEERING` (the only layer). Missing/invalid values
- * resolve to `shadow`, never `off` by accident.
- */
-export function resolveOverengineeringMode(
-	env: Record<string, string | undefined>,
-): OverengineeringMode {
-	const value = env.PEDSTACK_OVERENGINEERING;
-	if (value === "off") return "off";
-	if (value === "enforce") return "enforce";
-	return "shadow";
-}
-
 export interface ComposeInput {
 	repoRoot: string;
 	stage: StageKey;
