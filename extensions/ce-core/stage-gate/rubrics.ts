@@ -160,9 +160,9 @@ const sourceVerificationObligations = check(
 		if (obligations.degraded) {
 			return obligations.failClosed
 				? fail(
-						"docs-verification is degraded and PEDSTACK_DOCS_VERIFICATION_FAILCLOSED=1",
+						"docs-verification is degraded and features.docsVerification.failClosed=true",
 					)
-				: pass("docs-verification degraded but fail-open (FAILCLOSED=0)");
+				: pass("docs-verification degraded but fail-open (failClosed=false)");
 		}
 		if (obligations.open > 0) {
 			return fail(`${obligations.open} open docs-verification obligation(s)`);
