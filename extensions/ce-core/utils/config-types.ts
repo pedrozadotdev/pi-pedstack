@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises"
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import * as os from "node:os"
 import {
@@ -696,6 +697,24 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
  * 1. Project-level: {cwd}/.pi/pi-pedstack/config.json (highest priority)
  * 2. Global-level: ~/.pi/pi-pedstack/config.json (fallback)
  */
+export function readPiPedstackConfigSync(cwd: string): PiPedstackConfig | null {
+  const projectPath = path.join(cwd, ".pi", "pi-pedstack", "config.json")
+  try {
+    const content = readFileSync(projectPath, "utf8")
+    return validatePiPedstackConfig(JSON.parse(content))
+  } catch {
+    // Project config not found/invalid, continue to global for parity with async reader.
+  }
+
+  const globalPath = path.join(os.homedir(), ".pi", "pi-pedstack", "config.json")
+  try {
+    const content = readFileSync(globalPath, "utf8")
+    return validatePiPedstackConfig(JSON.parse(content))
+  } catch {
+    return null
+  }
+}
+
 export async function readPiPedstackConfig(cwd: string): Promise<PiPedstackConfig | null> {
   // Try project-level config
   const projectPath = path.join(cwd, ".pi", "pi-pedstack", "config.json")
