@@ -15,7 +15,9 @@ import {
 } from "../extensions/ce-core/compaction-guard/store.js";
 import ceCoreExtension, {
 	__setCompactionGuardJevFactory,
+	__setStartupFeaturesForTests,
 } from "../extensions/ce-core/index.js";
+import { testFeatures } from "./helpers/feature-config.js";
 
 let root: string;
 
@@ -114,16 +116,18 @@ async function checkCompaction(
 
 beforeEach(async () => {
 	root = await fs.mkdtemp(path.join(os.tmpdir(), "compaction-cancel-"));
-	process.env.PEDSTACK_COMPACTION_GUARD = "enforce";
-	process.env.PEDSTACK_DRIFT_GUARD = "off";
-	process.env.PEDSTACK_STAGE_GATE = "off";
+	__setStartupFeaturesForTests(
+		testFeatures({
+			stageGate: { mode: "off" },
+			driftGuard: { mode: "off" },
+			compactionGuard: { mode: "enforce", live: false },
+		}),
+	);
 	resetAllSessionState();
 });
 
 afterEach(async () => {
-	delete process.env.PEDSTACK_COMPACTION_GUARD;
-	delete process.env.PEDSTACK_DRIFT_GUARD;
-	delete process.env.PEDSTACK_STAGE_GATE;
+	__setStartupFeaturesForTests(null);
 	__setCompactionGuardJevFactory(null);
 	resetAllSessionState();
 	await fs.rm(root, { recursive: true, force: true });
