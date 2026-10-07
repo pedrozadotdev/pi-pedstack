@@ -51,7 +51,8 @@ function register(): CapturedPi {
 function configureCompaction(
 	mode: "off" | "shadow" | "enforce",
 	live = false,
-): void {(
+): void {
+	setStartupFeaturesForTests(
 		testFeatures({
 			stageGate: { mode: "off" },
 			driftGuard: { mode: "off" },
@@ -200,7 +201,8 @@ beforeEach(async () => {
 	resetAllSessionState();
 });
 
-afterEach(async () => {(null);
+afterEach(async () => {
+	setStartupFeaturesForTests(null);
 	__setCompactionGuardJevFactory(null);
 	resetAllSessionState();
 	resetPedstackState();
