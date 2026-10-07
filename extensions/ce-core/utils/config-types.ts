@@ -697,42 +697,49 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
  * 1. Project-level: {cwd}/.pi/pi-pedstack/config.json (highest priority)
  * 2. Global-level: ~/.pi/pi-pedstack/config.json (fallback)
  */
+function isMissingConfig(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  )
+}
+
 export function readPiPedstackConfigSync(cwd: string): PiPedstackConfig | null {
   const projectPath = path.join(cwd, ".pi", "pi-pedstack", "config.json")
   try {
     const content = readFileSync(projectPath, "utf8")
     return validatePiPedstackConfig(JSON.parse(content))
-  } catch {
-    // Project config not found/invalid, continue to global for parity with async reader.
+  } catch (error) {
+    if (!isMissingConfig(error)) throw error
   }
 
   const globalPath = path.join(os.homedir(), ".pi", "pi-pedstack", "config.json")
   try {
     const content = readFileSync(globalPath, "utf8")
     return validatePiPedstackConfig(JSON.parse(content))
-  } catch {
-    return null
+  } catch (error) {
+    if (isMissingConfig(error)) return null
+    throw error
   }
 }
 
 export async function readPiPedstackConfig(cwd: string): Promise<PiPedstackConfig | null> {
-  // Try project-level config
   const projectPath = path.join(cwd, ".pi", "pi-pedstack", "config.json")
   try {
     const content = await readFile(projectPath, "utf8")
-    const parsed = JSON.parse(content)
-    return validatePiPedstackConfig(parsed)
-  } catch {
-    // Project config not found, continue to global
+    return validatePiPedstackConfig(JSON.parse(content))
+  } catch (error) {
+    if (!isMissingConfig(error)) throw error
   }
 
-  // Fallback to global-level
   const globalPath = path.join(os.homedir(), ".pi", "pi-pedstack", "config.json")
   try {
     const content = await readFile(globalPath, "utf8")
-    const parsed = JSON.parse(content)
-    return validatePiPedstackConfig(parsed)
-  } catch {
-    return null
+    return validatePiPedstackConfig(JSON.parse(content))
+  } catch (error) {
+    if (isMissingConfig(error)) return null
+    throw error
   }
 }
