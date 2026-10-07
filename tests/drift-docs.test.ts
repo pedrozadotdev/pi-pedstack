@@ -26,11 +26,11 @@ describe("Unit 7 — CONTEXT.md vocabulary", () => {
 });
 
 describe("Unit 7 — README operator surface", () => {
-	test("documents the drift mode and fail-closed env vars", () => {
+	test("documents the drift mode and fail-closed config keys", () => {
 		const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
 		expect(readme).toContain("features.driftGuard.mode");
 		expect(readme).toContain("features.driftGuard.failClosed");
-		expect(readme).toContain("off | shadow | enforce");
+		expect(readme).toContain('"off" | "shadow" | "enforce"');
 	});
 
 	test("documents the record path, delete-to-clear override, and restart note", () => {
