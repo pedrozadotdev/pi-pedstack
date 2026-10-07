@@ -69,12 +69,32 @@ function formatUnifiedDiff(before: string, after: string): string {
 	return lines.join("\n");
 }
 
+/**
+ * Resolve an explicit `--config <path>`. An explicitly supplied but malformed
+ * flag must never silently fall back to a default target: a destructive
+ * `--write` could otherwise mutate a file the operator never named.
+ */
+type ExplicitConfigResult =
+	| { ok: true; path?: string }
+	| { ok: false };
+
+function readExplicitConfigPath(argv: string[]): ExplicitConfigResult {
+	const configIndex = argv.indexOf("--config");
+	if (configIndex < 0) return { ok: true };
+	const value = argv[configIndex + 1];
+	if (!value || value.startsWith("--")) {
+		console.error("[migrate:roles] --config requires a path");
+		return { ok: false };
+	}
+	return { ok: true, path: value };
+}
+
 /** Runs the CLI; returns a process exit code. */
 export async function runMigrateRoles(argv: string[]): Promise<number> {
 	const write = argv.includes("--write");
-	const configIndex = argv.indexOf("--config");
-	const explicit = configIndex >= 0 ? argv[configIndex + 1] : undefined;
-	const configPath = resolveConfigPath(explicit);
+	const explicit = readExplicitConfigPath(argv);
+	if (!explicit.ok) return 2;
+	const configPath = resolveConfigPath(explicit.path);
 
 	let raw: string;
 	try {

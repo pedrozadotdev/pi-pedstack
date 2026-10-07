@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -30,7 +31,7 @@ afterEach(() => {
 describe("buildRoleMigration (Unit 8)", () => {
 	test("folds two distinct per-stage models into default and review", () => {
 		const config = {
-			brainstorm: { model: "m/one" },
+			brainstorm: { model: "m/one", thinkingLevel: "high" },
 			plan: { model: "m/one", thinkingLevel: "high" },
 			work: { model: "m/two" },
 		} as PiPedstackConfig;
@@ -104,15 +105,158 @@ describe("buildRoleMigration (Unit 8)", () => {
 		expect(plan.roles.default).toEqual({ model: "m/one", thinkingLevel: "low" });
 		expect(plan.roles.review).toEqual({ model: "m/two", thinkingLevel: "high" });
 	});
+
+	test("folds repeated model with the same thinking level", () => {
+		const config = {
+			brainstorm: { model: "m/one", thinkingLevel: "high" },
+			plan: { model: "m/one", thinkingLevel: "high" },
+		} as PiPedstackConfig;
+
+		const plan = buildRoleMigration(config);
+
+		expect(plan.status).toBe("migratable");
+		expect(plan.roles.default).toEqual({ model: "m/one", thinkingLevel: "high" });
+		expect(plan.distinctModels).toEqual(["m/one"]);
+	});
+
+	test("refuses conflicting explicit thinkingLevels on one model", () => {
+		const config = {
+			work: { model: "m/one", thinkingLevel: "low" },
+			learn: { model: "m/one", thinkingLevel: "high" },
+		} as PiPedstackConfig;
+
+		const plan = buildRoleMigration(config);
+
+		expect(plan.status).toBe("not_migratable");
+		expect(plan.reason).toContain("m/one");
+		expect(plan.reason).toContain("work");
+		expect(plan.reason).toContain("learn");
+		expect(plan.reason).toContain("low");
+		expect(plan.reason).toContain("high");
+		expect(plan.nextConfig).toEqual(config);
+	});
+
+	test("refuses an unset level mixed with an explicit level on one model", () => {
+		// Deliberate conservative semantics: dropping the unset stage or forcing
+		// it to `high` both change observable thinking behavior, so refuse.
+		const config = {
+			brainstorm: { model: "m/one" },
+			plan: { model: "m/one", thinkingLevel: "high" },
+		} as PiPedstackConfig;
+
+		const plan = buildRoleMigration(config);
+
+		expect(plan.status).toBe("not_migratable");
+		expect(plan.reason).toContain("m/one");
+		expect(plan.reason).toContain("(unset)");
+		expect(plan.reason).toContain("high");
+	});
+
+	test("retains an exactly compatible authored role", () => {
+		const config = {
+			models: { default: { model: "m/one", thinkingLevel: "high" } },
+			plan: { model: "m/one", thinkingLevel: "high" },
+			work: { model: "m/one", thinkingLevel: "high" },
+		} as PiPedstackConfig;
+
+		const plan = buildRoleMigration(config);
+
+		expect(plan.status).toBe("migratable");
+		expect(plan.nextConfig.models?.default).toEqual({
+			model: "m/one",
+			thinkingLevel: "high",
+		});
+	});
+
+	test("preserves an authored role the fold does not generate", () => {
+		const config = {
+			models: { review: { model: "provider/independent-reviewer" } },
+			plan: { model: "provider/default" },
+			work: { model: "provider/default" },
+		} as PiPedstackConfig;
+
+		const plan = buildRoleMigration(config);
+
+		expect(plan.status).toBe("migratable");
+		expect(plan.roles).toEqual({ default: { model: "provider/default" } });
+		expect(plan.nextConfig.models).toEqual({
+			review: { model: "provider/independent-reviewer" },
+			default: { model: "provider/default" },
+		});
+	});
+
+	test("refuses a generated role that conflicts with an authored role", () => {
+		const config = {
+			models: { review: { model: "provider/independent-reviewer" } },
+			plan: { model: "provider/independent-reviewer" },
+			work: { model: "provider/other" },
+		} as PiPedstackConfig;
+
+		const plan = buildRoleMigration(config);
+
+		expect(plan.status).toBe("not_migratable");
+		expect(plan.reason).toContain("models.review");
+		expect(plan.nextConfig).toEqual(config);
+	});
+
+	test("refuses an authored role with a different thinkingLevel", () => {
+		const config = {
+			models: { default: { model: "m/one", thinkingLevel: "low" } },
+			plan: { model: "m/one", thinkingLevel: "high" },
+		} as PiPedstackConfig;
+
+		const plan = buildRoleMigration(config);
+
+		expect(plan.status).toBe("not_migratable");
+		expect(plan.reason).toContain("models.default");
+	});
+
+	test("assigns three distinct models to default, review, and sota", () => {
+		const config = {
+			brainstorm: { model: "a" },
+			plan: { model: "b" },
+			work: { model: "c" },
+		} as PiPedstackConfig;
+
+		const plan = buildRoleMigration(config);
+
+		expect(plan.status).toBe("migratable");
+		expect(plan.distinctModels).toEqual(["a", "b", "c"]);
+		expect(plan.roles.default?.model).toBe("a");
+		expect(plan.roles.review?.model).toBe("b");
+		expect(plan.roles.sota?.model).toBe("c");
+	});
+
+	test("retains a fully compatible authored role block", () => {
+		const config = {
+			models: {
+				default: { model: "a" },
+				review: { model: "b" },
+				sota: { model: "c" },
+			},
+			plan: { model: "a" },
+			work: { model: "b" },
+			learn: { model: "c" },
+		} as PiPedstackConfig;
+
+		const plan = buildRoleMigration(config);
+
+		expect(plan.status).toBe("migratable");
+		expect(plan.nextConfig.models).toEqual(config.models);
+	});
 });
 
-function runCli(args: string[]): {
+function runCli(
+	args: string[],
+	env?: Record<string, string>,
+): {
 	status: number;
 	stdout: string;
 	stderr: string;
 } {
 	const proc = Bun.spawnSync(["bun", "scripts/migrate-roles.ts", ...args], {
 		cwd: repoRoot,
+		env: env ? { ...process.env, ...env } : undefined,
 	});
 	return {
 		status: proc.exitCode ?? 1,
@@ -169,6 +313,43 @@ describe("migrate:roles CLI (Unit 8)", () => {
 		expect(result.status).not.toBe(0);
 		expect(result.stderr.toLowerCase()).toContain("nothing to migrate");
 		expect(existsSync(missing)).toBe(false);
+	});
+
+	test("--config without a path fails without touching a fallback", () => {
+		const fakeHome = makeTempRoot();
+		const globalPath = path.join(
+			fakeHome,
+			".pi",
+			"pi-pedstack",
+			"config.json",
+		);
+		mkdirSync(path.dirname(globalPath), { recursive: true });
+		const original = `${JSON.stringify(
+			{ plan: { model: "m/one" } },
+			null,
+			2,
+		)}\n`;
+		writeFileSync(globalPath, original, "utf8");
+
+		const result = runCli(["--write", "--config"], { HOME: fakeHome });
+
+		expect(result.status).not.toBe(0);
+		expect(result.stderr).toContain("--config requires a path");
+		expect(readFileSync(globalPath, "utf8")).toBe(original);
+	});
+
+	test("--config followed by another option fails", () => {
+		const result = runCli(["--config", "--write"]);
+
+		expect(result.status).not.toBe(0);
+		expect(result.stderr).toContain("--config requires a path");
+	});
+
+	test("--config with an empty value fails", () => {
+		const result = runCli(["--config", ""]);
+
+		expect(result.status).not.toBe(0);
+		expect(result.stderr).toContain("--config requires a path");
 	});
 
 	test("--write applies the migration", () => {

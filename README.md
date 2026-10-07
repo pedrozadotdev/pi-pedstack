@@ -120,7 +120,7 @@ Instead of maintaining a model per stage, you can declare **three roles once** a
 {
   "models": {
     "default": { "model": "anthropic/claude-haiku-3-5-20241022", "thinkingLevel": "medium" },
-    "review":  { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" },
+    "review":  { "model": "anthropic/claude-sonnet-4-20250514", "thinkingLevel": "high" },
     "sota":    { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" }
   },
   "routing": {
@@ -169,7 +169,7 @@ jq -r '.review.action // "none"' .context/compound-engineering/stage-gates/*.jso
 
 The flip is reversible: set `routing.shadow = true` again to recompute and log decisions without applying roles.
 
-**Migration strategy:** roles coexist with per-stage config. Run the default **shadow phase** first (`routing.shadow = true`; legacy models still apply, decisions are logged and persisted), then set `routing.shadow = false` to enforce, and finally fold per-stage keys into `models` with the dry-run-first migration helper — `bun run migrate:roles` (`scripts/migrate-roles.ts` over the pure `buildRoleMigration` in `extensions/ce-core/utils/role-migration.ts`). The helper never guesses model strength: it reports `not_migratable` and writes nothing when more than three distinct per-stage models exist, and it writes only with `--write`, only when it reports the mapping as lossless. The CLI wrapper lives in `scripts/`, which is not part of the published package, so the helper is a repo-local operator tool. Operators with neither `models` nor `routing` configured keep byte-identical behavior and spawn no Jev subprocess.
+**Migration strategy:** roles coexist with per-stage config. Run the default **shadow phase** first (`routing.shadow = true`; legacy models still apply, decisions are logged and persisted), then set `routing.shadow = false` to enforce, and finally fold per-stage keys into `models` with the dry-run-first migration helper — `bun run migrate:roles` (`scripts/migrate-roles.ts` over the pure `buildRoleMigration` in `extensions/ce-core/utils/role-migration.ts`). The helper never guesses model strength: it reports `not_migratable` and writes nothing when more than three distinct per-stage models exist, when one model's stages disagree on `thinkingLevel`, or when a generated role would overwrite an authored `models` entry; authored roles it does not generate are preserved. It writes only with `--write`, only when it reports the mapping as lossless, and it fails non-zero on a malformed `--config` rather than falling back. The CLI wrapper lives in `scripts/`, which is not part of the published package, so the helper is a repo-local operator tool. Operators with neither `models` nor `routing` configured keep byte-identical behavior and spawn no Jev subprocess.
 
 **Independence guard completeness:** the review-independence guard compares `models.review` against the union of **every** execution-model writer — `models.default`, `models.sota`, and the per-stage `config[<stage>].model` override (`collectExecutionModels`) — so a review model that would equal any execution model is ignored with a warning. See the [independence-guard solution card](docs/solutions/workflow/independence-guards-must-enumerate-every-execution-model-source.md).
 
@@ -190,7 +190,7 @@ A strong artifact no longer pays for a reviewer. The `stage_gate` result carries
 - **Conditional findings predicates.** The two critical findings predicates (`multi_reviewer_findings`, `review_findings_persisted`) require a findings sidecar only when the prior **fresh** gate action is `review`. A well-formed zero-finding sidecar (`count: 0`) satisfies them, and the tool persists that empty sidecar, so a clean review is auditable and cannot deadlock the gate. A malformed sidecar (`count !== findings.length`) always fails, and a stale record contributes no review demand.
 - **Stage-entry routing.** The decision is persisted on the attempt (`review`) and returned as `action`/`actionReason`; routing treats a persisted `escalate` action exactly like an `escalate` verdict.
 
-**Known limitations (confirmed by this change's `04-review`, deferred to an on-demand `04-5-debug` pass):** the role-migration helper is dry-run-first but not yet fully lossless. It keys its fold on the bare `model` name while preserving one stage's `thinkingLevel`, so two stages that share a model with *different* thinking levels (for example `work max` + `learn high`) still report `migratable` and silently pick one level; and it overwrites a pre-existing `models` block instead of folding it in, so an operator-configured `models.review` can be lost. Separately, `--config` with a missing value falls back to the project/global path, so `--write` can mutate the wrong file. These are latent defects in an operator tool that does not run in the pipeline; the deterministic fixes and RED tests are recorded in the [lossless-config-migration card](docs/solutions/architecture/lossless-config-migration-must-key-on-every-preserved-field.md) and the [operator-CLI card](docs/solutions/tooling/operator-cli-shipping-surface-four-checks.md).
+**Lossless-or-refuse migration:** the role-migration helper never reports `migratable` unless it can carry every preserved field. It refuses (`not_migratable`, writing nothing) when a model's foldable stages disagree on `thinkingLevel` — including one stage that declared a level and one that declared none — naming the model, stages, and conflicting levels, and when a generated role would overwrite an operator-authored `models` entry. Authored roles the fold does not generate (for example an existing `models.review`) survive verbatim, and a plan is `noop` when there is nothing to fold. `--config` with a missing or empty value fails non-zero (`[migrate:roles] --config requires a path`) instead of falling back to the project/global config, so `--write` can never mutate a file the operator did not name. The deterministic behavior and RED tests are recorded in the [lossless-config-migration card](docs/solutions/architecture/lossless-config-migration-must-key-on-every-preserved-field.md) and the [operator-CLI card](docs/solutions/tooling/operator-cli-shipping-surface-four-checks.md).
 
 Here is a complete configuration schema example:
 
@@ -207,7 +207,7 @@ Here is a complete configuration schema example:
     "model": "anthropic/claude-opus-4-20250115",
     "thinkingLevel": "high",
     "reviewers": [
-      { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" }
+      { "model": "anthropic/claude-sonnet-4-20250514", "thinkingLevel": "high" }
     ]
   },
   "work": {
@@ -254,7 +254,7 @@ Here is a complete configuration schema example:
   },
   "models": {
     "default": { "model": "anthropic/claude-haiku-3-5-20241022", "thinkingLevel": "medium" },
-    "review":  { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" },
+    "review":  { "model": "anthropic/claude-sonnet-4-20250514", "thinkingLevel": "high" },
     "sota":    { "model": "anthropic/claude-opus-4-20250115", "thinkingLevel": "high" }
   },
   "routing": {

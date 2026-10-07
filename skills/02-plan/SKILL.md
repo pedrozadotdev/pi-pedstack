@@ -54,7 +54,7 @@ Every unit follows **RED → GREEN → REFACTOR**:
 11. Run **`stage_gate`** for `02-plan` and act on its `action`:
     - `accept` → do not run `multi_reviewer`; advance.
     - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
-    - `review` → invoke **`multi_reviewer`** with `stepName: "02-plan"` and `mode: "single"`, then re-run `stage_gate`. This runs **after** the Strict Review so multi_reviewer inspects an already-reviewed plan.
+    - `review` → invoke **`multi_reviewer`** with `stepName: "02-plan"` and `mode: "single"`; inspect the returned findings, verify each against the plan artifact, apply the confirmed ones to the plan, then re-run `stage_gate`. This runs **after** the Strict Review so multi_reviewer inspects an already-reviewed plan.
     - `escalate` → do not loop; proceed to escalated execution.
     A missing `action` (unknown stage or a tool regression) is treated as `none`; advance.
     Use `mode: "deep"` only on an explicit user request.

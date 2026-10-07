@@ -1,6 +1,12 @@
 // Dry-run-first role migration (plan Unit 8): fold per-stage `model` values
 // into the three-role `models` block without guessing model strength.
 // Pure and deterministic; the CLI owns all I/O.
+//
+// Lossless-or-refuse: a `migratable` plan may not silently drop a model, a
+// thinkingLevel, an explicit `reviewers[]`, or a pre-existing `models` entry.
+// A model whose foldable stages disagree on `thinkingLevel` (including one that
+// declared a level and one that declared none) is `not_migratable`, because a
+// single role slot cannot carry both without changing observable behavior.
 import type {
 	ModelRolesConfig,
 	PiPedstackConfig,
@@ -35,6 +41,8 @@ const STAGE_ORDER: StepConfigKey[] = [
 	"learn",
 	"docsync",
 ];
+
+const ROLE_ORDER = ["default", "review", "sota"] as const;
 
 interface FoldableStage {
 	stage: StepConfigKey;
@@ -80,6 +88,36 @@ function collectFoldableStages(config: PiPedstackConfig): FoldableStage[] {
 	return foldable;
 }
 
+function groupByModel(
+	foldable: FoldableStage[],
+): Map<string, FoldableStage[]> {
+	const groups = new Map<string, FoldableStage[]>();
+	for (const entry of foldable) {
+		const existing = groups.get(entry.model);
+		if (existing) existing.push(entry);
+		else groups.set(entry.model, [entry]);
+	}
+	return groups;
+}
+
+/** First model whose foldable stages disagree on `thinkingLevel`, or null. */
+function findThinkingLevelConflict(foldable: FoldableStage[]): string | null {
+	for (const [model, entries] of groupByModel(foldable)) {
+		const levels = [...new Set(entries.map((entry) => entry.thinkingLevel))];
+		if (levels.length <= 1) continue;
+		const labels = levels
+			.map((level) => (level === undefined ? "(unset)" : level))
+			.sort((a, b) => a.localeCompare(b));
+		const stages = entries.map((entry) => entry.stage).join(", ");
+		return (
+			`model ${model} supplies conflicting thinkingLevels ` +
+			`(${labels.join(", ")}) across stages ${stages}; a single role ` +
+			"slot cannot preserve both"
+		);
+	}
+	return null;
+}
+
 /** Most frequent model wins; ties break lexicographically. */
 function pickDefaultModel(distinct: string[], foldable: FoldableStage[]): string {
 	const counts = new Map<string, number>();
@@ -96,7 +134,9 @@ function pickDefaultModel(distinct: string[], foldable: FoldableStage[]): string
 }
 
 function resolveRoleModels(foldable: FoldableStage[]): RoleModels {
-	const distinct = [...new Set(foldable.map((entry) => entry.model))].sort();
+	const distinct = [...new Set(foldable.map((entry) => entry.model))].sort((a, b) =>
+		a.localeCompare(b),
+	);
 	const defaultModel = pickDefaultModel(distinct, foldable);
 	const remaining = distinct.filter((model) => model !== defaultModel);
 	const reviewStageModel = foldable.find((entry) => entry.stage === "review")?.model;
@@ -108,29 +148,59 @@ function resolveRoleModels(foldable: FoldableStage[]): RoleModels {
 	return {
 		defaultModel,
 		reviewModel,
-		sotaModel:
-			sotaCandidates.length > 0
-				? sotaCandidates[sotaCandidates.length - 1]
-				: undefined,
+		sotaModel: sotaCandidates.length > 0 ? sotaCandidates.at(-1) : undefined,
 	};
+}
+
+/**
+ * The single `thinkingLevel` for a model, or `undefined`. The conflict check
+ * runs first, so all of a model's foldable stages share one value here.
+ */
+function roleLevel(foldable: FoldableStage[], model: string): string | undefined {
+	// The conflict check guarantees every entry for a model agrees on the level.
+	return foldable.find((entry) => entry.model === model)?.thinkingLevel;
+}
+
+function roleFor(foldable: FoldableStage[], model: string): StepConfig {
+	const level = roleLevel(foldable, model);
+	return level === undefined ? { model } : { model, thinkingLevel: level };
 }
 
 function buildRoles(
 	foldable: FoldableStage[],
 	{ defaultModel, reviewModel, sotaModel }: RoleModels,
 ): ModelRolesConfig {
-	const roleFor = (model: string): StepConfig => {
-		const source = foldable.find(
-			(entry) => entry.model === model && entry.thinkingLevel !== undefined,
-		);
-		return source?.thinkingLevel
-			? { model, thinkingLevel: source.thinkingLevel }
-			: { model };
-	};
-	const roles: ModelRolesConfig = { default: roleFor(defaultModel) };
-	if (reviewModel) roles.review = roleFor(reviewModel);
-	if (sotaModel) roles.sota = roleFor(sotaModel);
+	const roles: ModelRolesConfig = { default: roleFor(foldable, defaultModel) };
+	if (reviewModel) roles.review = roleFor(foldable, reviewModel);
+	if (sotaModel) roles.sota = roleFor(foldable, sotaModel);
 	return roles;
+}
+
+function describeRole(role: StepConfig): string {
+	return role.thinkingLevel === undefined
+		? role.model
+		: `${role.model} (${role.thinkingLevel})`;
+}
+
+/** First generated role that conflicts with an authored `models` entry, or null. */
+function findRoleConflict(
+	existing: ModelRolesConfig,
+	generated: ModelRolesConfig,
+): string | null {
+	for (const role of ROLE_ORDER) {
+		const generatedRole = generated[role];
+		const existingRole = existing[role];
+		if (!generatedRole || !existingRole) continue;
+		const sameLevel =
+			(existingRole.thinkingLevel ?? "") === (generatedRole.thinkingLevel ?? "");
+		if (existingRole.model === generatedRole.model && sameLevel) continue;
+		return (
+			`existing models.${role} (${describeRole(existingRole)}) conflicts ` +
+			`with the migrated role (${describeRole(generatedRole)}); refusing ` +
+			"to overwrite operator config"
+		);
+	}
+	return null;
 }
 
 function emptyPlan(
@@ -138,14 +208,21 @@ function emptyPlan(
 	nextConfig: PiPedstackConfig,
 	reason?: string,
 ): RoleMigrationPlan {
-	return {
+	const plan: RoleMigrationPlan = {
 		status,
 		distinctModels: [],
 		roles: {},
 		nextConfig,
 		foldedStages: [],
-		...(reason ? { reason } : {}),
 	};
+	if (reason) plan.reason = reason;
+	return plan;
+}
+
+function distinctModelsOf(foldable: FoldableStage[]): string[] {
+	return [...new Set(foldable.map((entry) => entry.model))].sort((a, b) =>
+		a.localeCompare(b),
+	);
 }
 
 /** Builds a behavior-preserving role migration plan, or explains why not. */
@@ -161,7 +238,16 @@ export function buildRoleMigration(
 		};
 	}
 
-	const distinct = [...new Set(foldable.map((entry) => entry.model))].sort();
+	const distinct = distinctModelsOf(foldable);
+
+	const levelConflict = findThinkingLevelConflict(foldable);
+	if (levelConflict) {
+		return {
+			...emptyPlan("not_migratable", structuredClone(config), levelConflict),
+			distinctModels: distinct,
+		};
+	}
+
 	if (distinct.length > 3) {
 		return {
 			...emptyPlan(
@@ -173,13 +259,22 @@ export function buildRoleMigration(
 		};
 	}
 
-	const roleModels = resolveRoleModels(foldable);
-	const roles = buildRoles(foldable, roleModels);
+	const roles = buildRoles(foldable, resolveRoleModels(foldable));
+	const existing: ModelRolesConfig = config.models ?? {};
+	const roleConflict = findRoleConflict(existing, roles);
+	if (roleConflict) {
+		return {
+			...emptyPlan("not_migratable", structuredClone(config), roleConflict),
+			distinctModels: distinct,
+		};
+	}
+
 	const nextConfig = structuredClone(config);
 	for (const entry of foldable) {
 		delete nextConfig[entry.stage];
 	}
-	nextConfig.models = roles;
+	// Preserve every authored role the fold does not generate.
+	nextConfig.models = { ...(nextConfig.models ?? {}), ...roles };
 
 	return {
 		status: "migratable",
