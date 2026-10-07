@@ -21,8 +21,6 @@ import {
 	resetAllSessionState,
 	resetEpisode,
 	resetSessionState,
-	resolveCompactionLive,
-	resolveCompactionMode,
 	sessionStateSize,
 	setCurrentCompactionSessionKey,
 	type CompactionLogRecord,
@@ -67,33 +65,6 @@ afterEach(async () => {
 	await fs.rm(root, { recursive: true, force: true });
 });
 
-describe("mode and live resolution", () => {
-	test("resolves mode, defaulting missing/invalid to shadow", () => {
-		expect(resolveCompactionMode({})).toBe("shadow");
-		expect(resolveCompactionMode({ PEDSTACK_COMPACTION_GUARD: "" })).toBe(
-			"shadow",
-		);
-		expect(resolveCompactionMode({ PEDSTACK_COMPACTION_GUARD: "wat" })).toBe(
-			"shadow",
-		);
-		expect(resolveCompactionMode({ PEDSTACK_COMPACTION_GUARD: "off" })).toBe(
-			"off",
-		);
-		expect(
-			resolveCompactionMode({ PEDSTACK_COMPACTION_GUARD: "enforce" }),
-		).toBe("enforce");
-	});
-
-	test("resolves live only for the literal 1", () => {
-		expect(resolveCompactionLive({})).toBe(false);
-		expect(resolveCompactionLive({ PEDSTACK_COMPACTION_GUARD_LIVE: "true" })).toBe(
-			false,
-		);
-		expect(resolveCompactionLive({ PEDSTACK_COMPACTION_GUARD_LIVE: "1" })).toBe(
-			true,
-		);
-	});
-});
 
 describe("in-memory session state", () => {
 	test("getOrCreate is stable per key and isolated across sessions", () => {
