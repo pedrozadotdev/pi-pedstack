@@ -29,6 +29,7 @@ import {
 	clearActiveStage,
 	persistActiveStage,
 } from "../utils/active-stage";
+import { resetWorkflowRoutingState } from "../utils/workflow-reset";
 
 // ── Skill registry (populated from before_agent_start) ─────────────
 
@@ -129,6 +130,27 @@ async function activateStage(repoRoot: string, stage: string): Promise<void> {
 		await persistActiveStage(repoRoot, stage);
 	} catch {
 		// Persistence is best-effort; the in-memory stage still guards this session.
+	}
+}
+
+/**
+ * Reset workflow-scoped routing state at a genuine workflow root (`/ped-start`,
+ * `/ped-fix-issues`). The new workflow must not inherit the previous one's
+ * proactive escalation budget or stage-gate escalation verdict. Best-effort:
+ * a failure warns but never blocks workflow start.
+ */
+async function resetWorkflowScopedState(
+	ctx: ExtensionCommandContext,
+): Promise<void> {
+	try {
+		await resetWorkflowRoutingState(ctx.cwd);
+	} catch (err) {
+		if (ctx.hasUI) {
+			ctx.ui.notify(
+				`Failed to reset prior workflow routing state: ${formatError(err)}`,
+				"warning",
+			);
+		}
 	}
 }
 
@@ -528,7 +550,7 @@ async function applyRoleModel(
 		if (result.shadow) {
 			if (ctx.hasUI) {
 				ctx.ui.notify(
-					`[routing] ${stageKey}: ${result.decision.role} (${result.decision.reason}) — shadow mode, not applied`,
+					`[routing] ${stageKey}: ${result.decision.role} (${result.decision.reason}) — shadow mode, not applied; set routing.shadow=false to enforce`,
 					"info",
 				);
 			}
@@ -751,6 +773,8 @@ export function cmdPedStart(
 			const nav = await prepareStageNavigation(ctx);
 			if (!nav) return;
 
+			await resetWorkflowScopedState(ctx);
+
 			pi.appendEntry("ped-workflow-start", {
 				anchorLeafId: nav.departureLeafId,
 			});
@@ -868,6 +892,7 @@ export function cmdPedFixIssues(
 			const nav = await prepareStageNavigation(ctx);
 			if (!nav) return;
 			await activateStage(ctx.cwd, "01-brainstorm");
+			await resetWorkflowScopedState(ctx);
 			pi.appendEntry("ped-workflow-start", {
 				anchorLeafId: nav.departureLeafId,
 			});

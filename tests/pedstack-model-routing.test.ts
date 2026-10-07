@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFakeJevRuntime } from "../extensions/ce-core/jev/runtime";
@@ -9,9 +9,20 @@ import type {
 } from "../extensions/ce-core/jev/types";
 import {
 	__setModelRoutingJevFactory,
+	cmdPedDebug,
+	cmdPedFixIssues,
+	cmdPedNext,
+	cmdPedReload,
 	cmdPedStart,
 	resetPedstackState,
 } from "../extensions/ce-core/commands/pedstack";
+import { resolveStageRouting } from "../extensions/ce-core/utils/model-routing";
+import {
+	readRoutingRecord,
+	writeRoutingRecord,
+	type RoutingRecord,
+} from "../extensions/ce-core/utils/routing-store";
+import { stageGatePath } from "../extensions/ce-core/stage-gate/store";
 
 const tempRoots: string[] = [];
 
@@ -26,6 +37,61 @@ function writeConfig(repoRoot: string, payload: Record<string, unknown>): void {
 	mkdirSync(path.dirname(file), { recursive: true });
 	writeFileSync(file, JSON.stringify(payload), "utf8");
 }
+
+function writeContextState(
+	repoRoot: string,
+	state: Record<string, unknown>,
+): void {
+	const file = path.join(
+		repoRoot,
+		".context",
+		"compound-engineering",
+		"context-state.json",
+	);
+	mkdirSync(path.dirname(file), { recursive: true });
+	writeFileSync(file, JSON.stringify(state), "utf8");
+}
+
+function writeStageGateEscalate(repoRoot: string, stage: string): void {
+	const file = stageGatePath(repoRoot, stage as never);
+	mkdirSync(path.dirname(file), { recursive: true });
+	writeFileSync(
+		file,
+		JSON.stringify({
+			stage,
+			attempts: [{ schema: 2, stage, verdict: "escalate", enforcing: true }],
+		}),
+		"utf8",
+	);
+}
+
+function writeRouting(
+	repoRoot: string,
+	stage: string,
+	escalations: number,
+): Promise<string> {
+	const record: RoutingRecord = {
+		schema: 1,
+		stage,
+		role: "sota",
+		reason: "jev",
+		source: "jev",
+		scores: null,
+		weighted: 0.9,
+		confidence: 0.9,
+		attempts: 0,
+		escalations,
+		revisions: 0,
+		reviews: 0,
+		updatedAt: "2026-10-06T00:00:00.000Z",
+	};
+	return writeRoutingRecord(repoRoot, record);
+}
+
+const MODELS = {
+	default: { model: "cheap", thinkingLevel: "medium" },
+	sota: { model: "strong", thinkingLevel: "high" },
+};
 
 function fakeJev(value = 0.9) {
 	return createFakeJevRuntime({
@@ -190,60 +256,160 @@ describe("switchStageConfig — stage-entry routing", () => {
 
 		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "cheap" }]);
 	});
+});
 
-	test("a persisted escalate review action selects sota when shadow is false", async () => {
+describe("workflow budget lifecycle", () => {
+	test("a new /ped-start clears the previous workflow's budget and gate records", async () => {
 		const repo = makeRepo();
-		writeConfig(repo, {
-			models: {
-				default: { model: "test/cheap" },
-				sota: { model: "test/strong", thinkingLevel: "high" },
-			},
-			routing: { shadow: false },
+		await writeRouting(repo, "03-work", 1);
+		writeStageGateEscalate(repo, "03-work");
+		const harness = makeHarness(repo);
+
+		await cmdPedStart(harness.pi).handler("task B", harness.ctx);
+
+		expect(await readRoutingRecord(repo, "03-work")).toBeNull();
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(false);
+	});
+
+	test("a new /ped-fix-issues clears the previous workflow's budget", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+		const harness = makeHarness(repo);
+
+		await cmdPedFixIssues(harness.pi).handler("#12", harness.ctx);
+
+		expect(await readRoutingRecord(repo, "03-work")).toBeNull();
+	});
+
+	test("/ped-next does not clear the prior routing budget", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+		const harness = makeHarness(repo);
+
+		await cmdPedNext(harness.pi).handler("", harness.ctx);
+
+		expect((await readRoutingRecord(repo, "03-work"))?.escalations).toBe(1);
+	});
+
+	test("/ped-debug does not clear prior workflow state", async () => {
+		const repo = makeRepo();
+		writeContextState(repo, {
+			currentStage: "04-review",
+			nextStage: "05-learn",
 		});
-		const gateDir = path.join(
-			repo,
-			".context",
-				"compound-engineering",
-				"stage-gates",
-		);
-		mkdirSync(gateDir, { recursive: true });
-		writeFileSync(
-			path.join(gateDir, "01-brainstorm.json"),
-			JSON.stringify({
-				stage: "01-brainstorm",
-				attempts: [
-					{
-						schema: 2,
-						stage: "01-brainstorm",
-						verdict: "review",
-						enforcing: true,
-						weightedScore: 0.5,
-						det: [],
-						sem: [],
-						criticalFailed: false,
-						jevUnavailable: false,
-						jevReason: null,
-						model: "typesafe/jev",
-						warnings: [],
-						artifacts: [],
-						artifactsHash: "x",
-						attempt: 0,
-						updatedAt: "2026-10-05T00:00:00.000Z",
-						review: {
-							action: "escalate",
-							reviewerCount: 0,
-							reason: "independent review budget exhausted",
-						},
-					},
-				],
-			}),
-			"utf8",
-		);
+		await writeRouting(repo, "03-work", 1);
+		writeStageGateEscalate(repo, "03-work");
+		const harness = makeHarness(repo);
+
+		await cmdPedDebug(harness.pi).handler("debug the failure", harness.ctx);
+
+		expect((await readRoutingRecord(repo, "03-work"))?.escalations).toBe(1);
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(true);
+	});
+
+	test("a second independent /ped-start workflow receives a fresh proactive budget", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
+		const jev = fakeJev();
+		__setModelRoutingJevFactory(() => jev);
+
+		const first = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+		const exhausted = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+		expect(first.decision.role).toBe("sota");
+		expect(exhausted.decision.reason).toBe("budget_exhausted");
+
+		const harness = makeHarness(repo);
+		await cmdPedStart(harness.pi).handler("task B", harness.ctx);
+
+		const fresh = await resolveStageRouting({
+			repoRoot: repo,
+			stage: "03-work",
+			jev,
+		});
+		expect(fresh.decision.role).toBe("sota");
+		expect(fresh.decision.reason).toBe("jev");
+	});
+
+	test("a new workflow does not inherit a stale gate escalation", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
+		writeStageGateEscalate(repo, "01-brainstorm");
 		__setModelRoutingJevFactory(() => fakeJev(0.1));
 		const harness = makeHarness(repo);
 
-		await cmdPedStart(harness.pi).handler("build a CLI", harness.ctx);
+		await cmdPedStart(harness.pi).handler("task B", harness.ctx);
+
+		// The stale escalate is gone, so the low Jev judgment routes the default.
+		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "cheap" }]);
+		const record = await readRoutingRecord(repo, "01-brainstorm");
+		expect(record?.reason).toBe("fallback");
+	});
+});
+
+describe("manual escalation via /ped-reload", () => {
+	test("enforced /ped-reload applies models.sota from a persisted gate escalation", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
+		writeContextState(repo, { currentStage: "03-work", nextStage: "04-review" });
+		writeStageGateEscalate(repo, "03-work");
+		__setModelRoutingJevFactory(() => fakeJev(0.1));
+		const harness = makeHarness(repo);
+
+		await cmdPedReload(harness.pi).handler("", harness.ctx);
 
 		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "strong" }]);
+		// /ped-reload must preserve the escalation signal that made this work.
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(true);
+		const record = await readRoutingRecord(repo, "03-work");
+		expect(record?.reason).toBe("gate_escalate");
+		expect(record?.escalations).toBe(0);
+	});
+
+	test("shadow /ped-reload records gate_escalate but applies nothing", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS, routing: { shadow: true } });
+		writeContextState(repo, { currentStage: "03-work" });
+		writeStageGateEscalate(repo, "03-work");
+		__setModelRoutingJevFactory(() => fakeJev(0.1));
+		const harness = makeHarness(repo);
+
+		await cmdPedReload(harness.pi).handler("", harness.ctx);
+
+		expect(harness.setModelCalls).toEqual([]);
+		const record = await readRoutingRecord(repo, "03-work");
+		expect(record?.role).toBe("sota");
+		expect(record?.reason).toBe("gate_escalate");
+		expect(record?.escalations).toBe(0);
+		expect(
+			harness.notifications.some((n) =>
+				n.message.includes("shadow mode, not applied"),
+			),
+		).toBe(true);
+	});
+
+	test("an explicit per-stage override wins over the gate escalation", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, {
+			work: { model: "test/explicit" },
+			models: MODELS,
+			routing: { shadow: false },
+		});
+		writeContextState(repo, { currentStage: "03-work" });
+		writeStageGateEscalate(repo, "03-work");
+		__setModelRoutingJevFactory(() => fakeJev(0.1));
+		const harness = makeHarness(repo);
+
+		await cmdPedReload(harness.pi).handler("", harness.ctx);
+
+		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "explicit" }]);
+		expect((await readRoutingRecord(repo, "03-work"))?.reason).toBe("override");
 	});
 });

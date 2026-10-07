@@ -17,6 +17,10 @@ No manual `/model` or `/thinking` command is needed. The skill itself does not n
 
 Routing applies `models.default` to normal work and `models.sota` to complex work or escalation.
 
+**Shadow mode (`routing.shadow: true`, the default).** Routing computes and persists the decision but does not apply `models.sota`; an explicit per-stage model is still applied. In shadow mode a `/ped-reload` after a deterministic stage-gate escalation records `gate_escalate` but does not switch the model. Enable routing enforcement (`routing.shadow: false`) to use automatic stage-entry model selection.
+
+**Enforced routing (`routing.shadow: false`).**
+
 - **Proactive Jev routing** may select `sota` at stage entry when the task looks complex. `routing.maxEscalationsPerStage` caps this proactive selection per stage.
 - **Deterministic stage-gate escalation** (`stage_gate.action === "escalate"`) is never suppressed by that cost budget: correctness wins. When it happens:
   1. Stop the current stage loop. Do not continue with the current execution model.
@@ -62,8 +66,9 @@ requires a fresh `accept` record. Deterministic failures block in **both**
 `shadow` and `enforce`; semantic verdicts warn in `shadow` and block in
 `enforce`. A `revise` or `review` verdict means: fix the artifact and re-run
 `stage_gate` before saving. An `escalate` verdict means: stop the current stage
-loop and ask the operator to run `/ped-reload` — the persisted escalation
-re-enters this same stage under `models.sota`.
+loop and ask the operator to run `/ped-reload` — under enforced routing
+(`routing.shadow: false`) the persisted escalation re-enters this same stage
+under `models.sota`; in shadow mode the decision is recorded but not applied.
 
 ```
 context_handoff save

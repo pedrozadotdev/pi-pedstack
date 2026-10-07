@@ -71,10 +71,13 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   **proactive Jev-triggered** `sota` selections. A Jev judgment that would select `sota`
   after the budget is spent is recorded as `budget_exhausted`/`budget`, never `fallback`, so
   a spend cap is distinguishable from an outage. Deterministic stage-gate escalation is
-  exempt: it is honored even when the budget is exhausted.
+  exempt: it is honored even when the budget is exhausted. The budget is workflow-scoped:
+  `/ped-start` and `/ped-fix-issues` clear the previous workflow's routing and stage-gate
+  records, while `/ped-next`, `/ped-reload`, and `/ped-debug` preserve them.
 - **Manual stage-gate escalation** — when `stage_gate.action === "escalate"`, the current
-  stage loop stops and the operator runs `/ped-reload`; stage-entry routing reads the
-  persisted escalation and re-enters the same stage under `models.sota`. The model never
+  stage loop stops and the operator runs `/ped-reload`; under enforced routing the
+  persisted escalation re-enters the same stage under `models.sota`, while shadow mode
+  records the decision but does not apply it. The model never
   invokes `/ped-reload` automatically and never switches models mid-turn.
 - **Shadow-first routing** — `routing.shadow` defaults `true`: the decision is computed and
   persisted while the explicit per-stage model (if any) is still applied. Routing runs at all
