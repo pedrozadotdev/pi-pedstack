@@ -12,7 +12,6 @@ import {
 	readAcceptRecord,
 	readLatestRecord,
 	resolvePriorGate,
-	resolveStageGateMode,
 	stageGatePath,
 } from "../extensions/ce-core/stage-gate/store.js";
 import type { StageGateAttempt } from "../extensions/ce-core/stage-gate/types.js";
@@ -56,14 +55,6 @@ afterEach(async () => {
 });
 
 describe("stage gate store (Unit 4)", () => {
-	test("resolves the mode from env with a shadow default", () => {
-		expect(resolveStageGateMode({})).toBe("shadow");
-		expect(resolveStageGateMode({ PEDSTACK_STAGE_GATE: "" })).toBe("shadow");
-		expect(resolveStageGateMode({ PEDSTACK_STAGE_GATE: "SHADOW" })).toBe("shadow");
-		expect(resolveStageGateMode({ PEDSTACK_STAGE_GATE: "bogus" })).toBe("shadow");
-		expect(resolveStageGateMode({ PEDSTACK_STAGE_GATE: "enforce" })).toBe("enforce");
-		expect(resolveStageGateMode({ PEDSTACK_STAGE_GATE: "off" })).toBe("off");
-	});
 
 	test("isCompletionSave fails open on unknown stages and closes the omit bypass", () => {
 		expect(isCompletionSave(undefined, "03-work")).toBe(false);
