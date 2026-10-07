@@ -32,7 +32,7 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 7. Run **`stage_gate`** for `05-learn` and act on its `action`:
     - `accept` → do not run `multi_reviewer`; advance.
     - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
-    - `review` → invoke **`multi_reviewer`** with `stepName: "05-learn"` and `mode: "single"` to review the newly written or updated solution card (the solution artifact), then re-run `stage_gate`.
+    - `review` → invoke **`multi_reviewer`** with `stepName: "05-learn"` and `mode: "single"` to review the newly written or updated solution card (the solution artifact); inspect the returned findings, verify each against the card, apply the confirmed ones to the card, then re-run `stage_gate`.
     - `escalate` → do not loop; proceed to escalated execution.
     A missing `action` (unknown stage or a tool regression) is treated as `none`; advance.
     Use `mode: "deep"` only on an explicit user request.

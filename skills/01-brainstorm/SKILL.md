@@ -98,7 +98,7 @@ Stop and ask instead of guessing when: requirements conflict, success criteria u
 11. Run **`stage_gate`** for `01-brainstorm` and act on its `action`:
     - `accept` → do not run `multi_reviewer`; advance.
     - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
-    - `review` → invoke **`multi_reviewer`** with `stepName: "01-brainstorm"` and `mode: "single"`, then re-run `stage_gate`.
+    - `review` → invoke **`multi_reviewer`** with `stepName: "01-brainstorm"` and `mode: "single"`; inspect the returned findings, verify each against the brainstorm artifact, apply the confirmed ones to the artifact, then re-run `stage_gate`.
     - `escalate` → do not loop; proceed to escalated execution.
     A missing `action` (unknown stage or a tool regression) is treated as `none`; advance.
     Use `mode: "deep"` only on an explicit user request.

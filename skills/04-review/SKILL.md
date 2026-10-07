@@ -58,7 +58,7 @@ Code review is **technical evaluation**, not social performance:
 9. Run **`stage_gate`** for `04-review` and act on its `action`:
     - `accept` → do not run `multi_reviewer`; use the compiled report as the stage artifact.
     - `revise` → apply fixes and re-run `stage_gate`; no independent audit.
-    - `review` → invoke **`multi_reviewer`** with `stepName: "04-review"` and `mode: "single"`, passing the report content as the `primaryOutput` parameter, and use the sub-reviewer feedback to refine the report or find missing issues; then re-run `stage_gate`.
+    - `review` → invoke **`multi_reviewer`** with `stepName: "04-review"` and `mode: "single"`, passing the report content as the `primaryOutput` parameter; inspect the returned findings, verify each against the codebase, apply the confirmed ones to the compiled report (or add the missing issues it surfaced), then re-run `stage_gate`.
     - `escalate` → do not loop; proceed to escalated execution.
     A missing `action` (unknown stage or a tool regression) is treated as `none`; use the compiled report as the stage artifact.
     Use `mode: "deep"` only on an explicit user request. The tool auto-persists the structured findings JSON to `.context/compound-engineering/review-findings/<timestamp>-<stepName>.json` (gitignored) — including a `count: 0` sidecar for a clean review — and returns `findingsRelativePath`; use this path in the handoff's `artifacts.review` field. **Do NOT write your own `review-findings.json` to the repo root** — the tool already handles persistence inside `.context/`.

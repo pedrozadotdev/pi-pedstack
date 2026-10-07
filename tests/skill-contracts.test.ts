@@ -417,6 +417,31 @@ describe("stage gate skill wiring (Unit 8)", () => {
 		}
 	});
 
+	test("review branch tells the model to consume findings before rescoring", () => {
+		for (const skill of ["01-brainstorm", "02-plan", "04-review", "05-learn"]) {
+			const content = readFileSync(
+				path.join(repoRoot, "skills", skill, "SKILL.md"),
+				"utf8",
+			);
+			const reviewBranch = content
+				.split("\n")
+				.find(
+					(line) =>
+						line.includes("`review`") &&
+						line.includes("multi_reviewer") &&
+						line.includes("stage_gate"),
+				);
+			expect({ skill, hasBranch: reviewBranch !== undefined }).toEqual({
+				skill,
+				hasBranch: true,
+			});
+			expect(reviewBranch).toMatch(/inspect/i);
+			expect(reviewBranch).toMatch(/verify/i);
+			expect(reviewBranch).toMatch(/apply/i);
+			expect(reviewBranch).toContain("re-run `stage_gate`");
+		}
+	});
+
 	test("work/debug/docsync docs reference their stage report path", () => {
 		for (const stage of ["03-work", "04-5-debug", "06-docsync"]) {
 			const content = readFileSync(path.join(repoRoot, stageDocs[stage]), "utf8");

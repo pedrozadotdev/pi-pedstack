@@ -78,9 +78,13 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Role migration plan** — the pure `buildRoleMigration` result
   (`extensions/ce-core/utils/role-migration.ts`): `migratable | not_migratable | noop`, with
   `distinctModels`, the resolved `roles`, the `foldedStages`, and a full `nextConfig` that is
-  deep-equal to the input unless `migratable`. More than three distinct per-stage `model`
-  values is `not_migratable`. The CLI (`bun run migrate:roles`) is dry-run-first and writes
-  only with `--write` on a lossless plan.
+  deep-equal to the input unless `migratable`. Lossless-or-refuse: a model whose foldable
+  stages disagree on `thinkingLevel` (an explicit level versus another explicit level, or
+  versus no level) is `not_migratable`, a generated role that would overwrite an authored
+  `models` entry is `not_migratable`, and more than three distinct per-stage `model` values is
+  `not_migratable`. Authored roles the fold does not generate survive verbatim. The CLI
+  (`bun run migrate:roles`) is dry-run-first, writes only with `--write` on a `migratable`
+  plan, and fails non-zero on a malformed `--config` instead of falling back.
 
 ## Conditional review loop (#7)
 
