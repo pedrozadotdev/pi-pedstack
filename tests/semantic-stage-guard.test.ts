@@ -142,6 +142,24 @@ describe("planCommandGuard deterministic policy", () => {
 		).toBe(true);
 	});
 
+	test("bash cannot write protected context paths without a matching active stage", () => {
+		for (const stage of [null, undefined, "99-other"]) {
+			const report = plan(
+				stage as string | null,
+				"touch .context/compound-engineering/stage-reports/03-work.md",
+			);
+			expect(report.needsJev).toBe(false);
+			expect(report.verdict?.verdict).toBe("block");
+
+			const state = plan(
+				stage as string | null,
+				"touch .context/compound-engineering/context-state.json",
+			);
+			expect(state.needsJev).toBe(false);
+			expect(state.verdict?.verdict).toBe("block");
+		}
+	});
+
 	test("read-only is allowed in every stage", () => {
 		for (const stage of [
 			"01-brainstorm",
