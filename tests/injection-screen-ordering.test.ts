@@ -185,7 +185,8 @@ function textOf(event: Record<string, unknown>): string {
 }
 
 afterEach(() => {
-	resetInjectionScreenState();(null);
+	resetInjectionScreenState();
+	setStartupFeaturesForTests(null);
 });
 
 describe("index.ts wiring order", () => {
