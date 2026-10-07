@@ -142,7 +142,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   classifies as `null` and is never screened.
 - **Untrusted source** — a provenance kind the injection screen treats as external input.
 - **Screen mode** — `off | shadow | enforce`, resolved from `features.injectionScreen.mode`
-  once at init; default and invalid value resolve to `shadow`.
+  once at init; omitted values default to `shadow`; invalid values are rejected by config validation.
 - **Flagged / clean / degraded** — the three screen outcomes. `degraded` is the
   fail-open result produced when Jev is unavailable; it never adds a warning.
 - **Untrusted wrapper** — the fixed deterministic delimiter + warning prefix applied
@@ -172,7 +172,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Degraded** — the fail-open source recorded when Jev is unavailable or returns an
   unusable answer set; non-blocking unless `FAILCLOSED` is set in `enforce`.
 - **Shadow mode** — compute, record, and log the readiness verdict without blocking
-  (the default). `features.handoffReadiness.mode = off | shadow | enforce`.
+  (the default). `features.handoffReadiness.mode = "off" | "shadow" | "enforce"`.
 
 ## Docs verification (#15)
 
@@ -198,9 +198,9 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   backticked token is only a candidate package; it is promoted to a fact by intersection with the
   nearest manifest, never by a regex allowlist alone. A declared `Files` path is contained
   (`canonicalRel`/`isInside`) before any `exists`/`readFile`/hash.
-- **Mode** — `features.docsVerification.mode = off | shadow | enforce` (default `shadow`);
-  `features.docsVerification.failClosed=1` opts into blocking in `enforce` on a degraded
-  semantic layer (default `0`, fail-open).
+- **Mode** — `features.docsVerification.mode = "off" | "shadow" | "enforce"` (default `shadow`);
+  `features.docsVerification.failClosed = true` opts into blocking in `enforce` on a degraded
+  semantic layer (default `false`, fail-open).
 
 ## Stage drift (#8)
 
@@ -233,7 +233,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   excerpt). An unchanged signature reuses the last judged outcome without a second Jev
   call (`source: "deterministic"`, reason `unchanged turn`).
 - **Drift mode** — `off | shadow | enforce`, resolved from `features.driftGuard.mode` once
-  at init; default and any invalid value resolve to `shadow`. Only `enforce` blocks or
+  at init; omitted values default to `shadow`; invalid values are rejected by config validation. Only `enforce` blocks or
   injects.
 - **Drift record** — the latest **state** (not a hash-fresh judgment) written by a Jev
   verdict for one stage, at `.context/compound-engineering/drift/<stage>.json`. Fresh
@@ -247,7 +247,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   `thresholdsVersion`, `updatedAt`). It is distinct from the **drift record** (verdict
   state) and the shadow log, and uses the same **6 h TTL** through the one shared
   `isDriftStatusFresh` predicate; a corrupt or unreadable status is absent (fail-open).
-- **Narrowed fail-closed** — `features.driftGuard.failClosed=1` blocks a cross-stage
+- **Narrowed fail-closed** — `features.driftGuard.failClosed = true` blocks a cross-stage
   save in `enforce` only when the status is fresh **and** `degraded === true`. A
   never-judged stage, a session/version mismatch, a TTL-expired status, an empty
   (`"unknown-session"`) key, or a non-degraded last evaluation does **not** block.
@@ -300,7 +300,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   unexplained `null` never claims `good`.
 - **Compaction mode** — `off | shadow | enforce`, resolved from
   `features.compactionGuard.mode` once at init. `shadow` is deterministic-only unless
-  `features.compactionGuard.live=1`; only `enforce` returns `{ cancel: true }`. There is
+  `features.compactionGuard.live = true`; only `enforce` returns `{ cancel: true }`. There is
   no fail-closed knob: a degraded semantic layer always allows stock Pi compaction.
 - **Module** — `extensions/ce-core/compaction-guard/` (named `compaction-guard`, not
   `context-health`, to avoid colliding with the existing `ContextHealth` type).
@@ -322,4 +322,4 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   or a `request_too_large` trim. A skipped dimension is absent from `sem` with a reason in
   `skippedDimensions[]` — never a sentinel score.
 - **Shadow mode** — compute, persist, and log the dimensions without changing
-  `weightedScore` or `verdict` (the default). `features.overengineering.mode = off | shadow | enforce`.
+  `weightedScore` or `verdict` (the default). `features.overengineering.mode = "off" | "shadow" | "enforce"`.
