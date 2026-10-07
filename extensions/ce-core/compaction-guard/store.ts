@@ -22,23 +22,6 @@ export const COMPACTION_LOG_FILE =
 export const COMPACTION_LOG_ROTATED_FILE =
 	".context/compound-engineering/compaction-guard.1.jsonl";
 
-/** `PEDSTACK_COMPACTION_GUARD`: missing/empty/invalid resolves to `shadow`. */
-export function resolveCompactionMode(
-	env: Record<string, string | undefined>,
-): CompactionMode {
-	const value = env.PEDSTACK_COMPACTION_GUARD;
-	if (value === "off") return "off";
-	if (value === "enforce") return "enforce";
-	return "shadow";
-}
-
-/** A live Jev call in the awaited hook needs the explicit `LIVE=1` opt-in (AD-2). */
-export function resolveCompactionLive(
-	env: Record<string, string | undefined>,
-): boolean {
-	return env.PEDSTACK_COMPACTION_GUARD_LIVE === "1";
-}
-
 // ── In-memory session state (AD-5) ─────────────────────────────────
 
 const sessions = new Map<string, CompactionSessionState>();
