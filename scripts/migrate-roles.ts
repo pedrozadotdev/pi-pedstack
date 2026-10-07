@@ -89,13 +89,13 @@ function readExplicitConfigPath(argv: string[]): ExplicitConfigResult {
 	return { ok: true, path: value };
 }
 
-/** Runs the CLI; returns a process exit code. */
-export async function runMigrateRoles(argv: string[]): Promise<number> {
-	const write = argv.includes("--write");
-	const explicit = readExplicitConfigPath(argv);
-	if (!explicit.ok) return 2;
-	const configPath = resolveConfigPath(explicit.path);
+/** Read and validate one config file, or report why it could not be loaded. */
+interface LoadedConfig {
+	raw: string;
+	config: PiPedstackConfig;
+}
 
+async function loadConfig(configPath: string): Promise<LoadedConfig | null> {
 	let raw: string;
 	try {
 		raw = await readFile(configPath, "utf8");
@@ -103,19 +103,27 @@ export async function runMigrateRoles(argv: string[]): Promise<number> {
 		console.error(
 			`[migrate:roles] no config found at ${configPath}; nothing to migrate.`,
 		);
-		return 1;
+		return null;
 	}
-
-	let config: PiPedstackConfig;
 	try {
-		config = validatePiPedstackConfig(JSON.parse(raw));
+		return { raw, config: validatePiPedstackConfig(JSON.parse(raw)) };
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
 		console.error(`[migrate:roles] ${configPath} is invalid: ${reason}`);
-		return 1;
+		return null;
 	}
+}
 
-	const plan = buildRoleMigration(config);
+/** Runs the CLI; returns a process exit code. */
+export async function runMigrateRoles(argv: string[]): Promise<number> {
+	const write = argv.includes("--write");
+	const explicit = readExplicitConfigPath(argv);
+	if (!explicit.ok) return 2;
+	const configPath = resolveConfigPath(explicit.path);
+	const loaded = await loadConfig(configPath);
+	if (!loaded) return 1;
+
+	const plan = buildRoleMigration(loaded.config);
 	if (plan.status === "not_migratable") {
 		console.error(`[migrate:roles] not migratable: ${plan.reason}`);
 		console.error(
@@ -129,7 +137,7 @@ export async function runMigrateRoles(argv: string[]): Promise<number> {
 	}
 
 	const after = `${JSON.stringify(plan.nextConfig, null, 2)}\n`;
-	console.log(formatUnifiedDiff(raw, after));
+	console.log(formatUnifiedDiff(loaded.raw, after));
 	if (!write) {
 		console.log("\n[migrate:roles] dry run; re-run with --write to apply.");
 		return 0;
