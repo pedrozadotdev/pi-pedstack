@@ -17,8 +17,8 @@ import {
 import { resetPedstackState } from "../extensions/ce-core/commands/pedstack.js";
 import ceCoreExtension, {
 	__setCompactionGuardJevFactory,
-	__setStartupFeaturesForTests,
 } from "../extensions/ce-core/index.js";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
 import { testFeatures } from "./helpers/feature-config.js";
 
 const SESSION = "sid-compaction";
@@ -51,8 +51,7 @@ function register(): CapturedPi {
 function configureCompaction(
 	mode: "off" | "shadow" | "enforce",
 	live = false,
-): void {
-	__setStartupFeaturesForTests(
+): void {(
 		testFeatures({
 			stageGate: { mode: "off" },
 			driftGuard: { mode: "off" },
@@ -201,8 +200,7 @@ beforeEach(async () => {
 	resetAllSessionState();
 });
 
-afterEach(async () => {
-	__setStartupFeaturesForTests(null);
+afterEach(async () => {(null);
 	__setCompactionGuardJevFactory(null);
 	resetAllSessionState();
 	resetPedstackState();
