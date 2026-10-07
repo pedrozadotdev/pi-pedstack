@@ -4,7 +4,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import ceCoreExtension, {
 	__setStageGuardJevFactory,
+	__setStartupFeaturesForTests,
 } from "../extensions/ce-core/index";
+import { testFeatures } from "./helpers/feature-config";
 import {
 	clearActiveStage,
 	setActiveStage,
@@ -92,14 +94,12 @@ async function seedWorkflowState(repo: string, stage: string): Promise<void> {
 
 beforeEach(() => {
 	clearActiveStage();
-	delete process.env.PEDSTACK_DISABLE_GUARD;
+	__setStartupFeaturesForTests(testFeatures());
 });
 
 afterEach(async () => {
 	clearActiveStage();
-	delete process.env.PEDSTACK_DISABLE_GUARD;
-	delete process.env.PEDSTACK_JEV_STAGE_GUARD;
-	delete process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED;
+	__setStartupFeaturesForTests(null);
 	__setStageGuardJevFactory(null);
 	await Promise.all(
 		tempRepos.splice(0).map((repo) => rm(repo, { recursive: true, force: true })),
@@ -256,8 +256,10 @@ describe("stage capability guard", () => {
 		expect(result?.block).toBe(true);
 	});
 
-	test("PEDSTACK_DISABLE_GUARD=1 allows every write", async () => {
-		process.env.PEDSTACK_DISABLE_GUARD = "1";
+	test("features.stageGuard.disabled allows every write", async () => {
+		__setStartupFeaturesForTests(
+			testFeatures({ stageGuard: { disabled: true } }),
+		);
 		const { pi, eventHandlers, makeCtx } = createPiMock();
 		ceCoreExtension(pi as never);
 		setActiveStage("02-plan");
@@ -490,12 +492,20 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 		error?: boolean;
 		stage?: string | null;
 	} = {}) {
-		if (options.mode !== undefined) {
-			process.env.PEDSTACK_JEV_STAGE_GUARD = options.mode;
-		}
-		if (options.failClosed) {
-			process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED = "1";
-		}
+		const mode =
+			options.mode === "off" ||
+			options.mode === "shadow" ||
+			options.mode === "enforce"
+				? options.mode
+				: "shadow";
+		__setStartupFeaturesForTests(
+			testFeatures({
+				stageGuard: {
+					mode,
+					failClosed: options.failClosed ?? false,
+				},
+			}),
+		);
 		const fake = fakeJev(options);
 		__setStageGuardJevFactory(() => fake);
 		const { pi, eventHandlers, notifyCalls, makeCtx, registeredNames } =
@@ -535,7 +545,7 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 
 		expect(result?.block).toBe(true);
 		expect(result?.reason).toContain("02-plan");
-		expect(result?.reason).toContain("PEDSTACK_DISABLE_GUARD=1");
+		expect(result?.reason).toContain("features.stageGuard.disabled");
 		expect(fake.calls.length).toBe(0);
 	});
 
@@ -590,7 +600,7 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 		expect(notifyCalls.length).toBe(1);
 	});
 
-	test("FAILCLOSED=1 in enforce blocks when Jev is unavailable", async () => {
+	test("failClosed=true in enforce blocks when Jev is unavailable", async () => {
 		const { handler, makeCtx } = await setup({
 			mode: "enforce",
 			failClosed: true,
@@ -614,10 +624,17 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 		).toBe(true);
 	});
 
-	test("PEDSTACK_DISABLE_GUARD=1 suppresses bash classification and logging", async () => {
-		process.env.PEDSTACK_DISABLE_GUARD = "1";
+	test("features.stageGuard.disabled suppresses bash classification and logging", async () => {
 		const repo = await makeRepo();
-		const { handler, fake, makeCtx } = await setup({ mode: "shadow" });
+		__setStartupFeaturesForTests(
+			testFeatures({ stageGuard: { mode: "shadow", disabled: true } }),
+		);
+		const fake = fakeJev({});
+		__setStageGuardJevFactory(() => fake);
+		const { pi, eventHandlers, makeCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		setActiveStage("02-plan");
+		const handler = eventHandlers.get("tool_call")![0];
 
 		expect(
 			await handler(bashEvent("rm extensions/ce-core/index.ts"), makeCtx(repo)),
@@ -655,13 +672,6 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 		await expect(readFile(path.join(repo, GUARD_LOG_FILE), "utf8")).rejects.toThrow();
 	});
 
-	test("invalid mode warns once and still behaves as shadow", async () => {
-		const { handler, notifyCalls, makeCtx } = await setup({ mode: "SHADOW" });
-
-		await handler(bashEvent("python gen.py"), makeCtx("/repo"));
-		await handler(bashEvent("python gen.py"), makeCtx("/repo"));
-		expect(notifyCalls.length).toBe(1);
-	});
 
 	test("mutating-tool coverage: only write/edit/bash are intercepted", async () => {
 		const { handler, registeredNames, fake, makeCtx } = await setup({
