@@ -98,11 +98,7 @@ import {
 } from "./utils/stage-guard-runtime";
 import { createJevRuntime } from "./jev/runtime";
 import type { JevRuntime } from "./jev/types";
-import {
-	readPiPedstackConfigSync,
-	resolveFeaturesConfig,
-	type ResolvedFeaturesConfig,
-} from "./utils/config-types";
+import { resolveStartupFeatures } from "./utils/startup-features";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -485,15 +481,6 @@ function readContextWindow(ctx: ExtensionContext): number | null {
  * are read defensively: on a Pi version without them the reason is `unknown`, so
  * the guard short-circuits to a deterministic `allow` (fail open).
  */
-let startupFeaturesOverride: ResolvedFeaturesConfig | null = null;
-
-/** @internal Test-only seam; production always resolves config.json. */
-export function __setStartupFeaturesForTests(
-	features: ResolvedFeaturesConfig | null,
-): void {
-	startupFeaturesOverride = features;
-}
-
 function mapCompactionEvent(
 	event: unknown,
 	ctx: ExtensionContext,
@@ -527,9 +514,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	// Runtime feature policy has exactly one source of truth: config.json.
 	// Resolve once at extension init, matching the previous startup semantics
 	// without allowing environment variables to silently diverge from JSON.
-	const startupConfig = readPiPedstackConfigSync(process.cwd());
-	const features =
-		startupFeaturesOverride ?? resolveFeaturesConfig(startupConfig);
+	const features = resolveStartupFeatures();
 	const gateMode = features.stageGate.mode;
 	const overengineeringMode = features.overengineering.mode;
 	const driftMode = features.driftGuard.mode;
