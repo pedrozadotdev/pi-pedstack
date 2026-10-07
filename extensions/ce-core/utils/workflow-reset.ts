@@ -9,6 +9,14 @@
 import { clearRoutingRecords } from "./routing-store";
 import { clearStageGateRecords } from "../stage-gate/store";
 
+/** Removers invoked by the workflow reset; both are injectable for tests. */
+export interface WorkflowResetOptions {
+	/** Test seam; defaults to the real routing-store remover. */
+	clearRouting?: (repoRoot: string) => Promise<void>;
+	/** Test seam; defaults to the real stage-gate-store remover. */
+	clearStageGate?: (repoRoot: string) => Promise<void>;
+}
+
 /**
  * Remove the workflow-scoped routing lifecycle state.
  *
@@ -16,13 +24,18 @@ import { clearStageGateRecords } from "../stage-gate/store";
  * escalation budgets) and `.context/compound-engineering/stage-gates/`
  * (per-stage gate verdicts, attempts, and review actions). User artifacts,
  * handoffs, context state, and every other workflow store are left untouched.
- * Idempotent; callers decide whether an I/O failure should warn or abort.
+ *
+ * Rejects when either removal fails, so callers can abort workflow
+ * initialization instead of silently starting with stale state. A partial
+ * removal is acceptable: both removers are force-idempotent, so a subsequent
+ * successful retry clears whatever remained.
  */
 export async function resetWorkflowRoutingState(
 	repoRoot: string,
+	options: WorkflowResetOptions = {},
 ): Promise<void> {
 	await Promise.all([
-		clearRoutingRecords(repoRoot),
-		clearStageGateRecords(repoRoot),
+		(options.clearRouting ?? clearRoutingRecords)(repoRoot),
+		(options.clearStageGate ?? clearStageGateRecords)(repoRoot),
 	]);
 }

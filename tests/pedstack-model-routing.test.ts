@@ -9,6 +9,7 @@ import type {
 } from "../extensions/ce-core/jev/types";
 import {
 	__setModelRoutingJevFactory,
+	__setWorkflowReset,
 	cmdPedDebug,
 	cmdPedFixIssues,
 	cmdPedNext,
@@ -18,11 +19,17 @@ import {
 } from "../extensions/ce-core/commands/pedstack";
 import { resolveStageRouting } from "../extensions/ce-core/utils/model-routing";
 import {
+	clearRoutingRecords,
 	readRoutingRecord,
 	writeRoutingRecord,
 	type RoutingRecord,
 } from "../extensions/ce-core/utils/routing-store";
+import { resetWorkflowRoutingState } from "../extensions/ce-core/utils/workflow-reset";
 import { stageGatePath } from "../extensions/ce-core/stage-gate/store";
+import {
+	getActiveStage,
+	setActiveStage,
+} from "../extensions/ce-core/utils/active-stage";
 
 const tempRoots: string[] = [];
 
@@ -114,15 +121,23 @@ interface Harness {
 	ctx: any;
 	setModelCalls: Array<{ provider: string; id: string }>;
 	notifications: Array<{ message: string; level: string }>;
+	appendCalls: Array<{ type: string; data: any }>;
+	sentMessages: any[];
 }
 
 function makeHarness(repoRoot: string): Harness {
 	const setModelCalls: Array<{ provider: string; id: string }> = [];
 	const notifications: Array<{ message: string; level: string }> = [];
+	const appendCalls: Array<{ type: string; data: any }> = [];
+	const sentMessages: any[] = [];
 
 	const pi = {
-		appendEntry: () => {},
-		sendUserMessage: () => {},
+		appendEntry: (type: string, data?: any) => {
+			appendCalls.push({ type, data });
+		},
+		sendUserMessage: (content: any) => {
+			sentMessages.push(content);
+		},
 		setModel: async (model: { provider: string; id: string }) => {
 			setModelCalls.push(model);
 			return true;
@@ -153,11 +168,12 @@ function makeHarness(repoRoot: string): Harness {
 		waitForIdle: async () => {},
 	} as any;
 
-	return { pi, ctx, setModelCalls, notifications };
+	return { pi, ctx, setModelCalls, notifications, appendCalls, sentMessages };
 }
 
 afterEach(() => {
 	__setModelRoutingJevFactory(null);
+	__setWorkflowReset(null);
 	resetPedstackState();
 	for (const root of tempRoots.splice(0)) {
 		rmSync(root, { recursive: true, force: true });
@@ -351,6 +367,224 @@ describe("workflow budget lifecycle", () => {
 		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "cheap" }]);
 		const record = await readRoutingRecord(repo, "01-brainstorm");
 		expect(record?.reason).toBe("fallback");
+	});
+});
+
+describe("workflow-root reset failure handling", () => {
+	test("/ped-start aborts and preserves prior state when the reset fails", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+		writeStageGateEscalate(repo, "03-work");
+		setActiveStage("03-work");
+		__setWorkflowReset(async () => {
+			throw new Error("reset unavailable");
+		});
+		const harness = makeHarness(repo);
+
+		await cmdPedStart(harness.pi).handler("task B", harness.ctx);
+
+		expect(harness.appendCalls).toEqual([]);
+		expect(harness.sentMessages).toEqual([]);
+		expect(harness.setModelCalls).toEqual([]);
+		expect(getActiveStage()).toBe("03-work");
+		expect((await readRoutingRecord(repo, "03-work"))?.escalations).toBe(1);
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(true);
+		expect(
+			harness.notifications.some(
+				(n) => n.level === "error" && n.message.includes("reset unavailable"),
+			),
+		).toBe(true);
+	});
+
+	test("/ped-fix-issues aborts and preserves prior state when the reset fails", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+		writeStageGateEscalate(repo, "03-work");
+		setActiveStage("03-work");
+		__setWorkflowReset(async () => {
+			throw new Error("reset unavailable");
+		});
+		const harness = makeHarness(repo);
+
+		await cmdPedFixIssues(harness.pi).handler("#12", harness.ctx);
+
+		expect(harness.appendCalls).toEqual([]);
+		expect(harness.sentMessages).toEqual([]);
+		expect(harness.setModelCalls).toEqual([]);
+		expect(getActiveStage()).toBe("03-work");
+		expect((await readRoutingRecord(repo, "03-work"))?.escalations).toBe(1);
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(true);
+		expect(
+			harness.notifications.some(
+				(n) => n.level === "error" && n.message.includes("reset unavailable"),
+			),
+		).toBe(true);
+	});
+
+	test("a retry after a failed reset starts the workflow normally", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+		writeStageGateEscalate(repo, "03-work");
+		__setWorkflowReset(async () => {
+			throw new Error("reset unavailable");
+		});
+		const harness = makeHarness(repo);
+
+		await cmdPedStart(harness.pi).handler("task B", harness.ctx);
+		expect(harness.appendCalls).toEqual([]);
+
+		__setWorkflowReset(null);
+		await cmdPedStart(harness.pi).handler("task B", harness.ctx);
+
+		expect(harness.appendCalls.map((c) => c.type)).toEqual([
+			"ped-workflow-start",
+			"ped-stage-start",
+		]);
+		expect(harness.appendCalls[1].data.stage).toBe("01-brainstorm");
+		expect(harness.sentMessages).toEqual(["task B"]);
+		expect(getActiveStage()).toBe("01-brainstorm");
+		expect(await readRoutingRecord(repo, "03-work")).toBeNull();
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(false);
+	});
+
+	test("a partial reset failure still aborts and a retry completes the reset", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+		writeStageGateEscalate(repo, "03-work");
+		__setWorkflowReset(async (repoRoot) => {
+			await clearRoutingRecords(repoRoot);
+			throw new Error("stage-gate reset failed");
+		});
+		const harness = makeHarness(repo);
+
+		await cmdPedStart(harness.pi).handler("task B", harness.ctx);
+
+		// No workflow may start, even when part of the reset succeeded.
+		expect(harness.appendCalls).toEqual([]);
+		expect(harness.sentMessages).toEqual([]);
+		expect(await readRoutingRecord(repo, "03-work")).toBeNull();
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(true);
+
+		__setWorkflowReset(null);
+		await cmdPedStart(harness.pi).handler("task B", harness.ctx);
+
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(false);
+		expect(harness.appendCalls.map((c) => c.type)).toEqual([
+			"ped-workflow-start",
+			"ped-stage-start",
+		]);
+	});
+
+	test("/ped-start resets prior state before initializing the new workflow", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+		writeStageGateEscalate(repo, "03-work");
+		const resetCalls: string[] = [];
+		__setWorkflowReset(async (repoRoot) => {
+			resetCalls.push(repoRoot);
+			await resetWorkflowRoutingState(repoRoot);
+		});
+		const harness = makeHarness(repo);
+
+		await cmdPedStart(harness.pi).handler("task B", harness.ctx);
+
+		expect(resetCalls).toEqual([repo]);
+		expect(harness.appendCalls.map((c) => c.type)).toEqual([
+			"ped-workflow-start",
+			"ped-stage-start",
+		]);
+		expect(harness.appendCalls[0].data.anchorLeafId).toBe("leaf-1");
+		expect(harness.sentMessages).toEqual(["task B"]);
+		expect(getActiveStage()).toBe("01-brainstorm");
+		expect(await readRoutingRecord(repo, "03-work")).toBeNull();
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(false);
+	});
+
+	test("/ped-fix-issues resets prior state before initializing 01-brainstorm", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+		writeStageGateEscalate(repo, "03-work");
+		const resetCalls: string[] = [];
+		__setWorkflowReset(async (repoRoot) => {
+			resetCalls.push(repoRoot);
+			await resetWorkflowRoutingState(repoRoot);
+		});
+		const harness = makeHarness(repo);
+
+		await cmdPedFixIssues(harness.pi).handler("#12", harness.ctx);
+
+		expect(resetCalls).toEqual([repo]);
+		expect(harness.appendCalls.map((c) => c.type)).toEqual([
+			"ped-workflow-start",
+			"ped-stage-start",
+		]);
+		expect(harness.appendCalls[1].data.stage).toBe("01-brainstorm");
+		expect(harness.sentMessages.length).toBe(1);
+		expect(harness.sentMessages[0]).toContain("Fetch GitHub issues #12");
+		expect(getActiveStage()).toBe("01-brainstorm");
+		expect(await readRoutingRecord(repo, "03-work")).toBeNull();
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(false);
+	});
+
+	test("/ped-next transitions stages without invoking the workflow reset", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+		writeStageGateEscalate(repo, "03-work");
+		writeContextState(repo, {
+			currentStage: "01-brainstorm",
+			nextStage: "02-plan",
+		});
+		let resetCalls = 0;
+		__setWorkflowReset(async () => {
+			resetCalls += 1;
+		});
+		const harness = makeHarness(repo);
+
+		await cmdPedNext(harness.pi).handler("", harness.ctx);
+
+		expect(resetCalls).toBe(0);
+		expect(harness.appendCalls.map((c) => c.type)).toEqual(["ped-stage-start"]);
+		expect(harness.appendCalls[0].data.stage).toBe("02-plan");
+		expect(harness.sentMessages).toEqual(["Stage: 02-plan"]);
+		expect(getActiveStage()).toBe("02-plan");
+		// The prior workflow's budget and gate verdict survive continuation.
+		expect((await readRoutingRecord(repo, "03-work"))?.escalations).toBe(1);
+		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(true);
+	});
+
+	test("/ped-reload never invokes the workflow reset", async () => {
+		const repo = makeRepo();
+		writeContextState(repo, { currentStage: "03-work" });
+		await writeRouting(repo, "03-work", 1);
+		let resetCalls = 0;
+		__setWorkflowReset(async () => {
+			resetCalls += 1;
+		});
+		const harness = makeHarness(repo);
+
+		await cmdPedReload(harness.pi).handler("", harness.ctx);
+
+		expect(resetCalls).toBe(0);
+		expect((await readRoutingRecord(repo, "03-work"))?.escalations).toBe(1);
+	});
+
+	test("/ped-debug never invokes the workflow reset", async () => {
+		const repo = makeRepo();
+		writeContextState(repo, {
+			currentStage: "04-review",
+			nextStage: "05-learn",
+		});
+		await writeRouting(repo, "03-work", 1);
+		let resetCalls = 0;
+		__setWorkflowReset(async () => {
+			resetCalls += 1;
+		});
+		const harness = makeHarness(repo);
+
+		await cmdPedDebug(harness.pi).handler("debug the failure", harness.ctx);
+
+		expect(resetCalls).toBe(0);
+		expect((await readRoutingRecord(repo, "03-work"))?.escalations).toBe(1);
 	});
 });
 

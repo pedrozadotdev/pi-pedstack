@@ -90,6 +90,52 @@ describe("resetWorkflowRoutingState", () => {
 		await expect(resetWorkflowRoutingState(repo)).resolves.toBeUndefined();
 	});
 
+	test("rejects when the routing deletion fails", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+
+		await expect(
+			resetWorkflowRoutingState(repo, {
+				clearRouting: async () => {
+					throw new Error("routing rm failed");
+				},
+			}),
+		).rejects.toThrow("routing rm failed");
+	});
+
+	test("rejects when the stage-gate deletion fails", async () => {
+		const repo = makeRepo();
+		writeStageGate(repo, "03-work");
+
+		await expect(
+			resetWorkflowRoutingState(repo, {
+				clearStageGate: async () => {
+					throw new Error("stage-gate rm failed");
+				},
+			}),
+		).rejects.toThrow("stage-gate rm failed");
+	});
+
+	test("a retry completes a partial reset safely", async () => {
+		const repo = makeRepo();
+		await writeRouting(repo, "03-work", 1);
+		writeStageGate(repo, "03-work");
+
+		await expect(
+			resetWorkflowRoutingState(repo, {
+				clearStageGate: async () => {
+					throw new Error("stage-gate rm failed");
+				},
+			}),
+		).rejects.toThrow("stage-gate rm failed");
+
+		// A partial failure leaves residue, but the retry removes it because
+		// every deletion is force-idempotent.
+		await expect(resetWorkflowRoutingState(repo)).resolves.toBeUndefined();
+		expect(await readRoutingRecord(repo, "03-work")).toBeNull();
+		expect(existsSync(stageGatePath(repo, "03-work"))).toBe(false);
+	});
+
 	test("removes a corrupt routing record without throwing", async () => {
 		const repo = makeRepo();
 		writeFile(
@@ -121,6 +167,11 @@ describe("resetWorkflowRoutingState", () => {
 			".context/compound-engineering/injection-screens.jsonl",
 			"{}\n",
 		);
+		const activeStage = writeFile(
+			repo,
+			".context/compound-engineering/active-stage.json",
+			'{"activeStage":"03-work"}',
+		);
 		const plan = writeFile(repo, "docs/plans/2026-10-06-plan.md", "# plan\n");
 		const solution = writeFile(
 			repo,
@@ -130,7 +181,7 @@ describe("resetWorkflowRoutingState", () => {
 
 		await resetWorkflowRoutingState(repo);
 
-		for (const file of [handoff, contextState, screens, plan, solution]) {
+		for (const file of [handoff, contextState, screens, activeStage, plan, solution]) {
 			expect(existsSync(file)).toBe(true);
 		}
 		expect(readFileSync(plan, "utf8")).toBe("# plan\n");

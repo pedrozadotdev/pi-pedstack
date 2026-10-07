@@ -134,23 +134,42 @@ async function activateStage(repoRoot: string, stage: string): Promise<void> {
 }
 
 /**
+ * Test seam: replaces the workflow-root reset so tests can simulate a
+ * filesystem failure. `null` restores the real implementation. Mirrors
+ * `__setModelRoutingJevFactory`.
+ */
+let workflowResetImpl: (repoRoot: string) => Promise<void> =
+	resetWorkflowRoutingState;
+
+/** @internal Test-only injection seam for workflow-root reset failures. */
+export function __setWorkflowReset(
+	impl: ((repoRoot: string) => Promise<void>) | null,
+): void {
+	workflowResetImpl = impl ?? resetWorkflowRoutingState;
+}
+
+/**
  * Reset workflow-scoped routing state at a genuine workflow root (`/ped-start`,
  * `/ped-fix-issues`). The new workflow must not inherit the previous one's
- * proactive escalation budget or stage-gate escalation verdict. Best-effort:
- * a failure warns but never blocks workflow start.
+ * proactive escalation budget or stage-gate escalation verdict.
+ *
+ * Returns false after notifying the operator when the reset fails; the caller
+ * must then abort workflow initialization rather than start on stale state.
  */
 async function resetWorkflowScopedState(
 	ctx: ExtensionCommandContext,
-): Promise<void> {
+): Promise<boolean> {
 	try {
-		await resetWorkflowRoutingState(ctx.cwd);
+		await workflowResetImpl(ctx.cwd);
+		return true;
 	} catch (err) {
 		if (ctx.hasUI) {
 			ctx.ui.notify(
-				`Failed to reset prior workflow routing state: ${formatError(err)}`,
-				"warning",
+				`Failed to reset prior workflow state: ${formatError(err)}. New workflow not started; resolve the problem and retry.`,
+				"error",
 			);
 		}
+		return false;
 	}
 }
 
@@ -769,17 +788,18 @@ export function cmdPedStart(
 			}
 
 			rememberCommandContext(ctx);
-			await activateStage(ctx.cwd, "01-brainstorm");
 			const nav = await prepareStageNavigation(ctx);
 			if (!nav) return;
 
-			await resetWorkflowScopedState(ctx);
+			if (!(await resetWorkflowScopedState(ctx))) return;
+
+			const stageKey: PipelineStageKey = "01-brainstorm";
+			await activateStage(ctx.cwd, stageKey);
 
 			pi.appendEntry("ped-workflow-start", {
 				anchorLeafId: nav.departureLeafId,
 			});
 
-			const stageKey: PipelineStageKey = "01-brainstorm";
 			pi.appendEntry("ped-stage-start", {
 				returnTo: nav.departureLeafId,
 				stage: stageKey,
@@ -891,12 +911,15 @@ export function cmdPedFixIssues(
 
 			const nav = await prepareStageNavigation(ctx);
 			if (!nav) return;
-			await activateStage(ctx.cwd, "01-brainstorm");
-			await resetWorkflowScopedState(ctx);
+
+			if (!(await resetWorkflowScopedState(ctx))) return;
+
+			const stageKey: PipelineStageKey = "01-brainstorm";
+			await activateStage(ctx.cwd, stageKey);
+
 			pi.appendEntry("ped-workflow-start", {
 				anchorLeafId: nav.departureLeafId,
 			});
-			const stageKey: PipelineStageKey = "01-brainstorm";
 			pi.appendEntry("ped-stage-start", {
 				returnTo: nav.departureLeafId,
 				stage: stageKey,
