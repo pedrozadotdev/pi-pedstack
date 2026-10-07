@@ -220,7 +220,7 @@ export interface ReadonlySessionLike {
 	getBranch(): SessionEntry[];
 }
 
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /** Pipeline stage keys corresponding to skills in 00-next. */
 export type PipelineStageKey =
