@@ -63,6 +63,21 @@ describe("features config", () => {
 		).toThrow('features.driftGuard.failClosed');
 	});
 
+	test("authoritative project config errors are not hidden by fallback", () => {
+		const repo = makeRepo();
+		const file = path.join(repo, ".pi", "pi-pedstack", "config.json");
+		mkdirSync(path.dirname(file), { recursive: true });
+		writeFileSync(
+			file,
+			JSON.stringify({ features: { stageGate: { mode: "ENFORCE" } } }),
+			"utf8",
+		);
+
+		expect(() => readPiPedstackConfigSync(repo)).toThrow(
+			"features.stageGate.mode",
+		);
+	});
+
 	test("synchronous startup reader loads project feature policy", () => {
 		const repo = makeRepo();
 		const file = path.join(repo, ".pi", "pi-pedstack", "config.json");
