@@ -153,7 +153,7 @@ Premise Challenge, failure modes, alternatives and test diagram reviewed.
 `;
 		await write("docs/plans/long.md", plan);
 		const runtime = createFakeJevRuntime({ handler: (request) => {
-			expect(String(request.state.artifact)).not.toContain("Strict Review");
+			expect(String((request.state as Record<string, unknown>).artifact)).not.toContain("Strict Review");
 			return scoring([4, 4, 4, 4])(request);
 		} });
 		const result = await evaluateStageGate({ runtime }, {
