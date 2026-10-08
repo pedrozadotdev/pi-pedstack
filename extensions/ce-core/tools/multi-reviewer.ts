@@ -1,5 +1,6 @@
-import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import * as fs from "node:fs";
+import { tmpdir } from "node:os";
 import { mkdir, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../utils/config-types";
 import { collectExecutionModels, filterIndependentReviewers } from "../review/policy";
 import { normalizeSlug } from "../utils/name-utils";
+import { createAgyCommand, isGeminiModel, runAgyReviewer } from "../review/agy-runner";
 
 export interface ReviewerConfig {
 	model: string;
@@ -121,6 +123,26 @@ function getPiInvocation(args: string[]): { command: string; args: string[] } {
 		return { command: process.execPath, args };
 	}
 
+	if (process.platform === "win32") {
+		// ponytail: invoke the published npm JS bin directly; artifact text must never enter cmd.exe.
+		for (const directory of (process.env.PATH ?? "").split(";").filter(Boolean)) {
+			const executable = path.join(directory, "pi.exe");
+			if (fs.existsSync(executable)) return { command: executable, args };
+			if (!fs.existsSync(path.join(directory, "pi.cmd"))) continue;
+			const packageRoot = path.join(directory, "node_modules", "@earendil-works", "pi-coding-agent");
+			try {
+				const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8")) as { name?: unknown; bin?: { pi?: unknown } };
+				if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof manifest.bin?.pi !== "string") throw new Error("unknown Pi npm bin contract");
+				const script = path.resolve(packageRoot, manifest.bin.pi);
+				const relative = path.relative(packageRoot, script);
+				if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) || !script.endsWith(".js") || !fs.statSync(script).isFile()) throw new Error("invalid Pi npm entrypoint");
+				return { command: process.execPath, args: [script, ...args] };
+			} catch (error) {
+				throw new Error(`Cannot resolve shell-free Windows Pi npm entrypoint: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		}
+		throw new Error("Cannot resolve shell-free Windows Pi executable; install Pi with npm or launch from its script/binary");
+	}
 	return { command: "pi", args };
 }
 
@@ -128,71 +150,71 @@ function extractFindings(
 	text: string,
 	defaultReviewerName: string,
 ): ReviewFinding[] {
-	const match = text.match(/```json\s*([\s\S]*?)\s*```/);
+	const match = text.match(/^\s*```json\s*([\s\S]*?)\s*```\s*$/);
 	const jsonStr = match ? match[1] : text;
-
+	let parsed: unknown;
 	try {
-		const parsed = JSON.parse(jsonStr.trim());
-		if (Array.isArray(parsed)) {
-			return parsed.map((item: any) => ({
-				severity:
-					item.severity === "high" ||
-					item.severity === "moderate" ||
-					item.severity === "low"
-						? item.severity
-						: "low",
-				summary: String(item.summary || ""),
-				evidence: String(item.evidence || ""),
-				recommendedAction: String(
-					item.recommendedAction || item.recommended_action || "",
-				),
-				relatedPlanUnit: item.relatedPlanUnit
-					? String(item.relatedPlanUnit)
-					: undefined,
-				relatedLearning: item.relatedLearning
-					? String(item.relatedLearning)
-					: undefined,
-				reviewer: item.reviewer ? String(item.reviewer) : defaultReviewerName,
-				autofixable: !!item.autofixable,
-			}));
-		}
+		parsed = JSON.parse(jsonStr.trim()) as unknown;
 	} catch {
-		const startIdx = text.indexOf("[");
-		const endIdx = text.lastIndexOf("]");
-		if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-			try {
-				const fallbackParsed = JSON.parse(text.slice(startIdx, endIdx + 1));
-				if (Array.isArray(fallbackParsed)) {
-					return fallbackParsed.map((item: any) => ({
-						severity:
-							item.severity === "high" ||
-							item.severity === "moderate" ||
-							item.severity === "low"
-								? item.severity
-								: "low",
-						summary: String(item.summary || ""),
-						evidence: String(item.evidence || ""),
-						recommendedAction: String(
-							item.recommendedAction || item.recommended_action || "",
-						),
-						relatedPlanUnit: item.relatedPlanUnit
-							? String(item.relatedPlanUnit)
-							: undefined,
-						relatedLearning: item.relatedLearning
-							? String(item.relatedLearning)
-							: undefined,
-						reviewer: item.reviewer
-							? String(item.reviewer)
-							: defaultReviewerName,
-						autofixable: !!item.autofixable,
-					}));
-				}
-			} catch {
-				// ignore fallback failure
-			}
-		}
+		throw new Error(`Reviewer ${defaultReviewerName} returned malformed findings JSON`);
 	}
-	return [];
+	if (!Array.isArray(parsed)) throw new Error(`Reviewer ${defaultReviewerName} did not return a findings array`);
+	return parsed.map((item: unknown): ReviewFinding => {
+		if (typeof item !== "object" || item === null || Array.isArray(item)) {
+			throw new Error(`Reviewer ${defaultReviewerName} returned a non-object finding`);
+		}
+		const finding = item as Record<string, unknown>;
+		const { severity, summary, evidence } = finding;
+		const recommendedAction = finding.recommendedAction || finding.recommended_action;
+		if (severity !== "high" && severity !== "moderate" && severity !== "low") {
+			throw new Error(`Reviewer ${defaultReviewerName} returned an invalid finding severity`);
+		}
+		if (typeof summary !== "string" || !summary.trim() || typeof evidence !== "string" || !evidence.trim() || typeof recommendedAction !== "string" || !recommendedAction.trim()) {
+			throw new Error(`Reviewer ${defaultReviewerName} returned a finding with missing required text`);
+		}
+		return {
+			severity,
+			summary,
+			evidence,
+			recommendedAction,
+			relatedPlanUnit: finding.relatedPlanUnit
+				? String(finding.relatedPlanUnit)
+				: undefined,
+			relatedLearning: finding.relatedLearning
+				? String(finding.relatedLearning)
+				: undefined,
+			reviewer: finding.reviewer ? String(finding.reviewer) : defaultReviewerName,
+			autofixable: !!finding.autofixable,
+		};
+	});
+}
+
+function buildReviewerPrompt(stepName: string, reviewerName: string): string {
+	let normalizedKey = stepName.trim().toLowerCase();
+	if (normalizedKey.startsWith("0")) {
+		const mapped = getConfigKeyForSkill(normalizedKey);
+		if (mapped) normalizedKey = mapped;
+	}
+	const prompts: Record<string, { role: string; task: string; evidence: string }> = {
+		brainstorm: { role: "You are a product owner and systems architect design validator.", task: "Analyze the requirements discovery artifact for ambiguity, boundary cases, unstated assumptions, and architecture feasibility.", evidence: "quote or section in the requirements document" },
+		plan: { role: "You are a principal engineer and planning validator.", task: "Analyze the implementation plan for completeness, ordering, API documentation validation, and TDD enforcement.", evidence: "quote or section in the plan document" },
+		review: { role: "You are a senior code review and verification validator.", task: "Analyze the review findings report for soundness, cited evidence, and complete verification steps.", evidence: "finding description or evidence cited" },
+		learn: { role: "You are a knowledge manager and solution card validator.", task: "Analyze the proposed solution card for context, categories, tags, overlap rules, and search strategy.", evidence: "quote or section in the solution card" },
+	};
+	const prompt = prompts[normalizedKey] ?? { role: "You are a professional peer reviewer.", task: "Perform a critical review of the provided artifact/work output.", evidence: "specific quote or section of the artifact" };
+	return `${prompt.role} ${prompt.task}
+Compile a list of findings following this JSON schema:
+[
+  {
+    "severity": "high" | "moderate" | "low",
+    "summary": "one-line description",
+    "evidence": "${prompt.evidence}",
+    "recommendedAction": "what should be done to address the finding",
+    "reviewer": "${reviewerName}",
+    "autofixable": false
+  }
+]
+Format your response as a JSON array of findings wrapped in a markdown code block. Do not output anything else.`;
 }
 
 async function runReviewerProcess(
@@ -203,54 +225,25 @@ async function runReviewerProcess(
 	stepName: string,
 ): Promise<ReviewFinding[]> {
 	const reviewerName = `Reviewer #${index + 1} (${reviewer.model})`;
-
-	let normalizedKey = stepName.trim().toLowerCase();
-	if (normalizedKey.startsWith("0")) {
-		const mapped = getConfigKeyForSkill(normalizedKey);
-		if (mapped) normalizedKey = mapped;
+	const systemPrompt = buildReviewerPrompt(stepName, reviewerName);
+	if (isGeminiModel(reviewer.model)) {
+		const stateRoot = mkdtempSync(path.join(tmpdir(), "pi-pedstack-agy-state-"));
+		try {
+			return await runAgyReviewer({
+				model: reviewer.model,
+				reviewer: reviewerName,
+				stage: stepName,
+				repoRoot,
+				task: systemPrompt,
+				prompt: primaryOutput,
+				thinkingLevel: reviewer.thinkingLevel,
+				stateRoot,
+				shippedPluginDirectory: path.resolve(import.meta.dirname, "../../../plugins/agy-reviewer"),
+			});
+		} finally {
+			rmSync(stateRoot, { recursive: true, force: true });
+		}
 	}
-
-	let role = "You are a professional peer reviewer.";
-	let task =
-		"Your task is to perform a critical review of the provided artifact/work output.";
-	let evidenceDesc = "specific quote or section of the artifact";
-
-	if (normalizedKey === "brainstorm") {
-		role = "You are a product owner and systems architect design validator.";
-		task =
-			"Your task is to analyze the requirements discovery / brainstorm artifact. Check for ambiguity, boundary cases, unstated assumptions, and architecture feasibility.";
-		evidenceDesc = "quote or section in the requirements document";
-	} else if (normalizedKey === "plan") {
-		role = "You are a principal engineer and planning validator.";
-		task =
-			"Your task is to analyze the proposed implementation plan. Check for completeness, correct ordering of units, library/API documentation validation notes, and TDD enforcement.";
-		evidenceDesc = "quote or section in the plan document";
-	} else if (normalizedKey === "review") {
-		role = "You are a senior code review and verification validator.";
-		task =
-			"Your task is to analyze the review findings report. Check if findings are sound, evidence is cited correctly, and verification steps are clear and complete.";
-		evidenceDesc = "finding description or evidence cited";
-	} else if (normalizedKey === "learn") {
-		role = "You are a knowledge manager and solution card validator.";
-		task =
-			"Your task is to analyze the proposed learning / solution card. Check if context, categories, tags, overlap rules, and search strategy are correctly defined.";
-		evidenceDesc = "quote or section in the solution card";
-	}
-
-	const systemPrompt = `${role} ${task}
-Compile a list of findings following this JSON schema:
-[
-  {
-    "severity": "high" | "moderate" | "low",
-    "summary": "one-line description",
-    "evidence": "${evidenceDesc}",
-    "recommendedAction": "what should be done to address the finding",
-    "reviewer": "${reviewerName}",
-    "autofixable": false
-  }
-]
-Format your response as a JSON array of findings wrapped in a markdown code block. Do not output anything else.`;
-
 	const args: string[] = [
 		"--mode",
 		"json",
@@ -270,71 +263,29 @@ Format your response as a JSON array of findings wrapped in a markdown code bloc
 		`Review the following artifact/work output:\n\n${primaryOutput}`,
 	);
 
-	return new Promise<ReviewFinding[]>((resolve) => {
-		const invocation = getPiInvocation(args);
-		const isWin = process.platform === "win32";
-		const useShell = isWin && invocation.command === "pi";
+	const invocation = getPiInvocation(args);
+	const result = await createAgyCommand()(invocation.command, invocation.args, { cwd: repoRoot });
+	if (result.code !== 0) throw new Error(`Reviewer process ${index + 1} exited with code ${result.code}`);
 
-		const proc = spawn(invocation.command, invocation.args, {
-			cwd: repoRoot,
-			shell: useShell,
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-
-		let stdout = "";
-		let buffer = "";
-
-		const processLine = (line: string) => {
-			if (!line.trim()) return;
-			try {
-				const event = JSON.parse(line);
-				if (event.type === "message_end" && event.message) {
-					const content = event.message.content;
-					if (Array.isArray(content)) {
-						for (const part of content) {
-							if (part.type === "text") {
-								stdout += part.text;
-							}
-						}
+	let stdout = "";
+	const processLine = (line: string) => {
+		if (!line.trim()) return;
+		try {
+			const event = JSON.parse(line);
+			if (event.type === "message_end" && event.message) {
+				const content = event.message.content;
+				if (Array.isArray(content)) {
+					for (const part of content) {
+						if (part.type === "text") stdout += part.text;
 					}
 				}
-			} catch {
-				// Not a JSON event or malformed line
 			}
-		};
-
-		proc.stdout.on("data", (data) => {
-			buffer += data.toString();
-			const lines = buffer.split("\n");
-			buffer = lines.pop() || "";
-			for (const line of lines) {
-				processLine(line);
-			}
-		});
-
-		proc.on("close", (code) => {
-			if (buffer.trim()) {
-				processLine(buffer);
-			}
-
-			if (code !== 0) {
-				console.warn(
-					`[multi-reviewer] Reviewer process ${index + 1} exited with code ${code}`,
-				);
-			}
-
-			const findings = extractFindings(stdout, reviewerName);
-			resolve(findings);
-		});
-
-		proc.on("error", (err) => {
-			console.error(
-				`[multi-reviewer] Failed to start reviewer process ${index + 1}:`,
-				err,
-			);
-			resolve([]);
-		});
-	});
+		} catch {
+			// Not a JSON event or malformed line.
+		}
+	};
+	for (const line of result.stdout.split("\n")) processLine(line);
+	return extractFindings(stdout, reviewerName);
 }
 
 /**
@@ -444,8 +395,12 @@ export function createMultiReviewerTool() {
 				),
 			);
 
-			const allFindingsArrays = await Promise.all(promises);
-			const findings = allFindingsArrays.flat();
+			const settled = await Promise.allSettled(promises);
+			const failures = settled.flatMap((result, index) => result.status === "rejected"
+				? [`Reviewer #${index + 1} (${reviewers[index]?.model ?? "unknown"}): ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`]
+				: []);
+			if (failures.length > 0) throw new Error(`Review incomplete; no success sidecar was written. ${failures.join("; ")}`);
+			const findings = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
 
 			// Compile markdown summary of findings
 			let summary = `# Multi-Model Review Summary\n\n`;
