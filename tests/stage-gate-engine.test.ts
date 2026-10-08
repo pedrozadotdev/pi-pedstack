@@ -153,7 +153,8 @@ Premise Challenge, failure modes, alternatives and test diagram reviewed.
 `;
 		await write("docs/plans/long.md", plan);
 		const runtime = createFakeJevRuntime({ handler: (request) => {
-			expect(String((request.state as Record<string, unknown>).artifact)).not.toContain("Strict Review");
+			expect(Buffer.byteLength(JSON.stringify(request), "utf8")).toBeLessThanOrEqual(65_536);
+			expect(String((request.state as Record<string, unknown>).artifact)).toContain("Unit 1");
 			return scoring([4, 4, 4, 4])(request);
 		} });
 		const result = await evaluateStageGate({ runtime }, {
@@ -166,6 +167,104 @@ Premise Challenge, failure modes, alternatives and test diagram reviewed.
 		expect(result.jevUnavailable).toBe(false);
 		expect(result.weightedScore).not.toBeNull();
 		expect(result.warnings.join(" ")).toContain("truncated for semantic scoring");
+	});
+
+
+	test("long plans score every implementation unit and aggregate the weakest one", async () => {
+		const plan = `# Plan
+
+## Problem summary
+
+${FILLER.repeat(420)}
+
+## Implementation units
+
+### Unit 1 — Foundation
+**Files.** \`src/a.ts\`
+RED then GREEN. Define tests and failure modes.
+
+### Unit 2 — Browser integration
+**Files.** \`src/b.ts\`
+RED then GREEN. Define tests and failure modes.
+
+## Verification
+
+RED then GREEN for every unit.
+
+## Strict Review
+
+Premise, alternatives, failure modes and test diagram reviewed.
+`;
+		await write("docs/plans/long-units.md", plan);
+		const examined: string[] = [];
+		const runtime = createFakeJevRuntime({ handler: (request) => {
+			const state = request.state as Record<string, unknown>;
+			const artifact = String(state.artifact);
+			examined.push(artifact);
+			expect(Buffer.byteLength(JSON.stringify(request), "utf8")).toBeLessThanOrEqual(65_536);
+			return scoring(artifact.includes("Unit 2 (1/") ? [1] : [4])(request);
+		} });
+		const result = await evaluateStageGate({ runtime }, {
+			repoRoot: root, stage: "02-plan", mode: "enforce",
+		});
+		expect(examined).toHaveLength(2);
+		expect(result.criticalFailed).toBe(false);
+		expect(result.jevUnavailable).toBe(false);
+		expect(result.verdict).toBe("revise");
+		expect(result.weightedScore).toBe(0.25);
+		expect(result.warnings.join(" ")).toContain("Unit 2");
+		const saved = await readLatestRecord(root, "02-plan");
+		expect(saved?.sem.find(d => d.id === "unit_atomicity")?.score).toBe(1);
+		expect(saved?.usage?.input_tokens).toBe(20);
+	});
+
+	test("incomplete semantic unit coverage cannot turn into a deterministic-only accept", async () => {
+		await write("docs/plans/long-units.md", `# Plan
+## Problem summary
+${FILLER.repeat(410)}
+## Implementation units
+### Unit 1 — Foundation
+**Files.** \`src/a.ts\`
+RED GREEN
+## Verification
+RED then GREEN.
+## Strict Review
+Reviewed.
+`);
+		const runtime = createFakeJevRuntime({ handler: () => { throw new JevRuntimeError({
+			code: "timeout", message: "temporary model failure",
+		}); } });
+		const result = await evaluateStageGate({ runtime }, {
+			repoRoot: root, stage: "02-plan", mode: "enforce",
+		});
+		expect(result.criticalFailed).toBe(true);
+		expect(result.verdict).toBe("revise");
+		expect(result.jevUnavailable).toBe(true);
+		expect(result.det.find(d => d.id === "plan_unit_semantics_complete")?.pass).toBe(false);
+		expect(result.jevReason).toContain("Unit 1");
+	});
+
+	test("too many long-plan unit requests are explicitly blocked before scoring", async () => {
+		const units = Array.from({ length: 33 }, (_, i) =>
+			`### Unit ${i+1} — Work\n**Files.** \`src/a${i}.ts\`\nRED then GREEN.\n`
+		).join("\n");
+		await write("docs/plans/many-units.md", `# Plan
+## Problem summary
+${FILLER.repeat(450)}
+## Implementation units
+${units}
+## Verification
+RED GREEN
+## Strict Review
+Complete.
+`);
+		const runtime = createFakeJevRuntime({ handler: () => { throw new Error("no scoring expected"); } });
+		const result = await evaluateStageGate({ runtime }, {
+			repoRoot: root, stage: "02-plan", mode: "enforce",
+		});
+		expect(result.criticalFailed).toBe(true);
+		expect(result.det.find(d => d.id === "plan_unit_scoring_budget")?.pass).toBe(false);
+		expect(result.det.find(d => d.id === "plan_unit_scoring_budget")?.reason).toContain("33");
 	});
 
 	test("a genuinely incomplete long plan still fails deterministic validation", async () => {

@@ -24,6 +24,7 @@ import {
 } from "../overengineering/types";
 import { truncateUtf8ToBytes } from "../utils/solution-recall";
 import { combineVerdict } from "./combine";
+import { aggregateUnitScores, MAX_PLAN_UNIT_REQUESTS, planUnitChunks, type PlanUnitChunk } from "./plan-unit-scoring";
 import { computeArtifactsHash, gatherEvidence } from "./evidence";
 import type { GatherEvidenceOptions } from "./evidence";
 import { evaluateDeterministic, getStageRubric } from "./rubrics";
@@ -287,6 +288,101 @@ async function scoreSemantics(
 	}
 }
 
+
+/**
+ * Long plans are assessed in full, one bounded unit/chunk at a time.
+ * A missing or failed unit assessment cannot accidentally pass the stage via
+ * the normal deterministic-only Jev-unavailable fallback.
+ */
+async function scoreLongPlan(
+  runtime: JevRuntime,
+  evidence: Evidence,
+  rubric: StageRubric,
+  det: DeterministicResult[],
+  built: BuiltStageGateRequest,
+  chunks: PlanUnitChunk[],
+): Promise<JevOutcome> {
+  const unitRubric: StageRubric = {
+    ...rubric,
+    semanticDimensions: rubric.semanticDimensions.filter((d) => !OVER_DIMENSION_SET.has(d.id)),
+  };
+  const dimensionIds = unitRubric.semanticDimensions.map((d) => d.id);
+  const groups: SemanticScoreInput[][] = [];
+  const warnings: string[] = [`long plan: evaluating all ${chunks.length} bounded unit part(s)`];
+  let model = "typesafe/jev";
+  let inputTokens = 0;
+  let outputTokens = 0;
+  for (const chunk of chunks) {
+    const candidate = buildStageGateRequest(
+      { ...evidence, txt: chunk.artifact },
+      unitRubric,
+      det,
+      offOverengineeringSignal(),
+    );
+    const bytes = serializeBytes(candidate.request);
+    if (bytes > MAX_REQUEST_BYTES) {
+      return { inputs: [], model, unavailable: true,
+        reason: `${chunk.label} exceeds the JEV ${MAX_REQUEST_BYTES}-byte request limit (${bytes} bytes)`,
+        warnings, };
+    }
+    const result = await scoreSemantics(runtime, candidate.request, unitRubric);
+    warnings.push(...result.warnings);
+    if (result.unavailable) {
+      return { inputs: [], model, unavailable: true,
+        reason: `${chunk.label}: ${result.reason ?? "JEV unavailable"}`, warnings, };
+    }
+    if (dimensionIds.some((id) => !result.inputs.some((item) => item.id === id))) {
+      return { inputs: [], model, unavailable: true,
+        reason: `${chunk.label} returned incomplete semantic dimensions`, warnings, };
+    }
+    for (const item of result.inputs) {
+      if (item.score <= 1) warnings.push(`${chunk.label}: low ${item.id} score ${item.score}/4`);
+    }
+    model = result.model;
+    inputTokens += result.usage?.input_tokens ?? 0;
+    outputTokens += result.usage?.output_tokens ?? 0;
+    groups.push(result.inputs);
+  }
+  const aggregated = aggregateUnitScores(groups, dimensionIds);
+  if (!aggregated) {
+    return { inputs: [], model, unavailable: true,
+      reason: "missing or invalid plan-unit semantic scores", warnings, };
+  }
+
+  // Overengineering is a PLAN-wide floor-only signal, never averaged with
+  // atomicity and verification. It is evaluated once with bounded global
+  // context and only when the baseline composer supplied those dimensions.
+  const overRubric: StageRubric = {
+    ...rubric,
+    semanticDimensions: rubric.semanticDimensions.filter((d) => OVER_DIMENSION_SET.has(d.id)),
+  };
+  const overIds = Object.keys(built.request.questions).filter((id) => OVER_DIMENSION_SET.has(id));
+  if (overIds.length > 0) {
+    if (serializeBytes(built.request) > MAX_REQUEST_BYTES) {
+      return { inputs: [], model, unavailable: true,
+        reason: "bounded global overengineering request exceeds JEV limit", warnings, };
+    }
+    const over = await scoreSemantics(runtime, built.request, overRubric);
+    warnings.push(...over.warnings);
+    if (over.unavailable || overIds.some(id => !over.inputs.some(s => s.id === id))) {
+      return { inputs: [], model, unavailable: true,
+        reason: over.reason ?? "incomplete plan-wide overengineering dimensions",
+        warnings, };
+    }
+    aggregated.push(...over.inputs);
+    inputTokens += over.usage?.input_tokens ?? 0;
+    outputTokens += over.usage?.output_tokens ?? 0;
+  }
+  return {
+    inputs: aggregated,
+    model,
+    usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+    unavailable: false,
+    reason: null,
+    warnings,
+  };
+}
+
 async function persist(
 	repoRoot: string,
 	mode: StageGateMode,
@@ -462,19 +558,38 @@ export async function evaluateStageGate(
 		? evidence
 		: { ...evidence, txt: evidence.validationText };
 	const det = evaluateDeterministic(rubric, validationEvidence);
+	const isLongPlan = input.stage === "02-plan" &&
+		evidence.truncated && evidence.validationText !== undefined;
+	const chunks = isLongPlan ? planUnitChunks(evidence.validationText!) : [];
+	if (isLongPlan && chunks.length > MAX_PLAN_UNIT_REQUESTS) {
+		det.push({
+			id: "plan_unit_scoring_budget", critical: true, pass: false,
+			reason: `plan requires ${chunks.length} unit requests, exceeding the per-gate budget of ${MAX_PLAN_UNIT_REQUESTS}; split the plan into smaller artifacts`,
+		});
+	}
 	const priorAttempts = await readAttempts(input.repoRoot, input.stage);
 	const attempts = priorAttempts.filter((entry) => entry.verdict === "revise").length;
 	const independentReviews = independentReviewCount(priorAttempts);
 	const priorAttempt = priorAttempts.at(-1) ?? null;
 	const completedReview = await completedReviewFor(input.repoRoot, priorAttempt, evidence);
 	const signal = await resolveOverengineeringSignal(input, overMode);
-	const built = buildStageGateRequest(evidence, rubric, det, signal);
-	const outcome = await resolveOutcome(
-		det.some((entry) => !entry.pass),
-		deps.runtime,
-		built.request,
-		rubric,
-	);
+	const globalEvidence = isLongPlan
+		? { ...evidence, txt: truncateUtf8ToBytes(evidence.txt, 8 * 1024) }
+		: evidence;
+	const globalRubric = isLongPlan
+		? { ...rubric, semanticDimensions: rubric.semanticDimensions.filter(d => OVER_DIMENSION_SET.has(d.id)) }
+		: rubric;
+	const built = buildStageGateRequest(globalEvidence, globalRubric, det, signal);
+	const detFailed = det.some((entry) => !entry.pass);
+	const outcome = isLongPlan && !detFailed
+		? await scoreLongPlan(deps.runtime, evidence, rubric, det, built, chunks)
+		: await resolveOutcome(detFailed, deps.runtime, built.request, rubric);
+	if (isLongPlan && !detFailed && outcome.unavailable) {
+		det.push({
+			id: "plan_unit_semantics_complete", critical: true, pass: false,
+			reason: outcome.reason ?? "unit-level semantic coverage is incomplete",
+		});
+	}
 
 	const combined = combineVerdict({
 		det,
@@ -496,7 +611,7 @@ export async function evaluateStageGate(
 	const overengineering = toOverengineeringRecord(
 		signal,
 		built.facts,
-		built.requestTooLarge,
+		built.requestTooLarge || (isLongPlan && signal.status === "ready" && !outcome.inputs.some(s => OVER_DIMENSION_SET.has(s.id))),
 	);
 
 	await persist(
