@@ -18,12 +18,14 @@ import { createFakeJevRuntime } from "../extensions/ce-core/jev/runtime";
 
 function createPiMock() {
 	const registeredNames: string[] = [];
+	const registeredTools = new Map<string, { execute: (...args: any[]) => Promise<any> }>();
 	const eventHandlers = new Map<string, any[]>();
 	const notifyCalls: Array<{ message: string; level: string }> = [];
 
 	const pi = {
-		registerTool(definition: { name: string }) {
+		registerTool(definition: { name: string; execute: (...args: any[]) => Promise<any> }) {
 			registeredNames.push(definition.name);
+			registeredTools.set(definition.name, definition);
 		},
 		on(event: string, handler: any) {
 			const handlers = eventHandlers.get(event) ?? [];
@@ -51,7 +53,7 @@ function createPiMock() {
 		};
 	}
 
-	return { pi, registeredNames, eventHandlers, notifyCalls, makeCtx };
+	return { pi, registeredNames, registeredTools, eventHandlers, notifyCalls, makeCtx };
 }
 
 function writeEvent(target: string) {
@@ -122,6 +124,31 @@ describe("stage capability guard", () => {
 		expect(registeredNames).toContain("semantic_read");
 		expect(registeredNames).toContain("semantic_scout");
 		expect(registeredNames.length).toBe(20);
+	});
+
+	test("stage_report receives ExtensionContext in the fifth tool argument", async () => {
+		const repo = await makeRepo();
+		const { pi, registeredTools, makeCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		setActiveStage("06-docsync");
+
+		const tool = registeredTools.get("stage_report");
+		expect(tool).toBeDefined();
+		const report = "# Docsync\\nREADME updated, AGENTS unchanged.\\n## Exit criteria\\nMet.";
+		const result = await tool!.execute(
+			"tool-call-id",
+			{ stage: "06-docsync", markdown: report },
+			undefined,
+			undefined,
+			makeCtx(repo),
+		);
+		expect(result.details.path).toBe(
+			".context/compound-engineering/stage-reports/06-docsync.md",
+		);
+		expect(await readFile(path.join(repo, result.details.path), "utf8")).toBe(report);
+		await expect(
+			tool!.execute("another-call", { stage: "03-work", markdown: "wrong" }, undefined, undefined, makeCtx(repo)),
+		).rejects.toThrow("not active");
 	});
 
 	test("02-plan blocks a source write with a reason naming stage and path", async () => {
