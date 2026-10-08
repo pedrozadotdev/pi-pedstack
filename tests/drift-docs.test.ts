@@ -27,21 +27,21 @@ describe("Unit 7 — CONTEXT.md vocabulary", () => {
 
 describe("Unit 7 — README operator surface", () => {
 	test("documents the drift mode and fail-closed config keys", () => {
-		const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
+		const readme = readFileSync(path.join(repoRoot, "docs/ARCHITECTURE.md"), "utf8");
 		expect(readme).toContain("features.driftGuard.mode");
 		expect(readme).toContain("features.driftGuard.failClosed");
 		expect(readme).toContain('"off" | "shadow" | "enforce"');
 	});
 
 	test("documents the record path, delete-to-clear override, and restart note", () => {
-		const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
+		const readme = readFileSync(path.join(repoRoot, "docs/ARCHITECTURE.md"), "utf8");
 		expect(readme).toContain("drift/<stage>.json");
 		expect(readme).toContain("delete");
 		expect(readme).toContain("restart");
 	});
 
 	test("documents the shadow promotion gate and calibrate-before-enforce rule", () => {
-		const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
+		const readme = readFileSync(path.join(repoRoot, "docs/ARCHITECTURE.md"), "utf8");
 		expect(readme).toContain("drift.jsonl");
 		expect(readme).toContain("calibrate");
 	});
@@ -49,7 +49,7 @@ describe("Unit 7 — README operator surface", () => {
 
 describe("Unit 6 — corrected drift semantics in docs", () => {
 	test("README drops the shipped-divergence text and documents the .status.json marker", () => {
-		const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
+		const readme = readFileSync(path.join(repoRoot, "docs/ARCHITECTURE.md"), "utf8");
 		expect(readme).not.toContain("no fresh Jev record");
 		expect(readme).not.toContain("FORBIDDEN_STRONG");
 		expect(readme).toContain(".status.json");

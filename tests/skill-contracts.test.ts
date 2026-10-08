@@ -490,7 +490,7 @@ describe("docs-verification wiring (Unit 9)", () => {
 	const read = (rel: string): string => readFileSync(path.join(repoRoot, rel), "utf8");
 
 	test("every edited doc names the docs-verification config mode", () => {
-		for (const rel of ["AGENTS.md", "README.md", "CONTEXT.md"]) {
+		for (const rel of ["AGENTS.md", "docs/ARCHITECTURE.md", "CONTEXT.md"]) {
 			const content = read(rel);
 			expect({ rel, has: content.includes("features.docsVerification.mode") }).toEqual({
 				rel,
@@ -500,7 +500,7 @@ describe("docs-verification wiring (Unit 9)", () => {
 	});
 
 	test("AGENTS.md and README.md document the fail-closed default", () => {
-		for (const rel of ["AGENTS.md", "README.md"]) {
+		for (const rel of ["AGENTS.md", "docs/ARCHITECTURE.md"]) {
 			const content = read(rel);
 			expect({
 				rel,
@@ -524,7 +524,7 @@ describe("docs-verification wiring (Unit 9)", () => {
 	});
 
 	test("AGENTS.md and README.md document the obligation lifecycle", () => {
-		for (const rel of ["AGENTS.md", "README.md"]) {
+		for (const rel of ["AGENTS.md", "docs/ARCHITECTURE.md"]) {
 			const content = read(rel);
 			expect({
 				rel,
