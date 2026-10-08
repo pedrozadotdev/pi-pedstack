@@ -275,7 +275,7 @@ describe("stage gate engine — review action (Unit 5)", () => {
 		expect(record?.review?.reviewerCount).toBe(1);
 	});
 
-	test("a second review verdict in the same loop escalates", async () => {
+	test("a second review verdict awaits completion without escalating", async () => {
 		await write("docs/plans/plan.md", PLAN);
 		await appendRecord(root, priorAttempt("review"));
 
@@ -289,9 +289,9 @@ describe("stage gate engine — review action (Unit 5)", () => {
 			},
 		);
 
-		expect(result.action).toBe("escalate");
+		expect(result.action).toBe("review");
 		const record = await readLatestRecord(root, "02-plan");
-		expect(record?.review?.action).toBe("escalate");
+		expect(record?.review?.action).toBe("review");
 	});
 
 	test("a review verdict after an intervening accept starts a new loop", async () => {
@@ -312,7 +312,7 @@ describe("stage gate engine — review action (Unit 5)", () => {
 		expect(result.action).toBe("review");
 	});
 
-	test("review with reviewerAvailable false escalates", async () => {
+	test("review without configured reviewer does not escalate", async () => {
 		await write("docs/plans/plan.md", PLAN);
 		const result = await evaluateStageGate(
 			{ runtime: createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) }) },
@@ -324,7 +324,7 @@ describe("stage gate engine — review action (Unit 5)", () => {
 			},
 		);
 
-		expect(result.action).toBe("escalate");
+		expect(result.action).toBe("review");
 		expect(result.actionReason.length).toBeGreaterThan(0);
 	});
 
