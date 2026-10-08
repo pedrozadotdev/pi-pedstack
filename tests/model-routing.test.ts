@@ -139,6 +139,29 @@ describe("resolveExecutionRole — precedence", () => {
 	});
 });
 
+describe("resolveExecutionRole — SOTA stage restrictions", () => {
+	test("ignores Jev and old gate escalation signals on excluded stages", () => {
+		for (const stage of ["03-work", "04-review", "05-learn", "06-docsync", "unknown"]) {
+			for (const fields of [{ gateEscalate: true }, { jev: QUALIFYING }]) {
+				const result = resolveExecutionRole(input({ stage, ...fields }));
+				expect(result.role).toBe("default");
+				expect(result.reason).toBe("stage_policy");
+			}
+		}
+	});
+	test("explicit model override remains effective", () => {
+		const result = resolveExecutionRole(input({ stage: "03-work", gateEscalate: true, jev: QUALIFYING, overrideModel: "operator/model" }));
+		expect(result.reason).toBe("override");
+		expect(result.overrideModel).toBe("operator/model");
+	});
+	test("eligible stages still escalate", () => {
+		for (const stage of ["01-brainstorm", "02-plan", "04-5-debug"]) {
+			expect(resolveExecutionRole(input({ stage, gateEscalate: true })).role).toBe("sota");
+			expect(resolveExecutionRole(input({ stage, jev: QUALIFYING })).role).toBe("sota");
+		}
+	});
+});
+
 describe("resolveExecutionRole — fallback invariant", () => {
 	test("a missing judgment always degrades to default/fallback", () => {
 		for (let i = 0; i < 5; i++) {

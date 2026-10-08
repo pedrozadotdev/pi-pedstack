@@ -102,6 +102,7 @@ import { createJevRuntime } from "./jev/runtime";
 import type { JevRuntime } from "./jev/types";
 import { resolveStartupFeatures } from "./utils/startup-features";
 import { readPiPedstackConfig } from "./utils/config-types";
+import { stageAllowsSotaEscalation } from "./utils/stage-policy";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -854,6 +855,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			enforcing?: unknown;
 		} | undefined;
 		if (!result || typeof result.stage !== "string" || !isValidStageKey(result.stage)) return;
+		if (!stageAllowsSotaEscalation(result.stage)) {
+			if (pendingGateReload?.stageKey === result.stage) pendingGateReload = null;
+			return;
+		}
 		if (result.action !== "escalate" || result.enforcing !== true) {
 			if (pendingGateReload?.stageKey === result.stage) pendingGateReload = null;
 			return;

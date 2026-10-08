@@ -88,7 +88,7 @@ describe("resolveStageRouting — inert without config", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -97,7 +97,7 @@ describe("resolveStageRouting — inert without config", () => {
 		expect(result.appliedThinkingLevel).toBeNull();
 		expect(result.shadow).toBe(true);
 		expect(result.decision.reason).toBe("fallback");
-		expect(await readRoutingRecord(repo, "03-work")).toBeNull();
+		expect(await readRoutingRecord(repo, "02-plan")).toBeNull();
 	});
 });
 
@@ -112,7 +112,7 @@ describe("resolveStageRouting — shadow mode", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 			now: () => new Date("2026-10-06T00:00:00.000Z"),
 		});
@@ -122,7 +122,7 @@ describe("resolveStageRouting — shadow mode", () => {
 		expect(result.shadow).toBe(true);
 		expect(result.appliedModel).toBeNull();
 
-		const record = await readRoutingRecord(repo, "03-work");
+		const record = await readRoutingRecord(repo, "02-plan");
 		expect(record?.role).toBe("sota");
 		expect(record?.updatedAt).toBe("2026-10-06T00:00:00.000Z");
 		// Shadow must not consume the escalation budget.
@@ -132,9 +132,9 @@ describe("resolveStageRouting — shadow mode", () => {
 	test("a deterministic gate escalate is recorded but never applied under shadow", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, { models: MODELS, routing: { shadow: true } });
-		writeStageGate(repo, "03-work", {
+		writeStageGate(repo, "02-plan", {
 			schema: 1,
-			stage: "03-work",
+			stage: "02-plan",
 			verdict: "escalate",
 		});
 		const jev = createFakeJevRuntime({
@@ -143,7 +143,7 @@ describe("resolveStageRouting — shadow mode", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -153,7 +153,7 @@ describe("resolveStageRouting — shadow mode", () => {
 		expect(result.appliedModel).toBeNull();
 		expect(jev.requests.length).toBe(0);
 
-		const record = await readRoutingRecord(repo, "03-work");
+		const record = await readRoutingRecord(repo, "02-plan");
 		expect(record?.role).toBe("sota");
 		expect(record?.reason).toBe("gate_escalate");
 		// Shadow applies nothing, so it also consumes nothing.
@@ -171,7 +171,7 @@ describe("resolveStageRouting — enforce mode", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -180,7 +180,7 @@ describe("resolveStageRouting — enforce mode", () => {
 		expect(result.appliedThinkingLevel).toBe("high");
 		expect(jev.requests.length).toBe(1);
 
-		const record = await readRoutingRecord(repo, "03-work");
+		const record = await readRoutingRecord(repo, "02-plan");
 		expect(record?.role).toBe("sota");
 		expect(record?.escalations).toBe(1);
 		expect(record?.attempts).toBe(0);
@@ -191,7 +191,7 @@ describe("resolveStageRouting — enforce mode", () => {
 	test("persists revision and review counters derived from retained attempts", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
-		writeStageGateAttempts(repo, "03-work", [
+		writeStageGateAttempts(repo, "02-plan", [
 			{ verdict: "revise" },
 			{ verdict: "review" },
 			{ verdict: "accept" },
@@ -200,9 +200,9 @@ describe("resolveStageRouting — enforce mode", () => {
 			handler: routingHandler({ value: 0.1, confidence: 0.9 }),
 		});
 
-		await resolveStageRouting({ repoRoot: repo, stage: "03-work", jev });
+		await resolveStageRouting({ repoRoot: repo, stage: "02-plan", jev });
 
-		const record = await readRoutingRecord(repo, "03-work");
+		const record = await readRoutingRecord(repo, "02-plan");
 		expect(record?.attempts).toBe(3);
 		expect(record?.revisions).toBe(1);
 		expect(record?.reviews).toBe(1);
@@ -217,7 +217,7 @@ describe("resolveStageRouting — enforce mode", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -230,9 +230,9 @@ describe("resolveStageRouting — enforce mode", () => {
 	test("a newest stage-gate escalate skips Jev deterministically", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
-		writeStageGate(repo, "03-work", {
+		writeStageGate(repo, "02-plan", {
 			schema: 1,
-			stage: "03-work",
+			stage: "02-plan",
 			verdict: "escalate",
 		});
 		const jev = createFakeJevRuntime({
@@ -241,7 +241,7 @@ describe("resolveStageRouting — enforce mode", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -260,7 +260,7 @@ describe("resolveStageRouting — enforce mode", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -278,7 +278,7 @@ describe("resolveStageRouting — enforce mode", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			override: { model: "explicit" },
 			jev,
 		});
@@ -296,12 +296,12 @@ describe("resolveStageRouting — enforce mode", () => {
 
 		const first = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 		const second = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -311,7 +311,7 @@ describe("resolveStageRouting — enforce mode", () => {
 		expect(second.decision.source).toBe("budget");
 		expect(second.appliedModel).toBe("cheap");
 
-		const record = await readRoutingRecord(repo, "03-work");
+		const record = await readRoutingRecord(repo, "02-plan");
 		expect(record?.reason).toBe("budget_exhausted");
 		expect(record?.reason).not.toBe("fallback");
 		expect(record?.escalations).toBe(1);
@@ -325,16 +325,16 @@ describe("resolveStageRouting — enforce mode", () => {
 		});
 		const jev = createFakeJevRuntime({ handler: routingHandler() });
 
-		const first = await resolveStageRouting({ repoRoot: repo, stage: "03-work", jev });
-		const second = await resolveStageRouting({ repoRoot: repo, stage: "03-work", jev });
-		const third = await resolveStageRouting({ repoRoot: repo, stage: "03-work", jev });
+		const first = await resolveStageRouting({ repoRoot: repo, stage: "02-plan", jev });
+		const second = await resolveStageRouting({ repoRoot: repo, stage: "02-plan", jev });
+		const third = await resolveStageRouting({ repoRoot: repo, stage: "02-plan", jev });
 
 		expect(first.decision.role).toBe("sota");
 		expect(second.decision.role).toBe("sota");
 		expect(third.decision.role).toBe("default");
 		expect(third.decision.reason).toBe("budget_exhausted");
 
-		const record = await readRoutingRecord(repo, "03-work");
+		const record = await readRoutingRecord(repo, "02-plan");
 		expect(record?.escalations).toBe(2);
 	});
 });
@@ -348,19 +348,19 @@ describe("resolveStageRouting — budget semantics", () => {
 		// The first run consumes the single configured proactive Jev escalation.
 		const first = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 		expect(first.decision.reason).toBe("jev");
 
-		writeStageGate(repo, "03-work", {
+		writeStageGate(repo, "02-plan", {
 			schema: 1,
-			stage: "03-work",
+			stage: "02-plan",
 			verdict: "escalate",
 		});
 		const escalated = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -372,31 +372,31 @@ describe("resolveStageRouting — budget semantics", () => {
 	test("a deterministic gate escalate does not consume the proactive Jev budget", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
-		writeStageGate(repo, "03-work", {
+		writeStageGate(repo, "02-plan", {
 			schema: 1,
-			stage: "03-work",
+			stage: "02-plan",
 			verdict: "escalate",
 		});
 		const jev = createFakeJevRuntime({ handler: routingHandler() });
 
 		const escalated = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 		expect(escalated.decision.reason).toBe("gate_escalate");
 		expect(jev.requests.length).toBe(0);
-		expect((await readRoutingRecord(repo, "03-work"))?.escalations).toBe(0);
+		expect((await readRoutingRecord(repo, "02-plan"))?.escalations).toBe(0);
 
 		// Clear the gate escalation; the proactive Jev budget must still be available.
-		writeStageGate(repo, "03-work", {
+		writeStageGate(repo, "02-plan", {
 			schema: 1,
-			stage: "03-work",
+			stage: "02-plan",
 			verdict: "accept",
 		});
 		const routed = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -414,7 +414,7 @@ describe("resolveStageRouting — budget semantics", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -432,13 +432,13 @@ describe("resolveStageRouting — partial role config", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
 		expect(result.decision.role).toBe("sota");
 		expect(result.appliedModel).toBeNull();
-		expect(await readRoutingRecord(repo, "03-work")).not.toBeNull();
+		expect(await readRoutingRecord(repo, "02-plan")).not.toBeNull();
 	});
 
 	test("a gate escalate with no sota role falls back to default, never review", async () => {
@@ -450,9 +450,9 @@ describe("resolveStageRouting — partial role config", () => {
 			},
 			routing: { shadow: false },
 		});
-		writeStageGate(repo, "03-work", {
+		writeStageGate(repo, "02-plan", {
 			schema: 1,
-			stage: "03-work",
+			stage: "02-plan",
 			verdict: "escalate",
 		});
 		const jev = createFakeJevRuntime({
@@ -461,7 +461,7 @@ describe("resolveStageRouting — partial role config", () => {
 
 		const result = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 
@@ -477,12 +477,12 @@ describe("resolveStageRouting — partial role config", () => {
 
 		const first = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 		const exhausted = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 		expect(first.decision.role).toBe("sota");
@@ -492,10 +492,38 @@ describe("resolveStageRouting — partial role config", () => {
 
 		const fresh = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 		expect(fresh.decision.role).toBe("sota");
 		expect(fresh.decision.reason).toBe("jev");
 	});
+});
+
+describe("resolveStageRouting — no SOTA for execution and closing stages", () => {
+	for (const stage of ["03-work", "04-review", "05-learn", "06-docsync"]) {
+		for (const shadow of [true, false]) {
+			test(`${stage}: ignores stale escalations in shadow=${shadow}`, async () => {
+				const repo = makeRepo();
+				writeConfig(repo, { models: MODELS, routing: { shadow } });
+				writeStageGate(repo, stage, { schema: 1, stage, verdict: "escalate" });
+				const jev = createFakeJevRuntime({ handler: () => new Error("Jev must not be called") });
+				const routed = await resolveStageRouting({ repoRoot: repo, stage, jev });
+				expect(routed.decision.role).toBe("default");
+				expect(routed.decision.reason).toBe("stage_policy");
+				expect(routed.appliedModel).toBe(shadow ? null : "cheap");
+				expect(jev.requests).toHaveLength(0);
+				expect((await readRoutingRecord(repo, stage))?.escalations).toBe(0);
+			});
+		}
+		test(`${stage}: explicit operator override is preserved`, async () => {
+			const repo = makeRepo();
+			writeConfig(repo, { models: MODELS, routing: { shadow: false } });
+			const jev = createFakeJevRuntime({ handler: () => new Error("Jev must not be called") });
+			const routed = await resolveStageRouting({ repoRoot: repo, stage, override: { model: "operator/model" }, jev });
+			expect(routed.decision.reason).toBe("override");
+			expect(routed.decision.overrideModel).toBe("operator/model");
+			expect(jev.requests).toHaveLength(0);
+		});
+	}
 });

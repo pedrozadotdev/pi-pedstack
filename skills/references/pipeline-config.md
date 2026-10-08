@@ -17,12 +17,14 @@ No manual `/model` or `/thinking` command is needed. The skill itself does not n
 
 Routing applies `models.default` to normal work and `models.sota` to complex work or escalation.
 
+**Stage-scoped SOTA policy:** Only `01-brainstorm`, `02-plan`, and on-demand `04-5-debug` may select SOTA automatically, whether from proactive Jev routing or a stage-gate escalation. `03-work`, `04-review`, `05-learn`, and `06-docsync` always route to the default execution role (or an explicitly configured per-stage model override). They still run their normal stage gates, revisions, and independent reviews. When their revision budget is exhausted, the gate continues returning `revise` rather than attempting SOTA escalation. Old persisted `escalate` records cannot override this policy.
+
 **Shadow mode (`routing.shadow: true`, the default).** Routing computes and persists the decision but does not apply `models.sota`; an explicit per-stage model is still applied. In shadow mode a `/ped-reload` after a deterministic stage-gate escalation records `gate_escalate` but does not switch the model. Enable routing enforcement (`routing.shadow: false`) to use automatic stage-entry model selection.
 
 **Enforced routing (`routing.shadow: false`).**
 
-- **Proactive Jev routing** may select `sota` at stage entry when the task looks complex. `routing.maxEscalationsPerStage` caps this proactive selection per stage.
-- **Deterministic stage-gate escalation** (`stage_gate.action === "escalate"`) is never suppressed by that cost budget: correctness wins. When it happens:
+- **Proactive Jev routing** may select `sota` at stage entry only in the escalation-eligible stages when the task looks complex. `routing.maxEscalationsPerStage` caps this proactive selection per eligible stage.
+- **Eligible-stage gate escalation** (`stage_gate.action === "escalate"`) is never suppressed by that cost budget: correctness wins. It cannot occur in work, review, learn or docsync. When it happens:
   1. Stop the current stage loop. Do not continue with the current execution model.
   2. Ask the operator to run `/ped-reload`. Never invoke `/ped-reload` automatically and never switch models in the middle of the current turn.
   3. `/ped-reload` re-enters the same stage; stage-entry routing reads the persisted escalation and starts the stage under `models.sota`.

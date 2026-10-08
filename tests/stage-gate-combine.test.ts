@@ -70,6 +70,18 @@ describe("stage gate combine (Unit 3)", () => {
 		expect(result.verdict).toBe("escalate");
 	});
 
+	test("restricted stages never convert required revision into SOTA escalation", () => {
+		for (const score of [[], [sem(1)]]) {
+			const result = combineVerdict({
+				det: det(false), sem: score, attempts: MAX_REVISE + 3,
+				jevUnavailable: false, allowEscalation: false,
+			});
+			expect(result.verdict).toBe("revise");
+			expect(result.criticalFailed).toBe(true);
+			expect(result.reasons.some(r => r.includes("escalating"))).toBe(false);
+		}
+	});
+
 	test("all det pass + weighted >= 0.75 + dims >= 0.25 yields accept", () => {
 		const result = combineVerdict({
 			det: det(true, true),

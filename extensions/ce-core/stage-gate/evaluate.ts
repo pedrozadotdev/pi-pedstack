@@ -29,6 +29,7 @@ import type { GatherEvidenceOptions } from "./evidence";
 import { evaluateDeterministic, getStageRubric } from "./rubrics";
 import { appendRecord, readAttempts, readLatestRecord, resolvePriorGate } from "./store";
 import { resolveReviewAction } from "../review/policy";
+import { stageAllowsSotaEscalation } from "../utils/stage-policy";
 import type {
 	DeterministicResult,
 	Evidence,
@@ -474,6 +475,7 @@ export async function evaluateStageGate(
 		det,
 		sem: outcome.inputs,
 		attempts,
+		allowEscalation: stageAllowsSotaEscalation(input.stage),
 		jevUnavailable: outcome.unavailable,
 		overengineeringEnforced: overMode === "enforce",
 	});

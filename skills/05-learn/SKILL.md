@@ -33,7 +33,7 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
     - `accept` → do not run `multi_reviewer`; advance.
     - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
     - `review` → invoke **`multi_reviewer`** with `stepName: "05-learn"` and `mode: "single"` to review the newly written or updated solution card (the solution artifact); inspect the returned findings, verify each against the card, apply the confirmed ones to the card, then re-run `stage_gate`.
-    - `escalate` → Stop the current stage loop and do not invoke `/ped-reload` yourself. Under enforced routing (`routing.shadow: false`), Pedstack automatically re-enters the same stage under `models.sota` after this turn ends; if that fails, the operator can use `/ped-reload` manually. Shadow mode records the decision but does not switch models.
+    - `escalate` → Unreachable in `05-learn`: SOTA escalation is disabled. Continue revising the solution artifact until the gate accepts it.
     A missing `action` (unknown stage or a tool regression) is treated as `none`; advance.
     Use `mode: "deep"` only on an explicit user request.
 8. Mention how future `02-plan` and `04-review` runs should benefit from the new learning.

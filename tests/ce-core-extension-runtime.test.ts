@@ -814,6 +814,24 @@ describe("auto-advance tool_result wiring", () => {
 		}
 	});
 
+	test("restricted stages cannot queue a SOTA auto-reload even for legacy escalation results", async () => {
+		const { pi, eventHandlers, sendUserMessageCalls, makeEventCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		const gateHandler = eventHandlers.get("tool_result")![4];
+		for (const stage of ["03-work", "04-review", "05-learn", "06-docsync"]) {
+			setActiveStage(stage);
+			await gateHandler({
+				toolName: "stage_gate",
+				isError: false,
+				details: { stage, action: "escalate", enforcing: true },
+			}, makeEventCtx({ cwd: "/tmp", model: { provider: "openai", id: "small" } }));
+			await eventHandlers.get("agent_end")![0](
+				{ type: "agent_end" }, makeEventCtx({ cwd: "/tmp" }),
+			);
+			expect(sendUserMessageCalls).toHaveLength(0);
+		}
+	});
+
 	test("shadow-mode gate escalation does not auto-reload", async () => {
 		const repoRoot = await mkdtemp(path.join(os.tmpdir(), "pi-ce-shadow-reload-"));
 		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });

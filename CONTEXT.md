@@ -62,10 +62,11 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   `review` is never an execution target.
 - **Routing decision** — the persisted `{ role, reason, source, scores, weighted, confidence,
   attempts, escalations, revisions, reviews }` produced at stage entry. `reason` is one of
-  `override | gate_escalate | jev | budget_exhausted | fallback`; `source` is one of
+  `override | gate_escalate | jev | budget_exhausted | stage_policy | fallback`; `source` is one of
   `override | deterministic | jev | budget | fallback`. `revisions`/`reviews` count the
   retained stage-gate attempts with those verdicts (bounded by the stage-gate
   `ATTEMPT_CAP = 3`); a legacy record without them reads as `0`.
+- **Stage eligibility** — only `01-brainstorm`, `02-plan`, and `04-5-debug` may select `sota` automatically. `03-work`, `04-review`, `05-learn`, and `06-docsync` stay on the default role; they keep their quality gates/revision loops and ignore old escalation records. A deliberate per-stage model override still wins.
 - **Deterministic escalation** — a `sota` choice justified by the newest stage-gate
   `escalate` verdict, independent of Jev; it short-circuits any Jev call.
 - **Escalation budget** — `routing.maxEscalationsPerStage` (default 1): a cost cap on
@@ -75,11 +76,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   exempt: it is honored even when the budget is exhausted. The budget is workflow-scoped:
   `/ped-start` and `/ped-fix-issues` clear the previous workflow's routing and stage-gate
   records, while `/ped-next`, `/ped-reload`, and `/ped-debug` preserve them.
-- **Manual stage-gate escalation** — when `stage_gate.action === "escalate"`, the current
-  stage loop stops and the operator runs `/ped-reload`; under enforced routing the
-  persisted escalation re-enters the same stage under `models.sota`, while shadow mode
-  records the decision but does not apply it. The model never
-  invokes `/ped-reload` automatically and never switches models mid-turn.
+- **Eligible stage-gate escalation** — when an eligible stage returns `action: "escalate"`, the stage loop stops; enforced routing automatically reloads it under `models.sota` at the end of the turn. `/ped-reload` remains the manual fallback if automation cannot start. Shadow mode records the decision but does not switch models; no model is changed mid-turn. This does not apply to work, review, learn, or docsync.
 - **Shadow-first routing** — `routing.shadow` defaults `true`: the decision is computed and
   persisted while the explicit per-stage model (if any) is still applied. Routing runs at all
   only when a `models` or `routing` block exists. Promotion to `enforce` is gated on the

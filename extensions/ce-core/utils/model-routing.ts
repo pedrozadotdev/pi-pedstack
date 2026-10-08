@@ -19,6 +19,7 @@ import {
 import { readRoutingRecord, writeRoutingRecord } from "./routing-store";
 import { isUnitNumber, readConfidence } from "./noul-read";
 import { truncateUtf8ToBytes } from "./solution-recall";
+import { stageAllowsSotaEscalation } from "./stage-policy";
 
 // Re-exported so `model-routing.ts` stays the public entry point for routing
 // policy while the schema-adjacent defaults live with the config definitions.
@@ -36,6 +37,7 @@ export type RoutingReason =
 	| "gate_escalate"
 	| "jev"
 	| "budget_exhausted"
+	| "stage_policy"
 	| "fallback";
 
 export type RoutingSource =
@@ -53,6 +55,8 @@ export interface JevJudgment {
 }
 
 export interface RoleResolutionInput {
+	/** Stage-scoped policy; omitted for legacy pure role-resolution callers. */
+	stage?: string;
 	overrideModel?: string | null;
 	gateEscalate: boolean;
 	jev: JevJudgment | null;
@@ -99,6 +103,10 @@ export function resolveExecutionRole(input: RoleResolutionInput): RoleDecision {
 	const override = input.overrideModel?.trim();
 	if (override) {
 		return plainDecision("default", "override", "override", override);
+	}
+
+	if (input.stage !== undefined && !stageAllowsSotaEscalation(input.stage)) {
+		return plainDecision("default", "stage_policy", "deterministic");
 	}
 
 	if (input.gateEscalate) {
@@ -412,16 +420,18 @@ export async function resolveStageRouting(
 		const routing = resolveRoutingConfig(config);
 
 		const overrideModel = input.override?.model ?? null;
+		const canEscalate = stageAllowsSotaEscalation(input.stage);
 		// Deterministic-first: override, then the stage-gate verdict, short-circuit
 		// before any Jev call.
 		const gateEscalate =
-			!overrideModel && (await latestGateEscalates(input.repoRoot, input.stage));
+			canEscalate && !overrideModel && (await latestGateEscalates(input.repoRoot, input.stage));
 		const prior = await readRoutingRecord(input.repoRoot, input.stage);
 		const priorEscalations = prior?.escalations ?? 0;
 
-		const jev = overrideModel || gateEscalate ? null : await askJev(input);
+		const jev = !canEscalate || overrideModel || gateEscalate ? null : await askJev(input);
 
 		const decision = resolveExecutionRole({
+			stage: input.stage,
 			overrideModel,
 			gateEscalate,
 			jev,

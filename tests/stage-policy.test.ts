@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	STAGE_DISCIPLINES as RELOCATED,
 	getStageDiscipline,
+	stageAllowsSotaEscalation,
 } from "../extensions/ce-core/utils/stage-policy";
 import {
 	STAGE_DISCIPLINES as REEXPORTED,
@@ -36,6 +37,15 @@ describe("getStageDiscipline", () => {
 		expect(getStageDiscipline("09-nope")).toBeNull();
 		expect(getStageDiscipline(null)).toBeNull();
 		expect(getStageDiscipline(undefined)).toBeNull();
+	});
+});
+
+describe("SOTA stage policy", () => {
+	test("only brainstorm, plan and debug may escalate", () => {
+		for (const stage of ["01-brainstorm", "02-plan", "04-5-debug"])
+			expect(stageAllowsSotaEscalation(stage)).toBe(true);
+		for (const stage of ["03-work", "04-review", "05-learn", "06-docsync", "unknown"])
+			expect(stageAllowsSotaEscalation(stage)).toBe(false);
 	});
 });
 

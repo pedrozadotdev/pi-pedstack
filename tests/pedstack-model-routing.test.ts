@@ -379,12 +379,12 @@ describe("workflow budget lifecycle", () => {
 
 		const first = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 		const exhausted = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 		expect(first.decision.role).toBe("sota");
@@ -395,7 +395,7 @@ describe("workflow budget lifecycle", () => {
 
 		const fresh = await resolveStageRouting({
 			repoRoot: repo,
-			stage: "03-work",
+			stage: "02-plan",
 			jev,
 		});
 		expect(fresh.decision.role).toBe("sota");
@@ -640,8 +640,8 @@ describe("manual escalation via /ped-reload", () => {
 	test("enforced /ped-reload applies models.sota from a persisted gate escalation", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, { models: MODELS, routing: { shadow: false } });
-		writeContextState(repo, { currentStage: "03-work", nextStage: "04-review" });
-		writeStageGateEscalate(repo, "03-work");
+		writeContextState(repo, { currentStage: "02-plan", nextStage: "03-work" });
+		writeStageGateEscalate(repo, "02-plan");
 		__setModelRoutingJevFactory(() => fakeJev(0.1));
 		const harness = makeHarness(repo);
 
@@ -649,8 +649,8 @@ describe("manual escalation via /ped-reload", () => {
 
 		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "strong" }]);
 		// /ped-reload must preserve the escalation signal that made this work.
-		expect(existsSync(stageGatePath(repo, "03-work" as never))).toBe(true);
-		const record = await readRoutingRecord(repo, "03-work");
+		expect(existsSync(stageGatePath(repo, "02-plan" as never))).toBe(true);
+		const record = await readRoutingRecord(repo, "02-plan");
 		expect(record?.reason).toBe("gate_escalate");
 		expect(record?.escalations).toBe(0);
 	});
@@ -658,15 +658,15 @@ describe("manual escalation via /ped-reload", () => {
 	test("shadow /ped-reload records gate_escalate but applies nothing", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, { models: MODELS, routing: { shadow: true } });
-		writeContextState(repo, { currentStage: "03-work" });
-		writeStageGateEscalate(repo, "03-work");
+		writeContextState(repo, { currentStage: "02-plan" });
+		writeStageGateEscalate(repo, "02-plan");
 		__setModelRoutingJevFactory(() => fakeJev(0.1));
 		const harness = makeHarness(repo);
 
 		await cmdPedReload(harness.pi).handler("", harness.ctx);
 
 		expect(harness.setModelCalls).toEqual([]);
-		const record = await readRoutingRecord(repo, "03-work");
+		const record = await readRoutingRecord(repo, "02-plan");
 		expect(record?.role).toBe("sota");
 		expect(record?.reason).toBe("gate_escalate");
 		expect(record?.escalations).toBe(0);
@@ -680,18 +680,34 @@ describe("manual escalation via /ped-reload", () => {
 	test("an explicit per-stage override wins over the gate escalation", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, {
-			work: { model: "test/explicit" },
+			plan: { model: "test/explicit" },
 			models: MODELS,
 			routing: { shadow: false },
 		});
-		writeContextState(repo, { currentStage: "03-work" });
-		writeStageGateEscalate(repo, "03-work");
+		writeContextState(repo, { currentStage: "02-plan" });
+		writeStageGateEscalate(repo, "02-plan");
 		__setModelRoutingJevFactory(() => fakeJev(0.1));
 		const harness = makeHarness(repo);
 
 		await cmdPedReload(harness.pi).handler("", harness.ctx);
 
 		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "explicit" }]);
-		expect((await readRoutingRecord(repo, "03-work"))?.reason).toBe("override");
+		expect((await readRoutingRecord(repo, "02-plan"))?.reason).toBe("override");
 	});
+});
+
+describe("manual reload ignores legacy restricted-stage gate escalation", () => {
+	for (const stage of ["03-work", "04-review", "05-learn", "06-docsync"]) {
+		test(`/ped-reload keeps ${stage} on default despite stale gate escalation`, async () => {
+			const repo = makeRepo();
+			writeConfig(repo, { models: MODELS, routing: { shadow: false } });
+			writeContextState(repo, { currentStage: stage });
+			writeStageGateEscalate(repo, stage);
+			__setModelRoutingJevFactory(() => fakeJev(0.9));
+			const harness = makeHarness(repo);
+			await cmdPedReload(harness.pi).handler("", harness.ctx);
+			expect(harness.setModelCalls).toEqual([{ provider: "test", id: "cheap" }]);
+			expect((await readRoutingRecord(repo, stage))?.reason).toBe("stage_policy");
+		});
+	}
 });

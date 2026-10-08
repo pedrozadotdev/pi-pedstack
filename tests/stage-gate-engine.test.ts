@@ -252,6 +252,20 @@ describe("stage gate engine (Unit 5)", () => {
 		expect(record?.attempt).toBe(2);
 	});
 
+	test("work/review/learn/docsync retain revise verdict even past escalation budget", async () => {
+		for (const stage of ["03-work", "04-review", "05-learn", "06-docsync"] as const) {
+			await appendRecord(root, { ...priorRevise(), stage });
+			await appendRecord(root, { ...priorRevise(), stage });
+			const result = await evaluateStageGate(
+				{ runtime: createFakeJevRuntime({ handler: scoring([1, 1, 1, 1]) }) },
+				{ repoRoot: root, stage, mode: "enforce" },
+			);
+			expect(result.verdict).toBe("revise");
+			expect(result.action).toBe("revise");
+			expect((await readLatestRecord(root, stage))?.verdict).toBe("revise");
+		}
+	});
+
 	test("bounds the request even with a 64 KiB artifact", async () => {
 		await write("docs/plans/plan.md", `${PLAN}\n${"x".repeat(64 * 1024)}`);
 		const runtime = createFakeJevRuntime({ handler: scoring([4, 4, 4, 4]) });
