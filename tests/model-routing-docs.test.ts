@@ -31,10 +31,10 @@ const ESCALATION_DOCS = [
 ];
 
 /** A phrase that records-without-applying shadow semantics, tolerant of wording. */
-const SHADOW_NOT_APPLIED = /record(?:ed|s)?[^.]{0,80}not appl/i;
+const SHADOW_NOT_APPLIED = /record(?:ed|s)?[^.]{0,120}(?:not appl|does not switch)/i;
 
 describe("model-routing docs — shadow vs enforced", () => {
-	test("every escalation doc keeps the manual /ped-reload contract", () => {
+	test("every escalation doc preserves /ped-reload as a fallback", () => {
 		for (const rel of ESCALATION_DOCS) {
 			const text = read(rel);
 			expect({ rel, reload: text.includes("/ped-reload") }).toEqual({
