@@ -613,7 +613,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		label: "Stage Report",
 		description: "Safely publish the active stage canonical Markdown report.",
 		parameters: stageReportParams,
-		async execute(_id, params, _signal, ctx) {
+		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const result = await stageReport.execute({ repoRoot: ctx.cwd, stage: params.stage, activeStage: await resolveGuardStage(ctx), markdown: params.markdown });
 			return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
 		},
