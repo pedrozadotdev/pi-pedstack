@@ -114,7 +114,7 @@ describe("ce-core extension runtime registration", () => {
 		);
 	}
 
-	test("registers 19 workflow control tools (no subagent tools)", () => {
+	test("registers 20 workflow control tools (no subagent tools)", () => {
 		const registeredNames: string[] = [];
 		const eventHandlers = new Map<string, any[]>();
 		const pi = {
@@ -135,6 +135,7 @@ describe("ce-core extension runtime registration", () => {
 
 		expect(registeredNames).toEqual([
 			"artifact_helper",
+			"stage_report",
 			"workflow_state",
 			"review_router",
 			"session_checkpoint",
@@ -738,11 +739,12 @@ describe("auto-advance tool_result wiring", () => {
 		ceCoreExtension(pi as never);
 
 		expect(registeredNames).toContain("stage_gate");
+		expect(registeredNames).toContain("stage_report");
 		expect(registeredNames).toContain("solution_search");
 		expect(registeredNames).toContain("docs_verification");
 		expect(registeredNames).toContain("semantic_read");
 		expect(registeredNames).toContain("semantic_scout");
-		expect(registeredNames.length).toBe(19);
+		expect(registeredNames.length).toBe(20);
 	});
 
 	test("enforced stage escalation auto-reloads the same stage under SOTA after agent_end", async () => {
