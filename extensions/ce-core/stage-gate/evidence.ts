@@ -236,9 +236,12 @@ async function readArtifactFiles(
 	repoRoot: string,
 	paths: string[],
 	errors: string[],
-): Promise<{ files: EvidenceFile[]; txt: string; truncated: boolean }> {
+	includeValidationText = false,
+): Promise<{ files: EvidenceFile[]; txt: string; truncated: boolean; validationText?: string }> {
 	const files: EvidenceFile[] = [];
 	const parts: string[] = [];
+	// Only plan validation needs the complete text; semantic input stays bounded.
+	const validationParts: string[] | undefined = includeValidationText ? [] : undefined;
 	let remaining = MAX_TOTAL_BYTES;
 	let truncated = false;
 	for (const rel of paths) {
@@ -256,9 +259,12 @@ async function readArtifactFiles(
 		const textBytes = Buffer.byteLength(text, "utf8");
 		remaining = Math.max(0, remaining - separator - textBytes);
 		parts.push(text);
+		validationParts?.push(buffer.toString("utf8"));
 		files.push({ path: rel, text, bytes: buffer.byteLength });
 	}
-	return { files, txt: parts.join("\n"), truncated };
+	return { files, txt: parts.join("\n"), truncated,
+		...(validationParts ? { validationText: validationParts.join("\n") } : {}),
+	};
 }
 
 async function readContextState(
@@ -450,11 +456,15 @@ export async function gatherEvidence(
 	const warnings: string[] = [];
 	const resolved = await resolveArtifactPaths(repoRoot, stage, options.hint);
 	warnings.push(...resolved.warnings);
-	const { files, txt, truncated } = await readArtifactFiles(
+	const { files, txt, truncated, validationText } = await readArtifactFiles(
 		repoRoot,
 		resolved.paths,
 		errors,
+		stage === "02-plan",
 	);
+	if (truncated) {
+		warnings.push("artifact excerpt truncated for semantic scoring; full 02-plan text is used for deterministic checks");
+	}
 	const plan = await newestPlan(repoRoot);
 	const docsFeature = resolveFeaturesConfig(
 		readPiPedstackConfigSync(repoRoot),
@@ -468,6 +478,7 @@ export async function gatherEvidence(
 		artifacts: resolved.paths,
 		files,
 		txt,
+		...(validationText !== undefined ? { validationText } : {}),
 		errors,
 		warnings,
 		reviewFindings: await readReviewFindings(repoRoot, rubric),

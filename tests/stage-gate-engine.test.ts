@@ -127,6 +127,70 @@ afterEach(async () => {
 });
 
 describe("stage gate engine (Unit 5)", () => {
+	test("large plan with required sections beyond the semantic excerpt clears deterministic checks", async () => {
+		const filler = "A sufficiently detailed description of the existing system and constraints. ".repeat(1000);
+		const plan = `# Plan
+
+## Problem summary
+
+${filler}
+
+## Implementation units
+
+### Unit 1 — Make the change
+
+**Files.** Modify \`src/device.ts\`.
+
+**Verification.** RED test, GREEN implementation.
+
+## Verification
+
+RED then GREEN for the change.
+
+## Strict Review
+
+Premise Challenge, failure modes, alternatives and test diagram reviewed.
+`;
+		await write("docs/plans/long.md", plan);
+		const runtime = createFakeJevRuntime({ handler: (request) => {
+			expect(String((request.state as Record<string, unknown>).artifact)).not.toContain("Strict Review");
+			return scoring([4, 4, 4, 4])(request);
+		} });
+		const result = await evaluateStageGate({ runtime }, {
+			repoRoot: root,
+			stage: "02-plan",
+			mode: "enforce",
+		});
+		expect(result.det.filter(d => !d.pass)).toEqual([]);
+		expect(result.criticalFailed).toBe(false);
+		expect(result.jevUnavailable).toBe(false);
+		expect(result.weightedScore).not.toBeNull();
+		expect(result.warnings.join(" ")).toContain("truncated for semantic scoring");
+	});
+
+	test("a genuinely incomplete long plan still fails deterministic validation", async () => {
+		await write("docs/plans/long.md", `# Plan
+
+## Problem summary
+
+${"Context and design constraints. ".repeat(2200)}
+
+## Verification
+
+RED/GREEN, Strict Review completed.
+`);
+		const runtime = createFakeJevRuntime({ handler: () => { throw new Error("Jev should not run"); } });
+		const result = await evaluateStageGate({ runtime }, {
+			repoRoot: root,
+			stage: "02-plan",
+			mode: "enforce",
+		});
+		expect(result.verdict).toBe("revise");
+		expect(result.criticalFailed).toBe(true);
+		expect(result.det.find(d => d.id === "units_present")?.pass).toBe(false);
+		expect(result.weightedScore).toBeNull();
+	});
+
 	test("completed zero-finding reviewer resolves repeated semantic review to accept", async () => {
 		await write("docs/reviews/current.md", "# Review findings\\n\\nReview evidence and verification details");
 		const runtime = createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) });

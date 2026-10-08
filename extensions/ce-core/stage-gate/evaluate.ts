@@ -456,7 +456,12 @@ export async function evaluateStageGate(
 		gitDiff: input.gitDiff ?? null,
 		priorGate,
 	});
-	const det = evaluateDeterministic(rubric, evidence);
+	// Structural plan checks must inspect the entire artifact, not the bounded
+	// semantic excerpt. The Jev request continues using evidence.txt only.
+	const validationEvidence = evidence.validationText === undefined
+		? evidence
+		: { ...evidence, txt: evidence.validationText };
+	const det = evaluateDeterministic(rubric, validationEvidence);
 	const priorAttempts = await readAttempts(input.repoRoot, input.stage);
 	const attempts = priorAttempts.filter((entry) => entry.verdict === "revise").length;
 	const independentReviews = independentReviewCount(priorAttempts);
