@@ -497,6 +497,7 @@ const docsyncRubric: StageRubric = {
 	artifactGlobs: [`${CONTEXT_DIR}/stage-reports/06-docsync.md`],
 	artifactDir: `${CONTEXT_DIR}/stage-reports`,
 	checks: [
+		artifactPresent,
 		check("docsync_evaluated", true, (e) => {
 			const mentionsDoc = /README|AGENTS/.test(e.txt);
 			const mentionsOutcome = /updated|no-op|no change|rationale/i.test(e.txt);

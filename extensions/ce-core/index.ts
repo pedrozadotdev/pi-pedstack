@@ -38,6 +38,7 @@ import { createSessionHistoryTool } from "./tools/session-history";
 import { createPatternExtractorTool } from "./tools/pattern-extractor";
 import { createContextHandoffTool } from "./tools/context-handoff";
 import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
+import { createStageReportTool } from "./tools/stage-report";
 import { createDocsVerificationWiring } from "./utils/docs-verification-wiring";
 import {
 	resolveSessionKey,
@@ -133,6 +134,11 @@ const artifactHelperParams = Type.Object({
 	ensureDir: Type.Optional(
 		Type.Boolean({ description: "Create the parent directory when true" }),
 	),
+});
+
+const stageReportParams = Type.Object({
+	stage: Type.String(),
+	markdown: Type.String(),
 });
 
 const workflowStateParams = Type.Object({
@@ -505,6 +511,7 @@ function mapCompactionEvent(
 
 export default function ceCoreExtension(pi: ExtensionAPI) {
 	const artifactHelper = createArtifactHelperTool();
+	const stageReport = createStageReportTool();
 	const workflowState = createWorkflowStateTool();
 	const reviewRouter = createReviewRouterTool();
 	const sessionCheckpoint = createSessionCheckpointTool();
@@ -598,6 +605,17 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				content: [{ type: "text", text: result.path }],
 				details: result,
 			};
+		},
+	});
+
+	pi.registerTool({
+		name: stageReport.name,
+		label: "Stage Report",
+		description: "Safely publish the active stage canonical Markdown report.",
+		parameters: stageReportParams,
+		async execute(_id, params, _signal, _onUpdate, ctx) {
+			const result = await stageReport.execute({ repoRoot: ctx.cwd, stage: params.stage, activeStage: await resolveGuardStage(ctx), markdown: params.markdown });
+			return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
 		},
 	});
 
