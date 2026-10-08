@@ -139,6 +139,50 @@ describe("stage gate store (Unit 4)", () => {
 		expect(await resolvePriorGate(root, "02-plan")).toBeNull();
 	});
 
+	test("hinted work report stays fresh despite unscored checkpoint", async () => {
+		const report = ".context/compound-engineering/stage-reports/03-work.md";
+		const checkpoint = ".context/compound-engineering/checkpoints/unit.json";
+		await write(report, "work done");
+		await write(checkpoint, '{"status":"completed"}');
+		const artifactsHash = await computeArtifactsHash(root, [report]);
+		const record = attempt({
+			schema: 3,
+			stage: "03-work",
+			artifacts: [report],
+			artifactSelection: "hint",
+			artifactsHash,
+		});
+		expect(await isRecordFresh(root, record)).toBe(true);
+
+		// Checkpoints weren't selected by the explicit hint.
+		await write(checkpoint, '{"status":"updated"}');
+		expect(await isRecordFresh(root, record)).toBe(true);
+
+		await write(report, "changed after scoring");
+		expect(await isRecordFresh(root, record)).toBe(false);
+		await write(report, "work done");
+		expect(await isRecordFresh(root, record)).toBe(true);
+		await fs.rm(path.join(root, report));
+		expect(await isRecordFresh(root, record)).toBe(false);
+	});
+
+	test("automatic work discovery still detects newly added checkpoints", async () => {
+		const report = ".context/compound-engineering/stage-reports/03-work.md";
+		const checkpoint = ".context/compound-engineering/checkpoints/unit.json";
+		await write(report, "work done");
+		const artifactsHash = await computeArtifactsHash(root, [report]);
+		const record = attempt({
+			schema: 3,
+			stage: "03-work",
+			artifacts: [report],
+			artifactSelection: "auto",
+			artifactsHash,
+		});
+		expect(await isRecordFresh(root, record)).toBe(true);
+		await write(checkpoint, '{"status":"completed"}');
+		expect(await isRecordFresh(root, record)).toBe(false);
+	});
+
 	test("isRecordFresh rejects edits, additions, removals, and renames", async () => {
 		await write("docs/plans/x.md", "hello");
 		const hash = await computeArtifactsHash(root, ["docs/plans/x.md"]);
