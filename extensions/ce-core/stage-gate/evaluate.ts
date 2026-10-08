@@ -295,7 +295,7 @@ async function persist(
 	const artifactsHash = await computeArtifactsHash(repoRoot, artifacts);
 	await appendRecord(repoRoot, {
 		...attempt,
-		schema: 2,
+		schema: 3,
 		artifactsHash,
 		updatedAt: now().toISOString(),
 	});
@@ -472,6 +472,13 @@ export async function evaluateStageGate(
 			usage: outcome.usage,
 			warnings,
 			artifacts: evidence.artifacts,
+			artifactSelection:
+				input.artifactPaths?.length &&
+				!evidence.warnings.some((warning) =>
+					warning.startsWith("artifactPaths hint rejected"),
+				)
+					? "hint"
+					: "auto",
 			attempt: attempts,
 			overengineering,
 			review,
