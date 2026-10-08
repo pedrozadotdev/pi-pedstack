@@ -71,8 +71,8 @@ describe("legacy role migration is removed", () => {
 		}
 	});
 
-	test("README states the manual migration note for the canonical roles", () => {
-		expect(read("README.md")).toContain(
+	test("architecture reference preserves the manual migration note", () => {
+		expect(read("docs/ARCHITECTURE.md")).toContain(
 			"manually define `models.default`, `models.review`, and `models.sota`",
 		);
 	});
