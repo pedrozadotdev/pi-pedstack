@@ -439,11 +439,13 @@ RED/GREEN, Strict Review completed.
 		);
 
 		expect(result.verdict).toBe("accept");
-		expect(runtime.calls.length).toBe(1);
-		const stdin = runtime.calls[0].stdin as string;
-		expect(Buffer.byteLength(stdin, "utf8")).toBeLessThanOrEqual(65_536);
-		const parsed = JSON.parse(stdin) as JevRequest;
-		expect(Object.keys(parsed.questions).length).toBeLessThanOrEqual(32);
+		expect(runtime.calls.length).toBe(2);
+		for (const call of runtime.calls) {
+			const stdin = call.stdin as string;
+			expect(Buffer.byteLength(stdin, "utf8")).toBeLessThanOrEqual(65_536);
+			const parsed = JSON.parse(stdin) as JevRequest;
+			expect(Object.keys(parsed.questions).length).toBeLessThanOrEqual(32);
+		}
 	});
 
 	test("shadow mode marks the record as non-enforcing", async () => {
