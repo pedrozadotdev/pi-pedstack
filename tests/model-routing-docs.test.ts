@@ -75,7 +75,7 @@ describe("model-routing docs — shadow vs enforced", () => {
 	});
 
 	test("README identifies the enforced path and the workflow-scoped reset", () => {
-		const readme = read("README.md");
+		const readme = read("docs/ARCHITECTURE.md");
 		expect(readme.toLowerCase()).toContain("under enforced routing");
 		expect(readme).toContain("workflow-scoped");
 		expect(readme).toContain("/ped-fix-issues");
