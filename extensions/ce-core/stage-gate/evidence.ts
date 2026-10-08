@@ -189,6 +189,10 @@ export async function resolveArtifactPaths(
 	}
 	const globbed = await resolveViaGlobs(repoRoot, rubric);
 	if (globbed.length > 0) return { paths: globbed, warnings };
+	if (rubric.artifactDir === `${CONTEXT_DIR}/stage-reports`) {
+		warnings.push(`missing canonical stage report for ${stage}`);
+		return { paths: [], warnings };
+	}
 	return { paths: await resolveFallback(repoRoot, rubric), warnings };
 }
 
