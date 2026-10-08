@@ -34,6 +34,8 @@ export interface ReviewFindingsFile {
 	count?: number;
 	/** Sidecar `generatedAt` when valid, else the file mtime (Unit 5). */
 	observedAt?: string;
+	completed?: boolean;
+	reviewedGate?: { updatedAt: string; artifactsHash: string };
 }
 
 export interface CheckpointRecord {

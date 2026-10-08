@@ -10,6 +10,7 @@ import {
 } from "../utils/config-types";
 import { filterIndependentReviewers } from "../review/policy";
 import { normalizeSlug } from "../utils/name-utils";
+import { readLatestRecord, isRecordFresh } from "../stage-gate/store";
 
 export interface ReviewerConfig {
 	model: string;
@@ -81,6 +82,7 @@ async function persistFindings(
 	stepName: string,
 	findings: ReviewFinding[],
 	compiledSummary: string,
+	reviewedGate?: { updatedAt: string; artifactsHash: string },
 ): Promise<{ absolute: string; relative: string }> {
 	const dir = reviewFindingsDir(repoRoot);
 	await mkdir(dir, { recursive: true });
@@ -101,6 +103,7 @@ async function persistFindings(
 		count: findings.length,
 		findings,
 		compiledSummary,
+		...(reviewedGate ? { completed: true, reviewedGate } : {}),
 	};
 
 	await writeFile(absolute, JSON.stringify(payload, null, 2), "utf8");
@@ -201,7 +204,7 @@ async function runReviewerProcess(
 	primaryOutput: string,
 	repoRoot: string,
 	stepName: string,
-): Promise<ReviewFinding[]> {
+): Promise<{ findings: ReviewFinding[]; ok: boolean }> {
 	const reviewerName = `Reviewer #${index + 1} (${reviewer.model})`;
 
 	let normalizedKey = stepName.trim().toLowerCase();
@@ -270,7 +273,7 @@ Format your response as a JSON array of findings wrapped in a markdown code bloc
 		`Review the following artifact/work output:\n\n${primaryOutput}`,
 	);
 
-	return new Promise<ReviewFinding[]>((resolve) => {
+	return new Promise<{ findings: ReviewFinding[]; ok: boolean }>((resolve) => {
 		const invocation = getPiInvocation(args);
 		const isWin = process.platform === "win32";
 		const useShell = isWin && invocation.command === "pi";
@@ -323,8 +326,9 @@ Format your response as a JSON array of findings wrapped in a markdown code bloc
 				);
 			}
 
-			const findings = extractFindings(stdout, reviewerName);
-			resolve(findings);
+			const validOutput = /```json\s*\[[\s\S]*?\]\s*```/.test(stdout) || /^\s*\[[\s\S]*\]\s*$/.test(stdout);
+			const findings = code === 0 && validOutput ? extractFindings(stdout, reviewerName) : [];
+			resolve({ findings, ok: code === 0 && validOutput });
 		});
 
 		proc.on("error", (err) => {
@@ -332,7 +336,7 @@ Format your response as a JSON array of findings wrapped in a markdown code bloc
 				`[multi-reviewer] Failed to start reviewer process ${index + 1}:`,
 				err,
 			);
-			resolve([]);
+			resolve({ findings: [], ok: false });
 		});
 	});
 }
@@ -419,6 +423,12 @@ export function createMultiReviewerTool() {
 				};
 			}
 
+			// Bind completion to the gate that requested review, when one exists.
+			const requestedGate = await readLatestRecord(input.repoRoot, input.stepName as import("../stage-gate/types").StageKey);
+			const reviewGate = requestedGate?.verdict === "review" && requestedGate.review?.action === "review" && await isRecordFresh(input.repoRoot, requestedGate)
+				? { updatedAt: requestedGate.updatedAt, artifactsHash: requestedGate.artifactsHash }
+				: undefined;
+
 			// Run all reviewer processes concurrently
 			const promises = reviewers.map((reviewer, idx) =>
 				runReviewerProcess(
@@ -431,7 +441,10 @@ export function createMultiReviewerTool() {
 			);
 
 			const allFindingsArrays = await Promise.all(promises);
-			const findings = allFindingsArrays.flat();
+			const findings = allFindingsArrays.flatMap((result) => result.findings);
+			if (allFindingsArrays.some((result) => !result.ok)) {
+				return { findings, compiledSummary: "Independent review failed or produced invalid output; no completion recorded." };
+			}
 
 			// Compile markdown summary of findings
 			let summary = `# Multi-Model Review Summary\n\n`;
@@ -483,11 +496,13 @@ export function createMultiReviewerTool() {
 			// to the repo root, which leaked into git history. A zero-finding run still
 			// writes the empty sidecar so a clean review is auditable and does not deadlock
 			// the completion gate (`count: 0` === `findings.length`).
+			const stillFresh = requestedGate && reviewGate && await isRecordFresh(input.repoRoot, requestedGate);
 			const persisted = await persistFindings(
 				input.repoRoot,
 				input.stepName,
 				findings,
 				trimmedSummary,
+				stillFresh ? reviewGate : undefined,
 			);
 
 			return {

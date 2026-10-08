@@ -15,6 +15,8 @@ export interface ReviewPolicyInput {
 	verdict: StageGateVerdict;
 	/** Prior retained attempts for this stage whose verdict is `review`. */
 	independentReviews: number;
+	/** Verified, fresh independent review completed for this stage artifact. */
+	completedReview?: { findings: number };
 	/** True when an independent reviewer resolves from config. */
 	reviewerAvailable: boolean;
 }
@@ -47,18 +49,24 @@ export function resolveReviewAction(
 		case "escalate":
 			return decision("escalate", 0, "gate escalated the artifact");
 		case "review":
+			if (input.completedReview?.findings === 0) {
+				return decision("none", 0, "independent review completed with zero findings for the scored artifact");
+			}
+			if (input.completedReview && input.completedReview.findings > 0) {
+				return decision("revise", 0, "independent review found issues that must be addressed");
+			}
 			if (!input.reviewerAvailable) {
 				return decision(
-					"escalate",
+					"review",
 					0,
-					"gate requested review but no independent reviewer is configured",
+					"review required, but no reviewer is configured; configure models.review",
 				);
 			}
 			if (input.independentReviews >= MAX_INDEPENDENT_REVIEW) {
 				return decision(
-					"escalate",
+					"review",
 					0,
-					`independent review budget exhausted (${MAX_INDEPENDENT_REVIEW} per stage)`,
+					`review already requested (${MAX_INDEPENDENT_REVIEW} per stage); awaiting a completed reviewer result`,
 				);
 			}
 			return decision("review", 1, "gate requested one independent review");

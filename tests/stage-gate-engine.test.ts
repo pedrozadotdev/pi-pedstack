@@ -127,6 +127,52 @@ afterEach(async () => {
 });
 
 describe("stage gate engine (Unit 5)", () => {
+	test("completed zero-finding reviewer resolves repeated semantic review to accept", async () => {
+		await write("docs/reviews/current.md", "# Review findings\\n\\nReview evidence and verification details");
+		const runtime = createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) });
+		const input = { repoRoot: root, stage: "04-review" as const, mode: "enforce" as const, reviewerAvailable: true };
+		const first = await evaluateStageGate({ runtime }, input);
+		expect(first.verdict).toBe("review");
+		expect(first.action).toBe("review");
+		const requested = await readLatestRecord(root, "04-review");
+		expect(requested).not.toBeNull();
+		const now = new Date(Date.parse(requested!.updatedAt) + 1000).toISOString();
+		await write(".context/compound-engineering/review-findings/completed-04-review.json", JSON.stringify({
+			stepName: "04-review",
+			generatedAt: now,
+			completed: true,
+			reviewedGate: { updatedAt: requested!.updatedAt, artifactsHash: requested!.artifactsHash },
+			count: 0,
+			findings: [],
+		}));
+		const second = await evaluateStageGate({ runtime }, input);
+		expect(second.verdict).toBe("accept");
+		expect(second.action).toBe("none");
+		const persisted = await readLatestRecord(root, "04-review");
+		expect(persisted?.verdict).toBe("accept");
+	});
+
+	test("a completed reviewer cannot clear a review after the scored report changes", async () => {
+		await write("docs/reviews/current.md", "# Review findings");
+		const runtime = createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) });
+		const input = { repoRoot: root, stage: "04-review" as const, mode: "enforce" as const, reviewerAvailable: true };
+		await evaluateStageGate({ runtime }, input);
+		const requested = (await readLatestRecord(root, "04-review"))!;
+		await write(".context/compound-engineering/review-findings/completed-04-review.json", JSON.stringify({
+			stepName: "04-review",
+			generatedAt: new Date(Date.parse(requested.updatedAt) + 1000).toISOString(),
+			completed: true,
+			reviewedGate: { updatedAt: requested.updatedAt, artifactsHash: requested.artifactsHash },
+			count: 0,
+			findings: [],
+		}));
+		await write("docs/reviews/current.md", "# Changed review report");
+		const result = await evaluateStageGate({ runtime }, input);
+		expect(result.verdict).toBe("review");
+		expect(result.action).not.toBe("none");
+	});
+
+
 	test("happy accept persists an enforcing record", async () => {
 		await write("docs/plans/plan.md", PLAN);
 		const runtime = createFakeJevRuntime({ handler: scoring([4, 4, 4, 4]) });
@@ -275,7 +321,7 @@ describe("stage gate engine — review action (Unit 5)", () => {
 		expect(record?.review?.reviewerCount).toBe(1);
 	});
 
-	test("a second review verdict in the same loop escalates", async () => {
+	test("a second review verdict awaits completion without escalating", async () => {
 		await write("docs/plans/plan.md", PLAN);
 		await appendRecord(root, priorAttempt("review"));
 
@@ -289,9 +335,9 @@ describe("stage gate engine — review action (Unit 5)", () => {
 			},
 		);
 
-		expect(result.action).toBe("escalate");
+		expect(result.action).toBe("review");
 		const record = await readLatestRecord(root, "02-plan");
-		expect(record?.review?.action).toBe("escalate");
+		expect(record?.review?.action).toBe("review");
 	});
 
 	test("a review verdict after an intervening accept starts a new loop", async () => {
@@ -312,7 +358,7 @@ describe("stage gate engine — review action (Unit 5)", () => {
 		expect(result.action).toBe("review");
 	});
 
-	test("review with reviewerAvailable false escalates", async () => {
+	test("review without configured reviewer does not escalate", async () => {
 		await write("docs/plans/plan.md", PLAN);
 		const result = await evaluateStageGate(
 			{ runtime: createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) }) },
@@ -324,7 +370,7 @@ describe("stage gate engine — review action (Unit 5)", () => {
 			},
 		);
 
-		expect(result.action).toBe("escalate");
+		expect(result.action).toBe("review");
 		expect(result.actionReason.length).toBeGreaterThan(0);
 	});
 

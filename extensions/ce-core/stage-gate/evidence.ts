@@ -322,12 +322,21 @@ async function readReviewFindings(
 			findings?: unknown;
 			count?: unknown;
 			generatedAt?: unknown;
+			completed?: unknown;
+			reviewedGate?: unknown;
 		};
 		if (!Array.isArray(value.findings)) continue;
 		files.push({
 			path: rel,
 			findings: value.findings as ReviewFinding[],
 			count: typeof value.count === "number" ? value.count : undefined,
+			completed: value.completed === true,
+			reviewedGate:
+				value.reviewedGate && typeof value.reviewedGate === "object" &&
+				typeof (value.reviewedGate as { updatedAt?: unknown }).updatedAt === "string" &&
+				typeof (value.reviewedGate as { artifactsHash?: unknown }).artifactsHash === "string"
+					? value.reviewedGate as { updatedAt: string; artifactsHash: string }
+					: undefined,
 			observedAt: await resolveObservedAt(abs, value.generatedAt),
 		});
 	}

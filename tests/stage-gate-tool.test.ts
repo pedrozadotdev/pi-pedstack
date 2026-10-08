@@ -179,7 +179,7 @@ describe("stage_gate tool (Unit 6)", () => {
 		expect(result.action).toBe("review");
 	});
 
-	test("maps a review verdict to escalate when no independent reviewer is configured", async () => {
+	test("preserves review verdict when no reviewer is configured", async () => {
 		await write("docs/plans/plan.md", PLAN);
 		// A project config wins over the global one; this one has no reviewers and
 		// no models.review, so no independent reviewer resolves.
@@ -192,6 +192,6 @@ describe("stage_gate tool (Unit 6)", () => {
 		const result = await tool.execute({ repoRoot: root, stage: "02-plan" });
 
 		expect(result.verdict).toBe("review");
-		expect(result.action).toBe("escalate");
+		expect(result.action).toBe("review");
 	});
 });
