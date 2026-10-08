@@ -257,7 +257,7 @@ describe("stage gate engine (Unit 5)", () => {
 			await appendRecord(root, { ...priorRevise(), stage });
 			await appendRecord(root, { ...priorRevise(), stage });
 			const result = await evaluateStageGate(
-				{ runtime: createFakeJevRuntime({ handler: scoring([4, 4, 4, 4]) }) },
+				{ runtime: createFakeJevRuntime({ handler: scoring([1, 1, 1, 1]) }) },
 				{ repoRoot: root, stage, mode: "enforce" },
 			);
 			expect(result.verdict).toBe("revise");
