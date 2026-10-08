@@ -26,6 +26,7 @@ afterEach(() => {
 describe("config-types — semanticRead", () => {
 	test("parses a valid semanticRead block", () => {
 		const config = validatePiPedstackConfig({
+			models: { default: { model: "cheap" } },
 			semanticRead: {
 				excerptBytes: 8192,
 				maxPaths: 10,
@@ -48,6 +49,7 @@ describe("config-types — semanticRead", () => {
 
 	test("merges a partial config with defaults", () => {
 		const config = validatePiPedstackConfig({
+			models: { default: { model: "cheap" } },
 			semanticRead: { excerptBytes: 2048 },
 		});
 
@@ -72,6 +74,7 @@ describe("config-types — semanticRead", () => {
 
 	test("accepts maxPaths above 32 (clamped by the engine, not the config)", () => {
 		const config = validatePiPedstackConfig({
+			models: { default: { model: "cheap" } },
 			semanticRead: { maxPaths: 100 },
 		});
 
@@ -81,6 +84,7 @@ describe("config-types — semanticRead", () => {
 	test("does not warn about the semanticRead key", () => {
 		const calls = withWarnSpy(() =>
 			validatePiPedstackConfig({
+				models: { default: { model: "cheap" } },
 				work: { model: "m" },
 				semanticRead: { maxPaths: 2 },
 			}),
@@ -91,7 +95,7 @@ describe("config-types — semanticRead", () => {
 
 	test("warns about unknown keys inside semanticRead", () => {
 		const calls = withWarnSpy(() =>
-			validatePiPedstackConfig({ semanticRead: { nope: 1 } }),
+			validatePiPedstackConfig({ models: { default: { model: "cheap" } }, semanticRead: { nope: 1 } }),
 		);
 
 		expect(calls.some((call) => call.includes("nope"))).toBe(true);
@@ -99,7 +103,7 @@ describe("config-types — semanticRead", () => {
 
 	test("still warns about genuinely unknown top-level keys", () => {
 		const calls = withWarnSpy(() =>
-			validatePiPedstackConfig({ semanticRead: { maxPaths: 2 }, nonsense: 1 }),
+			validatePiPedstackConfig({ models: { default: { model: "cheap" } }, semanticRead: { maxPaths: 2 }, nonsense: 1 }),
 		);
 
 		expect(calls.some((call) => call.includes("nonsense"))).toBe(true);

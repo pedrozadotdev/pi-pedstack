@@ -36,7 +36,7 @@ describe("resolveExecutionRole — precedence", () => {
 			sotaMinScore: 0.6,
 			sotaMinConfidence: 0.5,
 			maxEscalationsPerStage: 1,
-			shadow: true,
+			shadow: false,
 		});
 	});
 

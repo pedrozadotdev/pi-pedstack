@@ -112,12 +112,12 @@ export interface RoutingThresholds {
   maxEscalationsPerStage: number
 }
 
-/** Documented defaults for the `routing` config block (shadow-first). */
+/** Routing defaults: automatic role selection applies unless shadow is explicitly enabled. */
 export const DEFAULT_MODEL_ROUTING: RoutingThresholds & { shadow: boolean } = {
   sotaMinScore: 0.6,
   sotaMinConfidence: 0.5,
   maxEscalationsPerStage: 1,
-  shadow: true,
+  shadow: false,
 }
 
 export interface PiPedstackConfig {
@@ -711,6 +711,10 @@ export function validatePiPedstackConfig(raw: unknown): PiPedstackConfig {
 
   if (obj.features !== undefined) {
     config.features = validateFeatures(obj.features)
+  }
+
+  if (config.models === undefined) {
+    throw new Error('pi-pedstack config: "models" is required; "routing" and other blocks are optional')
   }
 
   warnUnknownConfigKeys(obj)

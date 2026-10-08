@@ -25,7 +25,7 @@ pi install git:github.com/pedrozadotdev/pi-pedstack
 - **Knowledge compounding** — solved problems become searchable solution artifacts
 - **Semantic solution search** — the `solution_search` tool and stage auto-injection rank `docs/solutions/` cards with a Jev semantic layer over a deterministic, never-weaker fallback; ships shadow-first (inert until `solutionRanking.shadow=false`)
 - **Cheap semantic file reads** — `semantic_read` (one file) and `semantic_scout` (files/dirs/globs) return typed per-path answers plus byte facts — **never file bodies** — so the agent opens only the files it truly needs; a Jev outage degrades to explicit `read`/`grep` guidance
-- **Model roles & task-shaped routing** — declare three roles once (`models.default` cheap workhorse, `models.review` independent reviewer, `models.sota` escalation). Automatic SOTA is limited to `01-brainstorm`, `02-plan`, and `04-5-debug`; `03-work`, `04-review`, `05-learn`, and `06-docsync` always route to default unless explicitly overridden. Eligible stages use explicit override → gate `escalate` → Jev judgment → default; ships shadow-first (`routing.shadow` defaults `true`)
+- **Model roles & task-shaped routing** — declare three roles once (`models.default` cheap workhorse, `models.review` independent reviewer, `models.sota` escalation). Automatic SOTA is limited to `01-brainstorm`, `02-plan`, and `04-5-debug`; `03-work`, `04-review`, `05-learn`, and `06-docsync` always route to default unless explicitly overridden. Eligible stages use explicit override → gate `escalate` → Jev judgment → default; ships shadow-first (`routing.shadow` defaults `false`)
 - **Persistent task tracking** — checklist tools (`checklist_add`/`checklist_show`/`checklist_del`) prevent dropped tasks and unsafe stage handoffs
 - **Deterministic stage guard** — the `write`/`edit` tools are blocked when they target a path outside the active stage's capability matrix (e.g. source edits during `02-plan`), with fail-open on unknown paths and a ``features.stageGuard.disabled = true`` escape hatch
 - **Bash stage guard (shadow by default)** — an indirect-surface guard classifies `bash` commands by effect (writes, deletes, installs, package runners, pipes) and logs verdicts to `.context/compound-engineering/jev-stage-guard.jsonl`; set ``features.stageGuard.mode = "enforce"`` to block
@@ -142,6 +142,7 @@ Pedstack has a single runtime policy source: project-level `.pi/pi-pedstack/conf
 
 ```json
 {
+  "models": { "default": { "model": "provider/cheap-model" } },
   "features": {
     "stageGate": { "mode": "enforce" },
     "overengineering": { "mode": "enforce" },
@@ -164,7 +165,7 @@ Every `mode` accepts only `"off"`, `"shadow"`, or `"enforce"`. There are no envi
 - **`models.default`** — the cheap normal-execution workhorse.
 - **`models.review`** — the independent reviewer, used only when a stage has no explicit `reviewers[]` and never when it equals `models.default`/`models.sota`.
 - **`models.sota`** — the escalation model, reached only through deterministic evidence or a qualifying Jev judgment.
-- **`routing.shadow`** — when `true` (default) routing computes and persists a decision but keeps applying the explicit per-stage model (if any).
+- **`routing.shadow`** — defaults to `false`, applying the selected execution model when `models` is configured; set `true` to compute/persist decisions without switching models.
 - **`routing.sotaMinScore` / `sotaMinConfidence`** — deterministic thresholds (`[0, 1]`) a Jev judgment must clear before it may select `sota`.
 - **`routing.maxEscalationsPerStage`** — spend cap (`>= 1`) on **proactive Jev-triggered** `sota` selections per stage. A deterministic stage-gate escalation is never suppressed by this cost budget.
 - **`routing` workflow scope** — routing records and stage-gate records are workflow-scoped: `/ped-start` and `/ped-fix-issues` start a genuinely new workflow and clear the previous one's `.context/compound-engineering/routing/` and `stage-gates/` records, so the proactive budget and any stale gate escalation reset. `/ped-next`, `/ped-reload`, and `/ped-debug` preserve them, so a manual `/ped-reload` still sees the escalation that triggered it.
@@ -180,7 +181,7 @@ Every `mode` accepts only `"off"`, `"shadow"`, or `"enforce"`. There are no envi
 
 Every decision is persisted to `.context/compound-engineering/routing/<stage>.json` with its `role`, `reason` (`override | gate_escalate | jev | budget_exhausted | fallback`), `source`, and (for Jev) the atomic scores.
 
-**Promotion to enforce (`routing.shadow = false`):** the default stays `true` until the calibration criteria below are met on a representative multi-stage run:
+**Optional shadow-mode calibration:** routing is enforced by default (`routing.shadow = false`). Operators who prefer to collect evidence before automatic switching may temporarily use `routing.shadow = true` and examine a representative multi-stage run:
 
 - At least one `sota` escalation and one `budget_exhausted` decision in `.context/compound-engineering/routing/*.json`.
 - At least 80% of persisted decisions have `role: "default"` ("most work starts on the cheap model").
@@ -314,9 +315,9 @@ Here is a complete configuration schema example (the per-stage `model` entries b
   - `selectLimit` — maximum candidates in the second-pass Choice, capped at 20 (integer `>= 1`).
   - `deadlineMs` — total scout deadline in milliseconds (integer `>= 1`).
   - `select` — when `true` (default), `semantic_scout` runs the second-pass Choice recommendation. Unknown keys warn and are ignored; invalid values throw.
-- **`models`**: Named model roles (`default`, `review`, `sota`). Each role takes `{ "model": string, "thinkingLevel"?: string }`; all three keys are optional. Unknown keys warn and are ignored; invalid values throw. See [Model roles & task-shaped routing](#model-roles--task-shaped-routing-jev).
+- **`models`** (required in a config file): Named model roles (`default`, `review`, `sota`). Each role takes `{ "model": string, "thinkingLevel"?: string }`; individual role keys remain optional. Unknown keys warn and are ignored; invalid values throw. See [Model roles & task-shaped routing](#model-roles--task-shaped-routing-jev).
 - **`routing`**: Tunables for role resolution. All keys are optional and fall back to the defaults shown above.
-  - `shadow` — when `true` (default), routing computes and persists a decision but keeps applying the explicit per-stage model (if any). Set to `false` to enforce role-based switching.
+  - `shadow` — defaults to `false` (role-based switching is enabled when `models` is configured). Set to `true` to persist decisions without applying automatic switches.
   - `sotaMinScore` / `sotaMinConfidence` — a Jev judgment must reach both (`weighted >= sotaMinScore` and `confidence >= sotaMinConfidence`) before it may select `sota`; numbers in `[0, 1]`.
   - `maxEscalationsPerStage` — cap on **proactive Jev-triggered** `sota` selections per stage (integer `>= 1`). A deterministic stage-gate escalation is honored even when the budget is exhausted.
 

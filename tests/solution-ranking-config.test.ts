@@ -46,6 +46,7 @@ afterEach(() => {
 describe("config-types — solutionRanking", () => {
 	test("parses a valid solutionRanking block", () => {
 		const config = validatePiPedstackConfig({
+			models: { default: { model: "cheap" } },
 			solutionRanking: {
 				minRank: 0.7,
 				minConfidence: 0.4,
@@ -68,6 +69,7 @@ describe("config-types — solutionRanking", () => {
 
 	test("merges a partial config with defaults", () => {
 		const config = validatePiPedstackConfig({
+			models: { default: { model: "cheap" } },
 			solutionRanking: { minRank: 0.9 },
 		});
 
@@ -80,6 +82,7 @@ describe("config-types — solutionRanking", () => {
 	test("does not warn about the solutionRanking key", () => {
 		const calls = withWarnSpy(() =>
 			validatePiPedstackConfig({
+				models: { default: { model: "cheap" } },
 				work: { model: "m" },
 				solutionRanking: { limit: 2 },
 			}),
@@ -90,7 +93,7 @@ describe("config-types — solutionRanking", () => {
 
 	test("still warns about genuinely unknown top-level keys", () => {
 		const calls = withWarnSpy(() =>
-			validatePiPedstackConfig({ solutionRanking: { limit: 2 }, nonsense: 1 }),
+			validatePiPedstackConfig({ models: { default: { model: "cheap" } }, solutionRanking: { limit: 2 }, nonsense: 1 }),
 		);
 
 		expect(calls.some((call) => call.includes("nonsense"))).toBe(true);
@@ -133,6 +136,7 @@ describe("config-types — solutionRanking", () => {
 		// the fallback here. The project config must win regardless.
 		const repo = makeTempRoot();
 		writeConfig(repo, ".pi/pi-pedstack/config.json", {
+			models: { default: { model: "cheap" } },
 			solutionRanking: { limit: 2 },
 		});
 

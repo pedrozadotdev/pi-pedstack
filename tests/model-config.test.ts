@@ -75,6 +75,7 @@ describe("config-types — models and routing", () => {
 
 	test("merges a partial routing block with DEFAULT_MODEL_ROUTING", () => {
 		const config = validatePiPedstackConfig({
+			models: { default: { model: "cheap" } },
 			routing: { sotaMinScore: 0.9 },
 		});
 
@@ -99,12 +100,28 @@ describe("config-types — models and routing", () => {
 			sotaMinScore: 0.6,
 			sotaMinConfidence: 0.5,
 			maxEscalationsPerStage: 1,
-			shadow: true,
+			shadow: false,
 		});
 		expect(resolveModelRolesConfig(null)).toEqual({});
 		expect(resolveModelRolesConfig({})).toEqual({});
 		expect(resolveRoutingConfig(null)).toEqual(DEFAULT_MODEL_ROUTING);
 		expect(resolveRoutingConfig({})).toEqual(DEFAULT_MODEL_ROUTING);
+	});
+
+	test("models is the only required block; omitted or empty routing applies defaults", () => {
+		const config = validatePiPedstackConfig({
+			models: {
+				default: { model: "cheap" },
+				review: { model: "reviewer" },
+				sota: { model: "strong" },
+			},
+		});
+		expect(config.routing).toBeUndefined();
+		expect(resolveRoutingConfig(config)).toEqual(DEFAULT_MODEL_ROUTING);
+		expect(resolveRoutingConfig(config).shadow).toBe(false);
+		expect(resolveRoutingConfig(validatePiPedstackConfig({ models: config.models, routing: {} })).shadow).toBe(false);
+		expect(() => validatePiPedstackConfig({})).toThrow(/"models" is required/);
+		expect(() => validatePiPedstackConfig({ routing: {} })).toThrow(/"models" is required/);
 	});
 
 	test("never warns about the models/routing keys", () => {
