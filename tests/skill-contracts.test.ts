@@ -143,7 +143,7 @@ describe("skill package contracts", () => {
 		expect(content).toContain("TDD violation");
 		expect(content).toContain("docs/brainstorms/");
 		expect(content).toContain("docs/plans/");
-		expect(content).toContain("contextqmd");
+		expect(content).toContain("official");
 		// Must use the shared solution_search engine, not hand-ranked grep
 		expect(content).toContain("solution_search");
 		expect(content).not.toContain("~/.pi/agent/docs/solutions");
@@ -263,7 +263,7 @@ describe("skill package contracts", () => {
 		expect(content).toContain("completion report");
 		expect(content).toContain("verification");
 		expect(content).not.toContain("worktree");
-		expect(content).toContain("contextqmd");
+		expect(content).toContain("official");
 		expect(progress).toContain("Completed");
 		expect(progress).toContain("Verification");
 		expect(handoff).toContain("04-review");
@@ -362,19 +362,16 @@ describe("skill package contracts", () => {
 		expect(strategy).not.toContain("~/.pi/agent/docs/solutions");
 	});
 
-	test("contextqmd reference file exists and defines CLI search workflow", () => {
-		const refFile = path.join(
-			repoRoot,
-			"skills",
-			"references",
-			"contextqmd-docs.md",
-		);
-		expect(existsSync(refFile)).toBe(true);
-		const content = readFileSync(refFile, "utf8");
-		expect(content).toContain("contextqmd");
-		expect(content).toContain("libraries list");
-		expect(content).toContain("docs search");
-		expect(content).toContain("docs get");
+	test("source verification uses official documentation without a specialized CLI", () => {
+		for (const rel of [
+			"skills/02-plan/SKILL.md",
+			"skills/03-work/SKILL.md",
+			"rules/common/development-workflow.md",
+		]) {
+			const content = readFileSync(path.join(repoRoot, rel), "utf8");
+			expect(content).toContain("official");
+			expect(content).toContain("docs-verified:");
+		}
 	});
 });
 

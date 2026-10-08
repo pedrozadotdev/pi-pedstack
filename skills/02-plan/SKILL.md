@@ -22,7 +22,7 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
 4. Run solution search (see `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/02-plan/references/solution-search.md`):
    - Call the **`solution_search`** tool with a task summary → read only the returned top 1–3 cards
    - Honor `status`: `ok` → apply guidance; `none` → no prior learnings (proceed); `degraded` → prior-ranked candidates only
-5. Run documentation search (see [shared contextqmd docs instruction](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/contextqmd-docs.md)) using the `contextqmd` CLI as the primary tool.
+5. Consult official, version-relevant vendor/library documentation for units that depend on external APIs. Record the source URLs used.
 6. Write plan to `docs/plans/`
 7. If plan exists, use **`plan_diff`** to compare and patch incrementally
 8. End by recommending `03-work`
@@ -45,7 +45,7 @@ Every unit follows **RED → GREEN → REFACTOR**:
 2. Read relevant brainstorm from `docs/brainstorms/`
 3. Run solution search (`solution_search` tool → read the returned top 1–3 cards)
 4. Gather repository context
-5. **Source-driven check:** For each unit that involves framework/library APIs, verify the API or pattern against official documentation using the `contextqmd` CLI as the primary tool (see [shared contextqmd docs instruction](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/contextqmd-docs.md)). Check if the library is installed with `contextqmd libraries list --json`, search locally with `contextqmd docs search` (installing first if needed using `contextqmd libraries install <library>`), and read the relevant pages using `contextqmd docs get`. Add a note to the implementation unit detailing the documentation findings and citation sources. The runtime also tracks this: a unit that touches an external package creates a docs-verification obligation, and you close it by adding a `docs-verified: PACKAGE@VERSION DOC_REF` line to the unit (the save-side trigger evaluates every unit at the completion pair).
+5. **Source-driven check:** For units involving external framework/library APIs, verify usage against official version-relevant documentation with available tools and cite its authoritative URL or stable path. Mark unsupported behavior UNVERIFIED. Close an obligation with `docs-verified: PACKAGE@VERSION DOC_REF` in the plan unit after verification, or waive with a reason through `docs_verification`.
 6. If plan exists: use `plan_diff` `compare` → review with user → `patch`
 7. If no plan: write new plan under `docs/plans/` using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/02-plan/references/plan-template.md`
 8. Structure work using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/02-plan/references/implementation-unit-template.md`

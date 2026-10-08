@@ -29,7 +29,7 @@ applies_when:
 
 The runtime source-driven-docs-verification guard reads the newest
 `docs/plans/*.md`, extracts "the packages and files this unit touches", and then
-uses those facts to decide whether a unit needs authoritative `contextqmd`
+uses those facts to decide whether a unit needs authoritative documentation
 verification. Both halves of that extraction trusted model-written prose as if
 it were typed data. Two review findings share this one root cause:
 

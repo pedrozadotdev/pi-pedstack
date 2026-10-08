@@ -126,7 +126,7 @@ describe("Unit 1 — parsePlannedPackages", () => {
 
 	test("ignores paths, commands, and stage keys", () => {
 		const text =
-			"Run `bun test`; see `docs/page.md` and stage `03-work` with `contextqmd`.";
+			"Run `bun test`; see `docs/page.md` and stage `03-work` with `github`.";
 		expect(parsePlannedPackages(text)).toEqual([]);
 	});
 });
@@ -199,6 +199,13 @@ describe("Unit 1 — evidence grammar", () => {
 			version: "1.0.3",
 			docRef: "docs/typebox.md",
 			valid: true,
+		});
+	});
+
+	test("accepts a documentation URL as evidence", () => {
+		const url = "https://example.org/docs/typebox/1.0.3";
+		expect(validateEvidenceLine(`docs-verified: typebox@1.0.3 ${url}`, resolved)).toEqual({
+			package: "typebox", version: "1.0.3", docRef: url, valid: true,
 		});
 	});
 

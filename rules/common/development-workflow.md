@@ -8,12 +8,12 @@ The Feature Implementation Workflow describes the development pipeline: research
 
 0. **Research & Reuse** _(mandatory before any new implementation)_
    - **GitHub code search first:** Run `gh search repos` and `gh search code` to find existing implementations, templates, and patterns before writing anything new.
-   - **Library docs second:** Use the `contextqmd` CLI as the primary tool (see [shared contextqmd docs instruction](../../skills/references/contextqmd-docs.md)) or primary vendor docs to confirm API behavior, package usage, and version-specific details before implementing.
+   - **Library docs second:** Consult official vendor/library documentation for the installed version to confirm API behavior, package usage, and version-specific details before implementing.
    - **Exa only when the first two are insufficient:** Use Exa for broader web research or discovery after GitHub search and primary docs.
    - **Check package registries:** Search npm, PyPI, crates.io, and other registries before writing utility code. Prefer battle-tested libraries over hand-rolled solutions.
    - **Search for adaptable implementations:** Look for open-source projects that solve 80%+ of the problem and can be forked, ported, or wrapped.
    - Prefer adopting or porting a proven approach over writing net-new code when it meets the requirement.
-   - **Source-driven trigger:** When implementation depends on a framework/library API, version-specific behavior, or a recommended pattern, verify against official documentation using `contextqmd` CLI (see [shared contextqmd docs instruction](../../skills/references/contextqmd-docs.md)) and cite key sources in the output. Pure logic, renaming, or in-project pattern reuse does not require external citation. Record compact evidence as `docs-verified: PACKAGE@VERSION DOC_REF`; the runtime trigger at `02-plan`/`03-work` tracks the obligation until it is satisfied or waived.
+   - **Source-driven trigger:** For external framework/library APIs or version-specific patterns, verify against official documentation with available tools and cite authoritative source URLs or stable documentation paths. Pure logic, renaming, or in-project pattern reuse does not require external citation. Record compact evidence as `docs-verified: PACKAGE@VERSION DOC_REF`; the runtime trigger at `02-plan`/`03-work` tracks obligations until satisfied or waived.
 
 1. **Brainstorm & Plan First**
    - **No Direct-to-Implementation Bypass:** Skipping brainstorming and planning to go straight to coding is strictly prohibited. The full workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `04-5-debug` → `05-learn` → `06-docsync`) must be followed.

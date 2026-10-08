@@ -164,7 +164,7 @@ describe("Unit 8 — save-side guarantee", () => {
 });
 
 describe("Unit 8 — injected block", () => {
-	test("names the open obligations and the exact contextqmd steps", async () => {
+	test("names open obligations and actionable source-verification steps", async () => {
 		const { wiring } = makeWiring("shadow", false);
 		const block = await wiring.buildAppend({
 			repoRoot: root,
@@ -172,9 +172,10 @@ describe("Unit 8 — injected block", () => {
 		});
 		expect(block).toBeString();
 		expect(block).toContain("alpha");
-		expect(block).toContain("contextqmd libraries list");
-		expect(block).toContain("contextqmd docs search");
-		expect(block).toContain("contextqmd docs get");
+		expect(block).toContain("official documentation");
+		expect(block).toContain("package and version");
+		expect(block).toContain("authoritative URL");
+		expect(block).toContain("docs_verification");
 		expect(block).toContain("docs-verified:");
 	});
 
