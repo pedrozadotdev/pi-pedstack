@@ -737,6 +737,29 @@ export async function startStageFromRememberedContext(
 	);
 }
 
+/**
+ * Re-enter the currently active stage after a persisted enforcing gate
+ * escalation. Called only once the model turn has ended; never navigate
+ * the session tree while a tool call is executing.
+ */
+export async function autoReloadEscalatedStage(
+	pi: ExtensionAPI,
+	repoRoot: string,
+	stageKey: PipelineStageKey,
+): Promise<boolean> {
+	const ctx = rememberedCommandContext;
+	if (!ctx || ctx.cwd !== repoRoot) return false;
+	const active = await resolveReloadStage(repoRoot);
+	if (active !== stageKey) return false;
+	return beginStageTransition(
+		pi,
+		ctx,
+		stageKey,
+		`Stage gate requested SOTA escalation for ${stageKey}. Restart this stage under the configured SOTA model; follow the stage skill from the beginning and revalidate the artifact.`,
+		"ped-stage-reload",
+	);
+}
+
 // ── Abort handler (shared between commands) ────────────────────────
 
 /** Format err for user-facing messages without leaking stack traces. */
