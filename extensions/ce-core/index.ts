@@ -18,6 +18,7 @@ import {
 	getAndClearPendingFixIssues,
 	isValidStageKey,
 	startStageFromRememberedContext,
+	autoReloadEscalatedStage,
 	clearRememberedCommandContext,
 	type PipelineStageKey,
 } from "./commands/pedstack";
@@ -99,6 +100,7 @@ import {
 import { createJevRuntime } from "./jev/runtime";
 import type { JevRuntime } from "./jev/types";
 import { resolveStartupFeatures } from "./utils/startup-features";
+import { readPiPedstackConfig } from "./utils/config-types";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -556,6 +558,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		stagePair: string | null;
 		isGated: boolean;
 	} | null = null;
+	let pendingGateReload: { repoRoot: string; stageKey: PipelineStageKey } | null = null;
+	const attemptedAutoReload = new Set<string>();
 
 	let persistedStageResolved = false;
 	let persistedStage: string | null = null;
@@ -816,6 +820,36 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				details: result,
 			};
 		},
+	});
+
+	// An escalation is observed after the stage_gate tool returns, then acted
+	// on only at agent_end so navigation never interrupts an executing turn.
+	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName !== "stage_gate" || event.isError) return undefined;
+		const result = event.details as {
+			stage?: unknown;
+			action?: unknown;
+			enforcing?: unknown;
+		} | undefined;
+		if (!result || typeof result.stage !== "string" || !isValidStageKey(result.stage)) return undefined;
+		if (result.action !== "escalate" || result.enforcing !== true) {
+			if (pendingGateReload?.stageKey === result.stage) pendingGateReload = null;
+			return undefined;
+		}
+		const config = await readPiPedstackConfig(ctx.cwd);
+		const stageKey = result.stage as PipelineStageKey;
+		const stageConfigKey = stageKey === "04-5-debug" ? "debug" : stageKey.slice(3);
+		const override = (config as Record<string, any> | null)?.[stageConfigKey]?.model;
+		const sota = config?.models?.sota?.model;
+		if (config?.routing?.shadow !== false || !sota || override) return undefined;
+		const active = getActiveStage() ?? await readPersistedActiveStage(ctx.cwd);
+		if (active !== stageKey) return undefined;
+		if (ctx.model && `${ctx.model.provider}/${ctx.model.id}` === sota) return undefined;
+		const key = `${ctx.cwd}:${stageKey}`;
+		if (attemptedAutoReload.has(key)) return undefined;
+		pendingGateReload = { repoRoot: ctx.cwd, stageKey };
+		if (ctx.hasUI) ctx.ui.notify(`Stage gate escalation queued: ${stageKey} will automatically restart under SOTA when the turn finishes.`, "info");
+		return undefined;
 	});
 
 	pi.registerTool({
@@ -1474,6 +1508,30 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
+		const escalation = pendingGateReload;
+		pendingGateReload = null;
+		if (escalation) {
+			pendingAutoAdvance = null;
+			const key = `${escalation.repoRoot}:${escalation.stageKey}`;
+			if (!attemptedAutoReload.has(key)) {
+				attemptedAutoReload.add(key);
+				const retry = () => {
+					if (!ctx.isIdle()) {
+						setTimeout(retry, 50);
+						return;
+					}
+					void autoReloadEscalatedStage(pi, escalation.repoRoot, escalation.stageKey)
+						.then((started) => {
+							if (!started && ctx.hasUI) ctx.ui.notify("Automatic SOTA reload could not start. Run /ped-reload manually.", "warning");
+						})
+						.catch((err) => {
+							if (ctx.hasUI) ctx.ui.notify(`Automatic SOTA reload failed: ${String(err)}`, "error");
+						});
+				};
+				setTimeout(retry, 0);
+			}
+			return undefined;
+		}
 		const queued = pendingAutoAdvance;
 		if (!queued) return undefined;
 		pendingAutoAdvance = null;
@@ -1482,6 +1540,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async () => {
+		pendingGateReload = null;
+		attemptedAutoReload.clear();
 		// Fresh session: reset per-session state (record files untouched).
 		driftGuard?.reset();
 		setCurrentDriftSessionKey("");
@@ -1491,6 +1551,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async () => {
+		pendingGateReload = null;
+		attemptedAutoReload.clear();
 		pendingAutoAdvance = null;
 		clearRememberedCommandContext();
 		clearActiveStage();
