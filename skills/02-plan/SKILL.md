@@ -55,7 +55,7 @@ Every unit follows **RED → GREEN → REFACTOR**:
     - `accept` → do not run `multi_reviewer`; advance.
     - `revise` → apply fixes and re-run `stage_gate`; no independent reviewer.
     - `review` → invoke **`multi_reviewer`** with `stepName: "02-plan"` and `mode: "single"`; inspect the returned findings, verify each against the plan artifact, apply the confirmed ones to the plan, then re-run `stage_gate`. This runs **after** the Strict Review so multi_reviewer inspects an already-reviewed plan.
-    - `escalate` → stop the current stage loop. Do not continue with the current execution model, and do not invoke `/ped-reload` yourself; ask the operator to run `/ped-reload`. The persisted escalation makes Pedstack re-enter this same `02-plan` stage under `models.sota` when routing is enforced (`routing.shadow: false`); in shadow mode the decision is recorded but not applied.
+    - `escalate` → Stop the current stage loop and do not invoke `/ped-reload` yourself. Under enforced routing (`routing.shadow: false`), Pedstack automatically re-enters the same stage under `models.sota` after this turn ends; if that fails, the operator can use `/ped-reload` manually. Shadow mode records the decision but does not switch models.
     A missing `action` (unknown stage or a tool regression) is treated as `none`; advance.
     Use `mode: "deep"` only on an explicit user request.
 12. Handoff to `03-work` via the standard pipeline handoff.

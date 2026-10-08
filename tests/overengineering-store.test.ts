@@ -205,7 +205,7 @@ describe("overengineering store + tool wiring (Unit 7)", () => {
 		expect(runtime.calls.length).toBe(1);
 		// No requirements baseline exists, so the composer short-circuits before git.
 		const record = await readLatestRecord(root, "02-plan");
-		expect(record?.schema).toBe(2);
+		expect(record?.schema).toBe(3);
 		expect(record?.overengineering?.source).toBe("unavailable");
 	});
 

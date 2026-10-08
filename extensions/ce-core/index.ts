@@ -18,6 +18,7 @@ import {
 	getAndClearPendingFixIssues,
 	isValidStageKey,
 	startStageFromRememberedContext,
+	autoReloadEscalatedStage,
 	clearRememberedCommandContext,
 	type PipelineStageKey,
 } from "./commands/pedstack";
@@ -37,20 +38,9 @@ import { createSessionHistoryTool } from "./tools/session-history";
 import { createPatternExtractorTool } from "./tools/pattern-extractor";
 import { createContextHandoffTool } from "./tools/context-handoff";
 import { createStageGateTool, stageGateParams } from "./tools/stage-gate";
-import { resolveStageGateMode } from "./stage-gate/store";
-import { resolveOverengineeringMode } from "./overengineering/compose";
-import {
-	resolveDocsVerificationFailClosed,
-	resolveDocsVerificationMode,
-} from "./docs-verification/store";
+import { createStageReportTool } from "./tools/stage-report";
 import { createDocsVerificationWiring } from "./utils/docs-verification-wiring";
 import {
-	resolveReadinessFailClosed,
-	resolveReadinessMode,
-} from "./handoff-readiness/store";
-import {
-	resolveDriftFailClosed,
-	resolveDriftMode,
 	resolveSessionKey,
 	setCurrentDriftSessionKey,
 	getCurrentDriftSessionKey,
@@ -69,8 +59,6 @@ import {
 	getOrCreateSessionState,
 	resetAllSessionState,
 	resetEpisode,
-	resolveCompactionLive,
-	resolveCompactionMode,
 	setCurrentCompactionMode,
 	setCurrentCompactionSessionKey,
 } from "./compaction-guard/store";
@@ -106,13 +94,14 @@ import {
 	readPersistedActiveStage,
 } from "./utils/active-stage";
 import { evaluateWrite } from "./utils/capability-matrix";
-import { parseGuardMode } from "./utils/semantic-stage-guard";
 import {
 	createStageGuard,
 	type StageGuard,
 } from "./utils/stage-guard-runtime";
 import { createJevRuntime } from "./jev/runtime";
 import type { JevRuntime } from "./jev/types";
+import { resolveStartupFeatures } from "./utils/startup-features";
+import { readPiPedstackConfig } from "./utils/config-types";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -145,6 +134,11 @@ const artifactHelperParams = Type.Object({
 	ensureDir: Type.Optional(
 		Type.Boolean({ description: "Create the parent directory when true" }),
 	),
+});
+
+const stageReportParams = Type.Object({
+	stage: Type.String(),
+	markdown: Type.String(),
 });
 
 const workflowStateParams = Type.Object({
@@ -517,6 +511,7 @@ function mapCompactionEvent(
 
 export default function ceCoreExtension(pi: ExtensionAPI) {
 	const artifactHelper = createArtifactHelperTool();
+	const stageReport = createStageReportTool();
 	const workflowState = createWorkflowStateTool();
 	const reviewRouter = createReviewRouterTool();
 	const sessionCheckpoint = createSessionCheckpointTool();
@@ -525,40 +520,29 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	const planDiff = createPlanDiffTool();
 	const sessionHistory = createSessionHistoryTool();
 	const patternExtractor = createPatternExtractorTool();
-	// ponytail: operator-only gate mode, resolved once at init like the guard.
-	const gateMode = resolveStageGateMode(process.env);
-	// ponytail: the overengineering mode is a separate shadow-first knob.
-	const overengineeringMode = resolveOverengineeringMode(process.env);
-	// ponytail: handoff-readiness mode/fail-closed are also resolved once.
-	// ponytail: docs-verification mode/fail-closed resolved once at init.
-	const docsWiring = createDocsVerificationWiring({
-		mode: resolveDocsVerificationMode(process.env),
-		failClosed: resolveDocsVerificationFailClosed(process.env),
-	});
-	// Drift mode/fail-closed are read once too; invalid values fail safe to shadow.
-	const driftModeRaw = process.env.PEDSTACK_DRIFT_GUARD;
-	const driftMode = resolveDriftMode(process.env);
-	const driftModeInvalid =
-		driftModeRaw !== undefined &&
-		driftModeRaw !== "off" &&
-		driftModeRaw !== "shadow" &&
-		driftModeRaw !== "enforce";
-	const driftFailClosed = resolveDriftFailClosed(process.env);
-	// Compaction-guard mode/live are read once too; invalid fails safe to shadow.
-	const compactionModeRaw = process.env.PEDSTACK_COMPACTION_GUARD;
-	const compactionMode = resolveCompactionMode(process.env);
-	const compactionModeInvalid =
-		compactionModeRaw !== undefined &&
-		compactionModeRaw !== "off" &&
-		compactionModeRaw !== "shadow" &&
-		compactionModeRaw !== "enforce";
-	const compactionLive = resolveCompactionLive(process.env);
+	// Runtime feature policy has exactly one source of truth: config.json.
+	// Resolve once at extension init, matching the previous startup semantics
+	// without allowing environment variables to silently diverge from JSON.
+	const features = resolveStartupFeatures();
+	const gateMode = features.stageGate.mode;
+	const overengineeringMode = features.overengineering.mode;
+	const driftMode = features.driftGuard.mode;
+	const driftFailClosed = features.driftGuard.failClosed;
+	const compactionMode = features.compactionGuard.mode;
+	const compactionLive = features.compactionGuard.live;
+	const guardMode = features.stageGuard.mode;
+	const guardFailClosed = features.stageGuard.failClosed;
+	const guardDisabled = features.stageGuard.disabled;
 	setCurrentCompactionMode(compactionMode);
+	const docsWiring = createDocsVerificationWiring({
+		mode: features.docsVerification.mode,
+		failClosed: features.docsVerification.failClosed,
+	});
 	const contextHandoff = createContextHandoffTool({
 		gateMode,
 		readiness: {
-			mode: resolveReadinessMode(process.env),
-			failClosed: resolveReadinessFailClosed(process.env),
+			mode: features.handoffReadiness.mode,
+			failClosed: features.handoffReadiness.failClosed,
 		},
 		docsVerification: docsWiring,
 		drift: {
@@ -581,10 +565,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		stagePair: string | null;
 		isGated: boolean;
 	} | null = null;
+	let pendingGateReload: { repoRoot: string; stageKey: PipelineStageKey } | null = null;
+	const attemptedAutoReload = new Set<string>();
 
-	// ponytail: Operator escape hatch, read once at init. Any read error keeps
-	// the guard enforced (the `!== "1"` comparison cannot throw).
-	const guardDisabled = process.env.PEDSTACK_DISABLE_GUARD === "1";
 	let persistedStageResolved = false;
 	let persistedStage: string | null = null;
 	let guardNotified = false;
@@ -596,27 +579,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return jevRuntime;
 	}
 
-	// ponytail: Jev stage guard config, read once at init. Invalid values fail
-	// safe to shadow; the warning is deferred to the first tool call (no ctx yet).
-	const guardModeRaw = process.env.PEDSTACK_JEV_STAGE_GUARD;
-	const guardMode = parseGuardMode(guardModeRaw);
-	const guardModeInvalid =
-		guardModeRaw !== undefined &&
-		guardModeRaw !== "off" &&
-		guardModeRaw !== "shadow" &&
-		guardModeRaw !== "enforce";
-	const guardFailClosed =
-		process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED === "1";
-	let guardModeNotified = false;
 	let stageGuard: StageGuard | null = null;
-
-	// ponytail: drift guard state, resolved once at init; the Jev runtime is
-	// created lazily on the first evaluated turn.
-	let driftModeNotified = false;
 	let driftGuard: DriftGuard | null = null;
-
-	// ponytail: compaction guard state; Jev runtime created lazily on first use.
-	let compactionModeNotified = false;
 	let compactionGuard: CompactionGuard | null = null;
 
 	pi.registerTool({
@@ -641,6 +605,17 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				content: [{ type: "text", text: result.path }],
 				details: result,
 			};
+		},
+	});
+
+	pi.registerTool({
+		name: stageReport.name,
+		label: "Stage Report",
+		description: "Safely publish the active stage canonical Markdown report.",
+		parameters: stageReportParams,
+		async execute(_id, params, _signal, _onUpdate, ctx) {
+			const result = await stageReport.execute({ repoRoot: ctx.cwd, stage: params.stage, activeStage: await resolveGuardStage(ctx), markdown: params.markdown });
+			return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
 		},
 	});
 
@@ -865,6 +840,46 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		},
 	});
 
+	// An escalation is observed after the stage_gate tool returns, then acted
+	// on only at agent_end so navigation never interrupts an executing turn.
+	async function queueGateEscalation(event: {
+		toolName: string;
+		isError?: boolean;
+		details?: unknown;
+	}, ctx: ExtensionContext): Promise<void> {
+		if (event.toolName !== "stage_gate" || event.isError) return;
+		const result = event.details as {
+			stage?: unknown;
+			action?: unknown;
+			enforcing?: unknown;
+		} | undefined;
+		if (!result || typeof result.stage !== "string" || !isValidStageKey(result.stage)) return;
+		if (result.action !== "escalate" || result.enforcing !== true) {
+			if (pendingGateReload?.stageKey === result.stage) pendingGateReload = null;
+			return;
+		}
+		let config;
+		try {
+			config = await readPiPedstackConfig(ctx.cwd);
+		} catch (err) {
+			if (ctx.hasUI) ctx.ui.notify(`Cannot queue SOTA escalation: invalid model configuration (${String(err)})`, "warning");
+			return;
+		}
+		const stageKey = result.stage as PipelineStageKey;
+		const stageConfigKey = stageKey === "04-5-debug" ? "debug" : stageKey.slice(3);
+		const override = (config as Record<string, { model?: string }> | null)?.[stageConfigKey]?.model;
+		const sota = config?.models?.sota?.model;
+		if (config?.routing?.shadow !== false || !sota || override) return;
+		const active = getActiveStage() ?? await readPersistedActiveStage(ctx.cwd);
+		if (active !== stageKey) return;
+		if (ctx.model && `${ctx.model.provider}/${ctx.model.id}` === sota) return;
+		const key = `${ctx.cwd}:${stageKey}`;
+		if (attemptedAutoReload.has(key)) return;
+		pendingGateReload = { repoRoot: ctx.cwd, stageKey };
+		if (ctx.hasUI) ctx.ui.notify(`Stage gate escalation queued: ${stageKey} will automatically restart under SOTA when the turn finishes.`, "info");
+		return;
+	}
+
 	pi.registerTool({
 		name: checklistAdd.name,
 		label: "Checklist Add",
@@ -919,9 +934,26 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("ped-start", cmdPedStart(pi));
+	const startCommand = cmdPedStart(pi);
+	pi.registerCommand("ped-start", {
+		...startCommand,
+		handler: async (args, ctx) => {
+			// A new workflow has a fresh stage-escalation budget.
+			pendingGateReload = null;
+			attemptedAutoReload.clear();
+			await startCommand.handler(args, ctx);
+		},
+	});
 	pi.registerCommand("ped-next", cmdPedNext(pi));
-	pi.registerCommand("ped-fix-issues", cmdPedFixIssues(pi));
+	const fixIssuesCommand = cmdPedFixIssues(pi);
+	pi.registerCommand("ped-fix-issues", {
+		...fixIssuesCommand,
+		handler: async (args, ctx) => {
+			pendingGateReload = null;
+			attemptedAutoReload.clear();
+			await fixIssuesCommand.handler(args, ctx);
+		},
+	});
 	pi.registerCommand("ped-reload", cmdPedReload(pi));
 	pi.registerCommand("ped-debug", cmdPedDebug(pi));
 
@@ -968,19 +1000,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return stageGuard;
 	}
 
-	/** Warn once when `PEDSTACK_JEV_STAGE_GUARD` is not a known mode. */
-	function notifyInvalidGuardModeOnce(ctx: ExtensionContext): void {
-		if (!guardModeInvalid || guardModeNotified) return;
-		guardModeNotified = true;
-		if (ctx.hasUI) {
-			ctx.ui.notify(
-				`Pedstack stage guard: invalid PEDSTACK_JEV_STAGE_GUARD value ` +
-					`"${guardModeRaw}"; using shadow mode.`,
-				"warning",
-			);
-		}
-	}
-
 	/** Lazily build the drift guard, memoizing the Jev runtime on first use. */
 	function getDriftGuard(): DriftGuard {
 		driftGuard ??= createDriftGuard({
@@ -993,19 +1012,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		return driftGuard;
 	}
 
-	/** Warn once when `PEDSTACK_DRIFT_GUARD` is not a known mode. */
-	function notifyInvalidDriftModeOnce(ctx: ExtensionContext): void {
-		if (!driftModeInvalid || driftModeNotified) return;
-		driftModeNotified = true;
-		if (ctx.hasUI) {
-			ctx.ui.notify(
-				`Pedstack drift guard: invalid PEDSTACK_DRIFT_GUARD value ` +
-					`"${driftModeRaw}"; using shadow mode.`,
-				"warning",
-			);
-		}
-	}
-
 	/** Lazily build the compaction guard, memoizing the Jev runtime on first use. */
 	function getCompactionGuard(): CompactionGuard {
 		compactionGuard ??= createCompactionGuard({
@@ -1016,19 +1022,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				compactionJevFactory ? compactionJevFactory() : createJevRuntime(),
 		});
 		return compactionGuard;
-	}
-
-	/** Warn once when `PEDSTACK_COMPACTION_GUARD` is not a known mode. */
-	function notifyInvalidCompactionModeOnce(ctx: ExtensionContext): void {
-		if (!compactionModeInvalid || compactionModeNotified) return;
-		compactionModeNotified = true;
-		if (ctx.hasUI) {
-			ctx.ui.notify(
-				`Pedstack compaction guard: invalid PEDSTACK_COMPACTION_GUARD value ` +
-					`"${compactionModeRaw}"; using shadow mode.`,
-				"warning",
-			);
-		}
 	}
 
 	/** Capture the per-turn usage snapshot and fire the one-shot request nudge. */
@@ -1063,8 +1056,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		if (guardDisabled) return undefined;
 
 		try {
-			notifyInvalidGuardModeOnce(ctx);
-
 			if (event.toolName === "bash") {
 				if (guardMode === "off") return undefined;
 				const command = (event.input as { command?: unknown }).command;
@@ -1112,13 +1103,11 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			const sessionKey = resolveSessionKey(ctx.sessionManager);
 
 			if (compactionMode !== "off") {
-				notifyInvalidCompactionModeOnce(ctx);
 				setCurrentCompactionSessionKey(sessionKey);
 				captureTurnSnapshot(ctx, sessionKey);
 			}
 
 			if (driftMode !== "off") {
-				notifyInvalidDriftModeOnce(ctx);
 				setCurrentDriftSessionKey(sessionKey);
 				const stage = await resolveGuardStage(ctx);
 				await getDriftGuard().evaluate({
@@ -1195,7 +1184,9 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
 	// Injection screen phase 1 — screens raw untrusted results before the size
 	// filters compress them (registered first; phase 2 below runs last).
-	const injectionScreen = registerInjectionScreen(pi);
+	const injectionScreen = registerInjectionScreen(pi, {
+		mode: features.injectionScreen.mode,
+	});
 
 	// Cheap semantic file reads/scouting: model-facing tools over one engine.
 	registerSemanticTools(pi);
@@ -1435,6 +1426,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	}
 
 	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName === "stage_gate") {
+			await queueGateEscalation(event, ctx);
+			return undefined;
+		}
 		if (event.toolName !== "context_handoff") return undefined;
 
 		try {
@@ -1562,6 +1557,41 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
+		const escalation = pendingGateReload;
+		pendingGateReload = null;
+		if (escalation) {
+			pendingAutoAdvance = null;
+			const key = `${escalation.repoRoot}:${escalation.stageKey}`;
+			if (!attemptedAutoReload.has(key)) {
+				attemptedAutoReload.add(key);
+				let remainingIdleChecks = 40;
+				const retry = () => {
+					let idle = false;
+					try {
+						idle = ctx.isIdle();
+					} catch {
+						return;
+					}
+					if (!idle) {
+						if (--remainingIdleChecks === 0) {
+							if (ctx.hasUI) ctx.ui.notify("Automatic SOTA reload timed out waiting for idle. Run /ped-reload manually.", "warning");
+							return;
+						}
+						setTimeout(retry, 50);
+						return;
+					}
+					void autoReloadEscalatedStage(pi, escalation.repoRoot, escalation.stageKey)
+						.then((started) => {
+							if (!started && ctx.hasUI) ctx.ui.notify("Automatic SOTA reload could not start. Run /ped-reload manually.", "warning");
+						})
+						.catch((err) => {
+							if (ctx.hasUI) ctx.ui.notify(`Automatic SOTA reload failed: ${String(err)}`, "error");
+						});
+				};
+				setTimeout(retry, 0);
+			}
+			return undefined;
+		}
 		const queued = pendingAutoAdvance;
 		if (!queued) return undefined;
 		pendingAutoAdvance = null;
@@ -1570,6 +1600,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async () => {
+		pendingGateReload = null;
+		attemptedAutoReload.clear();
 		// Fresh session: reset per-session state (record files untouched).
 		driftGuard?.reset();
 		setCurrentDriftSessionKey("");
@@ -1579,6 +1611,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async () => {
+		pendingGateReload = null;
+		attemptedAutoReload.clear();
 		pendingAutoAdvance = null;
 		clearRememberedCommandContext();
 		clearActiveStage();
@@ -1608,7 +1642,6 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	pi.on("session_before_compact", async (event, ctx) => {
 		try {
 			if (compactionMode === "off") return undefined;
-			notifyInvalidCompactionModeOnce(ctx);
 			const sessionKey = resolveSessionKey(ctx.sessionManager);
 			setCurrentCompactionSessionKey(sessionKey);
 			const result = await getCompactionGuard().evaluate(

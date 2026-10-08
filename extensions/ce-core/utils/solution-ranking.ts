@@ -384,12 +384,7 @@ export async function rankSolutions(
 				enforceRequestBodyLimit(request);
 				try {
 					return combine(candidate, await input.jev.decide(request), mode);
-				} catch (error) {
-					console.warn(
-						`[pi-pedstack] Jev dropped candidate ${candidate.relPath}: ${
-							error instanceof Error ? error.message : String(error)
-						}`,
-					);
+				} catch {
 					return null;
 				}
 			},

@@ -18,9 +18,11 @@ import {
 	isRecordFresh,
 	planSlugFromPath,
 	readDocsRecord,
-	resolveDocsVerificationFailClosed,
-	resolveDocsVerificationMode,
 } from "../docs-verification/store";
+import {
+	readPiPedstackConfigSync,
+	resolveFeaturesConfig,
+} from "../utils/config-types";
 import { extractUnits, parsePlannedPackages } from "../docs-verification/units";
 import type {
 	DocsObligation,
@@ -57,9 +59,9 @@ export interface GatherEvidenceOptions {
 	stage: StageKey;
 	hint?: string[];
 	gitDiff?: string | null;
-	/** Test seam; defaults to the resolved `PEDSTACK_DOCS_VERIFICATION` mode. */
+	/** Test seam; defaults to config.json features.docsVerification.mode. */
 	docsVerificationMode?: DocsVerificationMode;
-	/** Test seam; defaults to the resolved `..._FAILCLOSED` flag. */
+	/** Test seam; defaults to config.json features.docsVerification.failClosed. */
 	docsVerificationFailClosed?: boolean;
 	/** Prior fresh gate decision, threaded read-only into the predicates (Unit 4). */
 	priorGate?: {
@@ -187,6 +189,10 @@ export async function resolveArtifactPaths(
 	}
 	const globbed = await resolveViaGlobs(repoRoot, rubric);
 	if (globbed.length > 0) return { paths: globbed, warnings };
+	if (rubric.artifactDir === `${CONTEXT_DIR}/stage-reports`) {
+		warnings.push(`missing canonical stage report for ${stage}`);
+		return { paths: [], warnings };
+	}
 	return { paths: await resolveFallback(repoRoot, rubric), warnings };
 }
 
@@ -320,12 +326,21 @@ async function readReviewFindings(
 			findings?: unknown;
 			count?: unknown;
 			generatedAt?: unknown;
+			completed?: unknown;
+			reviewedGate?: unknown;
 		};
 		if (!Array.isArray(value.findings)) continue;
 		files.push({
 			path: rel,
 			findings: value.findings as ReviewFinding[],
 			count: typeof value.count === "number" ? value.count : undefined,
+			completed: value.completed === true,
+			reviewedGate:
+				value.reviewedGate && typeof value.reviewedGate === "object" &&
+				typeof (value.reviewedGate as { updatedAt?: unknown }).updatedAt === "string" &&
+				typeof (value.reviewedGate as { artifactsHash?: unknown }).artifactsHash === "string"
+					? value.reviewedGate as { updatedAt: string; artifactsHash: string }
+					: undefined,
 			observedAt: await resolveObservedAt(abs, value.generatedAt),
 		});
 	}
@@ -441,11 +456,12 @@ export async function gatherEvidence(
 		errors,
 	);
 	const plan = await newestPlan(repoRoot);
-	const mode =
-		options.docsVerificationMode ?? resolveDocsVerificationMode(process.env);
+	const docsFeature = resolveFeaturesConfig(
+		readPiPedstackConfigSync(repoRoot),
+	).docsVerification;
+	const mode = options.docsVerificationMode ?? docsFeature.mode;
 	const failClosed =
-		options.docsVerificationFailClosed ??
-		resolveDocsVerificationFailClosed(process.env);
+		options.docsVerificationFailClosed ?? docsFeature.failClosed;
 	return {
 		stage,
 		repoRoot,

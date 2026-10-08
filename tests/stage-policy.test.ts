@@ -19,6 +19,19 @@ describe("getStageDiscipline", () => {
 		expect(discipline?.nextStage).toBe("03-work");
 	});
 
+	test("04-review injects a conditional findings-to-work completion rule", () => {
+		const discipline = getStageDiscipline("04-review");
+		expect(discipline?.nextStage).toBe("05-learn");
+		expect(discipline?.completionInstruction).toContain("03-work");
+		expect(discipline?.completionInstruction).toContain("Status");
+		expect(discipline?.completionInstruction).toContain("Findings: 0");
+
+		const append = buildSystemPromptAppend("/skills/04-review/SKILL.md", []);
+		expect(append).toContain("target **03-work**");
+		expect(append).toContain("target **05-learn**");
+		expect(append).not.toContain("targeting the next stage: **05-learn**");
+	});
+
 	test("returns null for an unknown or absent stage", () => {
 		expect(getStageDiscipline("09-nope")).toBeNull();
 		expect(getStageDiscipline(null)).toBeNull();

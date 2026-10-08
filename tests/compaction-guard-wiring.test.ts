@@ -18,6 +18,8 @@ import { resetPedstackState } from "../extensions/ce-core/commands/pedstack.js";
 import ceCoreExtension, {
 	__setCompactionGuardJevFactory,
 } from "../extensions/ce-core/index.js";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
+import { testFeatures } from "./helpers/feature-config.js";
 
 const SESSION = "sid-compaction";
 
@@ -44,6 +46,19 @@ function register(): CapturedPi {
 		},
 	} as never);
 	return pi;
+}
+
+function configureCompaction(
+	mode: "off" | "shadow" | "enforce",
+	live = false,
+): void {
+	setStartupFeaturesForTests(
+		testFeatures({
+			stageGate: { mode: "off" },
+			driftGuard: { mode: "off" },
+			compactionGuard: { mode, live },
+		}),
+	);
 }
 
 interface Ctx {
@@ -182,18 +197,12 @@ async function readLog(): Promise<string> {
 
 beforeEach(async () => {
 	root = await fs.mkdtemp(path.join(os.tmpdir(), "compaction-wiring-"));
-	process.env.PEDSTACK_COMPACTION_GUARD = "shadow";
-	delete process.env.PEDSTACK_COMPACTION_GUARD_LIVE;
-	process.env.PEDSTACK_DRIFT_GUARD = "off";
-	process.env.PEDSTACK_STAGE_GATE = "off";
+	configureCompaction("shadow");
 	resetAllSessionState();
 });
 
 afterEach(async () => {
-	delete process.env.PEDSTACK_COMPACTION_GUARD;
-	delete process.env.PEDSTACK_COMPACTION_GUARD_LIVE;
-	delete process.env.PEDSTACK_DRIFT_GUARD;
-	delete process.env.PEDSTACK_STAGE_GATE;
+	setStartupFeaturesForTests(null);
 	__setCompactionGuardJevFactory(null);
 	resetAllSessionState();
 	resetPedstackState();
@@ -202,7 +211,7 @@ afterEach(async () => {
 
 describe("mode gating", () => {
 	test("off does no handler work and never calls Jev", async () => {
-		process.env.PEDSTACK_COMPACTION_GUARD = "off";
+		configureCompaction("off");
 		const pi = register();
 		const jev = createFakeJevRuntime({ handler: answering({ mid_operation: 1 }) });
 		__setCompactionGuardJevFactory(() => jev);
@@ -217,7 +226,7 @@ describe("mode gating", () => {
 	});
 
 	test("shadow never cancels and logs the would-be defer", async () => {
-		process.env.PEDSTACK_COMPACTION_GUARD_LIVE = "1";
+		configureCompaction("shadow", true);
 		const pi = register();
 		const jev = createFakeJevRuntime({ handler: answering({ mid_operation: 1 }) });
 		__setCompactionGuardJevFactory(() => jev);
@@ -247,7 +256,7 @@ describe("mode gating", () => {
 	});
 
 	test("enforce cancels only when every guard passes", async () => {
-		process.env.PEDSTACK_COMPACTION_GUARD = "enforce";
+		configureCompaction("enforce");
 		const pi = register();
 		__setCompactionGuardJevFactory(() =>
 			createFakeJevRuntime({ handler: answering({ mid_operation: 1 }) }),
@@ -257,7 +266,7 @@ describe("mode gating", () => {
 	});
 
 	test("enforce allows a clean boundary", async () => {
-		process.env.PEDSTACK_COMPACTION_GUARD = "enforce";
+		configureCompaction("enforce");
 		const pi = register();
 		__setCompactionGuardJevFactory(() =>
 			createFakeJevRuntime({ handler: answering() }),
@@ -272,7 +281,7 @@ describe("mode gating", () => {
 		["overage past budget", compactEvent({ tokensBefore: 111_616 + 3_000 })],
 	] as const) {
 		test(`${name} never cancels`, async () => {
-			process.env.PEDSTACK_COMPACTION_GUARD = "enforce";
+			configureCompaction("enforce");
 			const pi = register();
 			const jev = createFakeJevRuntime({ handler: answering({ mid_operation: 1 }) });
 			__setCompactionGuardJevFactory(() => jev);
@@ -282,7 +291,7 @@ describe("mode gating", () => {
 	}
 
 	test("a Pi 0.76-shaped event with no reason fails open", async () => {
-		process.env.PEDSTACK_COMPACTION_GUARD = "enforce";
+		configureCompaction("enforce");
 		const pi = register();
 		const jev = createFakeJevRuntime({ handler: answering({ mid_operation: 1 }) });
 		__setCompactionGuardJevFactory(() => jev);
@@ -294,7 +303,7 @@ describe("mode gating", () => {
 	});
 
 	test("a throwing guard leaves stock behavior", async () => {
-		process.env.PEDSTACK_COMPACTION_GUARD = "enforce";
+		configureCompaction("enforce");
 		const pi = register();
 		const throwing: JevRuntime = {
 			decide() {
@@ -332,7 +341,7 @@ describe("turn_end snapshot and request nudge", () => {
 	});
 
 	test("the compaction hook never notifies", async () => {
-		process.env.PEDSTACK_COMPACTION_GUARD = "enforce";
+		configureCompaction("enforce");
 		const pi = register();
 		__setCompactionGuardJevFactory(() =>
 			createFakeJevRuntime({ handler: answering({ mid_operation: 1 }) }),
@@ -345,7 +354,7 @@ describe("turn_end snapshot and request nudge", () => {
 
 describe("session lifecycle", () => {
 	test("session_compact resets the episode and stamps the compaction", async () => {
-		process.env.PEDSTACK_COMPACTION_GUARD = "enforce";
+		configureCompaction("enforce");
 		const pi = register();
 		__setCompactionGuardJevFactory(() =>
 			createFakeJevRuntime({ handler: answering({ mid_operation: 1 }) }),
@@ -373,15 +382,4 @@ describe("session lifecycle", () => {
 		expect(getCurrentContextSnapshot()).toBeNull();
 	});
 
-	test("invalid PEDSTACK_COMPACTION_GUARD warns once and stays shadow", async () => {
-		process.env.PEDSTACK_COMPACTION_GUARD = "wat";
-		process.env.PEDSTACK_COMPACTION_GUARD_LIVE = "1";
-		const pi = register();
-		__setCompactionGuardJevFactory(() => createFakeJevRuntime({ handler: answering() }));
-		const ctx = makeCtx({ hasUI: true });
-		await invokeTurnEnd(pi, ctx);
-		await invokeTurnEnd(pi, ctx);
-		expect(ctx.notifications).toHaveLength(1);
-		expect(ctx.notifications[0]).toContain("invalid");
-	});
 });

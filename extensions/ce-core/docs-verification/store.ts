@@ -42,22 +42,6 @@ const PACKAGE_KINDS = new Set<PackageFact["kind"]>([
 	"ambiguous",
 ]);
 
-/** `PEDSTACK_DOCS_VERIFICATION`: missing/empty/invalid resolves to `shadow`. */
-export function resolveDocsVerificationMode(
-	env: Record<string, string | undefined>,
-): DocsVerificationMode {
-	const value = env.PEDSTACK_DOCS_VERIFICATION;
-	if (value === "off") return "off";
-	if (value === "enforce") return "enforce";
-	return "shadow";
-}
-
-export function resolveDocsVerificationFailClosed(
-	env: Record<string, string | undefined>,
-): boolean {
-	return env.PEDSTACK_DOCS_VERIFICATION_FAILCLOSED === "1";
-}
-
 /** Slugified plan basename; a traversal attempt cannot escape the repo root. */
 export function planSlugFromPath(planPath: string): string {
 	const base = path.basename(planPath.replace(/\\/g, "/")).replace(/\.md$/i, "");

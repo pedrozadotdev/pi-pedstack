@@ -34,6 +34,8 @@ export interface ReviewFindingsFile {
 	count?: number;
 	/** Sidecar `generatedAt` when valid, else the file mtime (Unit 5). */
 	observedAt?: string;
+	completed?: boolean;
+	reviewedGate?: { updatedAt: string; artifactsHash: string };
 }
 
 export interface CheckpointRecord {
@@ -147,7 +149,7 @@ export interface GateUsage {
 
 /** One persisted evaluation (record schema in the plan). */
 export interface StageGateAttempt {
-	schema: 1 | 2;
+	schema: 1 | 2 | 3;
 	stage: StageKey;
 	verdict: StageGateVerdict;
 	enforcing: boolean;
@@ -162,6 +164,8 @@ export interface StageGateAttempt {
 	warnings: string[];
 	artifacts: string[];
 	artifactsHash: string;
+	/** Schema-3: preserve whether the gate used an explicit validated path hint. */
+	artifactSelection?: "hint" | "auto";
 	attempt: number;
 	updatedAt: string;
 	/** Schema-2 addition: the composed overengineering signal (absent for schema 1). */

@@ -12,7 +12,7 @@
 import path from "node:path";
 import type { PipelineStageKey } from "../commands/pedstack";
 
-/** The 11 path classes used by classification and the capability matrix. */
+/** The 12 path classes used by classification and the capability matrix. */
 export type PathClass =
 	| "brainstorm"
 	| "plan"
@@ -23,6 +23,7 @@ export type PathClass =
 	| "source"
 	| "config"
 	| "deps"
+	| "stage-report"
 	| "workflow-state"
 	| "unknown";
 
@@ -37,6 +38,7 @@ export const ALL_PATH_CLASSES: readonly PathClass[] = [
 	"source",
 	"config",
 	"deps",
+	"stage-report",
 	"workflow-state",
 	"unknown",
 ];
@@ -81,8 +83,9 @@ const SOURCE_EXTENSION = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 const TEST_BASENAME = /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/;
 
 /**
- * Writable classes per stage. `unknown` is always writable (fail-open);
- * `workflow-state` is never writable in any stage.
+ * Writable ordinary classes per stage. `unknown` is always writable (fail-open);
+ * `workflow-state` is never writable; `stage-report` is conditionally writable
+ * only for the matching active stage and is handled in `evaluateWrite`.
  */
 export const STAGE_CAPABILITIES: Record<
 	PipelineStageKey,
@@ -110,29 +113,48 @@ export const STAGE_CAPABILITIES: Record<
  * and paths that resolve outside `repoRoot` or to the root itself classify as
  * `unknown`. Matching is case-sensitive; no `realpath`/`fs.stat` is performed.
  */
-export function classifyPath(repoRoot: string, rawPath: string): PathClass {
-	if (typeof rawPath !== "string" || rawPath.length === 0) return "unknown";
-
-	let rel: string;
+function normalizeRepoRelativePath(
+	repoRoot: string,
+	rawPath: string,
+): string | null {
+	if (typeof rawPath !== "string" || rawPath.length === 0) return null;
 	try {
 		const normalized = rawPath.replace(/\\/g, "/");
 		const resolved = path.resolve(repoRoot, normalized);
-		rel = path.relative(repoRoot, resolved).replace(/\\/g, "/");
+		const rel = path.relative(repoRoot, resolved).replace(/\\/g, "/");
+		if (rel === "" || rel.startsWith("../") || path.isAbsolute(rel)) {
+			return null;
+		}
+		return rel;
 	} catch {
-		return "unknown";
+		return null;
 	}
+}
 
-	if (rel === "" || rel.startsWith("../") || path.isAbsolute(rel)) {
-		return "unknown";
-	}
-
-	return classifyRelative(rel);
+export function classifyPath(repoRoot: string, rawPath: string): PathClass {
+	const rel = normalizeRepoRelativePath(repoRoot, rawPath);
+	return rel === null ? "unknown" : classifyRelative(rel);
 }
 
 /** Ordered first-match classification of a normalized repo-relative path. */
 function classifyRelative(rel: string): PathClass {
-	// Invariant first: workflow state is never writable, so it must not be
-	// shadowed by basename rules (package.json → config, *.test.ts → tests).
+	// Stage reports are the only agent-writable exception under .context. The
+	// active-stage check happens in evaluateWrite; every other .context path
+	// remains extension-owned workflow state.
+	const stageReportPrefix = ".context/compound-engineering/stage-reports/";
+	if (rel.startsWith(stageReportPrefix)) {
+		const filename = rel.slice(stageReportPrefix.length);
+		if (
+			!filename.includes("/") &&
+			filename.endsWith(".md") &&
+			STAGE_KEY_SET.has(filename.slice(0, -3))
+		) {
+			return "stage-report";
+		}
+	}
+
+	// Workflow state must not be shadowed by basename rules
+	// (package.json → config, *.test.ts → tests).
 	if (rel === ".context" || rel.startsWith(".context/")) {
 		return "workflow-state";
 	}
@@ -170,10 +192,10 @@ export interface WriteVerdict {
 /**
  * Evaluate a `write`/`edit` target against `stage`.
  *
- * Order: `unknown` class always allows; `workflow-state` always blocks; an
- * absent/unknown stage fails open for everything except `workflow-state`;
- * otherwise the write is allowed iff the stage's capability set contains the
- * path class.
+ * Order: `unknown` class always allows; a canonical stage report is writable
+ * only by its matching active stage; all other `workflow-state` blocks; an
+ * absent/unknown stage fails open for ordinary classes; otherwise the write is
+ * allowed iff the stage's capability set contains the path class.
  */
 export function evaluateWrite(
 	stage: string | null | undefined,
@@ -184,6 +206,21 @@ export function evaluateWrite(
 	const stageKey = resolveStageKey(stage);
 
 	if (pathClass === "unknown") return { allow: true, pathClass };
+
+	if (pathClass === "stage-report") {
+		const rel = normalizeRepoRelativePath(repoRoot, rawPath);
+		const expected = stageKey
+			? `.context/compound-engineering/stage-reports/${stageKey}.md`
+			: null;
+		if (expected !== null && rel === expected) {
+			return { allow: true, pathClass };
+		}
+		return {
+			allow: false,
+			pathClass,
+			reason: stageReportReason(stageKey, rawPath, expected),
+		};
+	}
 
 	if (pathClass === "workflow-state") {
 		return {
@@ -226,7 +263,27 @@ function blockedReason(
 	return (
 		`Pedstack stage guard blocked this write: stage "${stage}" may not write ` +
 		`path "${rawPath}" (class: ${pathClass}). Writable classes for ${stage}: ` +
-		`${writable}. Set PEDSTACK_DISABLE_GUARD=1 to bypass.`
+		`${writable}. Set "features.stageGuard.disabled": true in config.json to bypass.`
+	);
+}
+
+/** Deterministic block reason for a non-own or inactive stage report. */
+function stageReportReason(
+	stage: PipelineStageKey | null,
+	rawPath: string,
+	expected: string | null,
+): string {
+	if (stage && expected) {
+		return (
+			`Pedstack stage guard blocked this write: stage "${stage}" may write only ` +
+			`its own canonical stage report "${expected}", not "${rawPath}". ` +
+			`Other .context workflow state remains extension-managed.`
+		);
+	}
+	return (
+		`Pedstack stage guard blocked this write: canonical stage report "${rawPath}" ` +
+		`requires a matching active Pedstack stage. Other .context workflow state ` +
+		`remains extension-managed.`
 	);
 }
 
@@ -240,6 +297,6 @@ function workflowStateReason(
 		`Pedstack stage guard blocked this write: ${stageLabel} may never write ` +
 		`workflow state path "${rawPath}" (class: workflow-state). Workflow ` +
 		`state is managed by extension tools, not write/edit. ` +
-		`Set PEDSTACK_DISABLE_GUARD=1 to bypass.`
+		`Set "features.stageGuard.disabled": true in config.json to bypass.`
 	);
 }

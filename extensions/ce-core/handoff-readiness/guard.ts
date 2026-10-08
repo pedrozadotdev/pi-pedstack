@@ -114,7 +114,7 @@ function degradedResult(
 			allowed: false,
 			blocker:
 				`Cannot save cross-stage handoff: handoff readiness is degraded ` +
-				`(${message}) and PEDSTACK_HANDOFF_READINESS_FAILCLOSED=1.`,
+				`(${message}) and features.handoffReadiness.failClosed=true.`,
 		};
 	}
 	return {

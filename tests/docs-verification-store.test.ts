@@ -16,8 +16,6 @@ import {
 	isUnitFresh,
 	planSlugFromPath,
 	readDocsRecord,
-	resolveDocsVerificationFailClosed,
-	resolveDocsVerificationMode,
 	writeDocsRecord,
 } from "../extensions/ce-core/docs-verification/store.js";
 import type {
@@ -95,37 +93,6 @@ afterEach(async () => {
 	await fs.rm(root, { recursive: true, force: true });
 });
 
-describe("Unit 4 — mode and fail-closed", () => {
-	test("invalid and missing modes resolve to shadow", () => {
-		expect(resolveDocsVerificationMode({})).toBe("shadow");
-		expect(resolveDocsVerificationMode({ PEDSTACK_DOCS_VERIFICATION: "" })).toBe(
-			"shadow",
-		);
-		expect(
-			resolveDocsVerificationMode({ PEDSTACK_DOCS_VERIFICATION: "bogus" }),
-		).toBe("shadow");
-		expect(resolveDocsVerificationMode({ PEDSTACK_DOCS_VERIFICATION: "off" })).toBe(
-			"off",
-		);
-		expect(
-			resolveDocsVerificationMode({ PEDSTACK_DOCS_VERIFICATION: "enforce" }),
-		).toBe("enforce");
-	});
-
-	test("fail-closed is true only for the literal 1", () => {
-		expect(resolveDocsVerificationFailClosed({})).toBe(false);
-		expect(
-			resolveDocsVerificationFailClosed({
-				PEDSTACK_DOCS_VERIFICATION_FAILCLOSED: "true",
-			}),
-		).toBe(false);
-		expect(
-			resolveDocsVerificationFailClosed({
-				PEDSTACK_DOCS_VERIFICATION_FAILCLOSED: "1",
-			}),
-		).toBe(true);
-	});
-});
 
 describe("Unit 4 — paths and round trip", () => {
 	test("derives a stable slug from the plan basename", () => {

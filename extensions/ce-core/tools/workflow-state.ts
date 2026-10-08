@@ -17,6 +17,7 @@ export interface WorkflowContextState {
   recentlyAccessedFiles: string[]
   blocker?: string
   verification?: string
+  artifacts: Record<string, string>
   currentTruth: string[]
   invalidatedAssumptions: string[]
   openDecisions: string[]
@@ -89,6 +90,7 @@ function emptyContext(): WorkflowContextState {
     found: false,
     activeFiles: [],
     recentlyAccessedFiles: [],
+    artifacts: {},
     currentTruth: [],
     invalidatedAssumptions: [],
     openDecisions: [],
@@ -98,6 +100,15 @@ function emptyContext(): WorkflowContextState {
 
 function toStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+}
+
+function toStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const result: Record<string, string> = {}
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry === "string") result[key] = entry
+  }
+  return result
 }
 
 export function readContextState(repoRoot: string): WorkflowContextState {
@@ -118,6 +129,7 @@ export function readContextState(repoRoot: string): WorkflowContextState {
       recentlyAccessedFiles: toStringArray(state.recentlyAccessedFiles),
       blocker: typeof state.blocker === "string" ? state.blocker : undefined,
       verification: typeof state.verification === "string" ? state.verification : undefined,
+      artifacts: toStringRecord(state.artifacts),
       currentTruth: toStringArray(state.currentTruth),
       invalidatedAssumptions: toStringArray(state.invalidatedAssumptions),
       openDecisions: toStringArray(state.openDecisions),

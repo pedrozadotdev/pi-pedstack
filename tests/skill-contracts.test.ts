@@ -269,7 +269,7 @@ describe("skill package contracts", () => {
 		expect(handoff).toContain("04-review");
 	});
 
-	test("04-review detects scope, reads plans and solutions, uses review_router and autofix", () => {
+	test("04-review stays review-only and routes findings back to work", () => {
 		const content = readFileSync(
 			path.join(repoRoot, "skills", "04-review", "SKILL.md"),
 			"utf8",
@@ -314,7 +314,10 @@ describe("skill package contracts", () => {
 		expect(content).toContain("docs/reviews");
 		expect(content).toContain("structured findings");
 		expect(content).toContain("review_router");
-		expect(content).toContain("autofix");
+		expect(content).toContain("Review Outcome");
+		expect(content).toContain('nextStage: "03-work"');
+		expect(content).toContain('nextStage: "05-learn"');
+		expect(content).toContain("artifacts.reviewFindings");
 		expect(content).toContain("YAGNI");
 		expect(content).toContain("technical evaluation");
 		// Must use the shared solution_search engine, not hand-ranked grep
@@ -330,8 +333,11 @@ describe("skill package contracts", () => {
 		expect(reviewerSelection).toContain("review_router");
 		expect(reviewerSelection).toContain("correctness-reviewer");
 		expect(reviewerSelection).toContain("security-reviewer");
-		expect(handoff).toContain("/ped-debug");
-		expect(handoff).toContain("autofix");
+		expect(handoff).toContain("03-work");
+		expect(handoff).toContain("05-learn");
+		expect(handoff).toContain("Review Outcome");
+		expect(handoff).toContain("review-only");
+		expect(handoff).toContain("artifacts.reviewFindings");
 	});
 
 	test("05-learn solution-search-strategy defines tool-based overlap retrieval", () => {
@@ -383,13 +389,13 @@ describe("stage gate skill wiring (Unit 8)", () => {
 		"06-docsync": "skills/06-docsync/SKILL.md",
 	};
 
-	test("pipeline-config documents stage_gate and PEDSTACK_STAGE_GATE", () => {
+	test("pipeline-config documents stage_gate and config.json mode", () => {
 		const content = readFileSync(
 			path.join(repoRoot, "skills", "references", "pipeline-config.md"),
 			"utf8",
 		);
 		expect(content).toContain("stage_gate");
-		expect(content).toContain("PEDSTACK_STAGE_GATE");
+		expect(content).toContain("features.stageGate.mode");
 	});
 
 	test("every stage doc runs stage_gate before its completion save", () => {
@@ -442,12 +448,14 @@ describe("stage gate skill wiring (Unit 8)", () => {
 		}
 	});
 
-	test("work/debug/docsync docs reference their stage report path", () => {
+	test("work/debug/docsync docs reference their canonical stage report path", () => {
 		for (const stage of ["03-work", "04-5-debug", "06-docsync"]) {
 			const content = readFileSync(path.join(repoRoot, stageDocs[stage]), "utf8");
-			expect({ stage, hasReports: content.includes("stage-reports/") }).toEqual({
+			const expected =
+				`.context/compound-engineering/stage-reports/${stage}.md`;
+			expect({ stage, hasCanonicalReport: content.includes(expected) }).toEqual({
 				stage,
-				hasReports: true,
+				hasCanonicalReport: true,
 			});
 		}
 	});
@@ -481,10 +489,10 @@ describe("02-plan strict review reference (Unit 7)", () => {
 describe("docs-verification wiring (Unit 9)", () => {
 	const read = (rel: string): string => readFileSync(path.join(repoRoot, rel), "utf8");
 
-	test("every edited doc names the PEDSTACK_DOCS_VERIFICATION mode switch", () => {
-		for (const rel of ["AGENTS.md", "README.md", "CONTEXT.md"]) {
+	test("every edited doc names the docs-verification config mode", () => {
+		for (const rel of ["AGENTS.md", "docs/ARCHITECTURE.md", "CONTEXT.md"]) {
 			const content = read(rel);
-			expect({ rel, has: content.includes("PEDSTACK_DOCS_VERIFICATION") }).toEqual({
+			expect({ rel, has: content.includes("features.docsVerification.mode") }).toEqual({
 				rel,
 				has: true,
 			});
@@ -492,11 +500,11 @@ describe("docs-verification wiring (Unit 9)", () => {
 	});
 
 	test("AGENTS.md and README.md document the fail-closed default", () => {
-		for (const rel of ["AGENTS.md", "README.md"]) {
+		for (const rel of ["AGENTS.md", "docs/ARCHITECTURE.md"]) {
 			const content = read(rel);
 			expect({
 				rel,
-				has: content.includes("PEDSTACK_DOCS_VERIFICATION_FAILCLOSED"),
+				has: content.includes("features.docsVerification.failClosed"),
 			}).toEqual({ rel, has: true });
 		}
 	});
@@ -516,7 +524,7 @@ describe("docs-verification wiring (Unit 9)", () => {
 	});
 
 	test("AGENTS.md and README.md document the obligation lifecycle", () => {
-		for (const rel of ["AGENTS.md", "README.md"]) {
+		for (const rel of ["AGENTS.md", "docs/ARCHITECTURE.md"]) {
 			const content = read(rel);
 			expect({
 				rel,

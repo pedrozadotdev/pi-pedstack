@@ -24,10 +24,10 @@ describe("Unit 7 — CONTEXT.md vocabulary", () => {
 });
 
 describe("Unit 7 — README operator surface", () => {
-	test("documents the readiness mode and fail-closed env vars", () => {
+	test("documents the readiness mode and fail-closed config keys", () => {
 		const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
-		expect(readme).toContain("PEDSTACK_HANDOFF_READINESS");
-		expect(readme).toContain("off | shadow | enforce");
-		expect(readme).toContain("PEDSTACK_HANDOFF_READINESS_FAILCLOSED");
+		expect(readme).toContain("features.handoffReadiness");
+		expect(readme).toContain('"off" | "shadow" | "enforce"');
+		expect(readme).toContain('"handoffReadiness": { "mode": "enforce", "failClosed": false }');
 	});
 });

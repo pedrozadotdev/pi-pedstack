@@ -24,6 +24,8 @@ import { resetPedstackState } from "../extensions/ce-core/commands/pedstack.js";
 import ceCoreExtension, {
 	__setDriftJevFactory,
 } from "../extensions/ce-core/index.js";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
+import { testFeatures } from "./helpers/feature-config.js";
 
 const SESSION = "sid-wiring";
 const STAGE = "03-work";
@@ -177,17 +179,17 @@ async function readLog(): Promise<string> {
 
 beforeEach(async () => {
 	root = await fs.mkdtemp(path.join(os.tmpdir(), "drift-wiring-"));
-	process.env.PEDSTACK_DRIFT_GUARD = "shadow";
-	// Keep the deterministic stage gate out of the way so the drift block is
-	// the code under test.
-	process.env.PEDSTACK_STAGE_GATE = "off";
+	setStartupFeaturesForTests(
+		testFeatures({
+			stageGate: { mode: "off" },
+			driftGuard: { mode: "shadow", failClosed: false },
+		}),
+	);
 	setActiveStage(STAGE);
 });
 
 afterEach(async () => {
-	delete process.env.PEDSTACK_DRIFT_GUARD;
-	delete process.env.PEDSTACK_DRIFT_GUARD_FAILCLOSED;
-	delete process.env.PEDSTACK_STAGE_GATE;
+	setStartupFeaturesForTests(null);
 	__setDriftJevFactory(null);
 	clearActiveStage();
 	resetPedstackState();
@@ -260,7 +262,12 @@ describe("turn_end wiring", () => {
 
 describe("one-shot correction", () => {
 	test("enforce mild injects exactly once and clears", async () => {
-		process.env.PEDSTACK_DRIFT_GUARD = "enforce";
+		setStartupFeaturesForTests(
+			testFeatures({
+				stageGate: { mode: "off" },
+				driftGuard: { mode: "enforce", failClosed: false },
+			}),
+		);
 		const pi = makePi();
 		__setDriftJevFactory(() =>
 			createFakeJevRuntime({ handler: answering({ in_stage_scope: 0.1 }) }),
@@ -291,7 +298,12 @@ describe("one-shot correction", () => {
 
 describe("session lifecycle", () => {
 	test("session_shutdown clears in-memory state but leaves records", async () => {
-		process.env.PEDSTACK_DRIFT_GUARD = "enforce";
+		setStartupFeaturesForTests(
+			testFeatures({
+				stageGate: { mode: "off" },
+				driftGuard: { mode: "enforce", failClosed: false },
+			}),
+		);
 		const pi = makePi();
 		__setDriftJevFactory(() =>
 			createFakeJevRuntime({ handler: answering({ forbidden_work: 0.9 }) }),
@@ -315,24 +327,16 @@ describe("session lifecycle", () => {
 		expect(existsSync(recordPath)).toBe(true);
 	});
 
-	test("invalid PEDSTACK_DRIFT_GUARD warns once and stays shadow", async () => {
-		process.env.PEDSTACK_DRIFT_GUARD = "wat";
-		const pi = makePi();
-		__setDriftJevFactory(() => createFakeJevRuntime({ handler: answering() }));
-		register(pi);
-		const ctx = makeCtx({ hasUI: true });
-
-		await invokeTurnEnd(pi, turnEvent(), ctx);
-		await invokeTurnEnd(pi, turnEvent(), ctx);
-		expect(ctx.notifications).toHaveLength(1);
-		expect(ctx.notifications[0]).toContain("invalid");
-		expect((await readLog()).trim().split("\n")[0]).toContain("shadow");
-	});
 });
 
 describe("handoff tool receives drift options", () => {
 	test("an unresolved strong record blocks the registered save", async () => {
-		process.env.PEDSTACK_DRIFT_GUARD = "enforce";
+		setStartupFeaturesForTests(
+			testFeatures({
+				stageGate: { mode: "off" },
+				driftGuard: { mode: "enforce", failClosed: false },
+			}),
+		);
 		const pi = makePi();
 		__setDriftJevFactory(() => createFakeJevRuntime({ handler: answering() }));
 		register(pi);

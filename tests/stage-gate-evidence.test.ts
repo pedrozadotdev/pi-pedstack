@@ -119,6 +119,15 @@ describe("stage gate evidence (Unit 2)", () => {
 		expect(byTie.paths).toEqual(["docs/plans/older.txt"]);
 	});
 
+	test("docsync does not score a stale work report when canonical report is missing", async () => {
+		await write(`${CONTEXT}/stage-reports/03-work.md`, "old work report");
+		const missing = await resolveArtifactPaths(root, "06-docsync");
+		expect(missing.paths).toEqual([]);
+		expect(missing.warnings.join(" ")).toContain("missing canonical");
+		await write(`${CONTEXT}/stage-reports/06-docsync.md`, "README updated; AGENTS no change; Exit criteria met");
+		expect((await resolveArtifactPaths(root, "06-docsync")).paths).toEqual([`${CONTEXT}/stage-reports/06-docsync.md`]);
+	});
+
 	test("empty stage dir resolves to an empty set", async () => {
 		await fs.mkdir(path.join(root, "docs/plans"), { recursive: true });
 		const resolved = await resolveArtifactPaths(root, "02-plan");

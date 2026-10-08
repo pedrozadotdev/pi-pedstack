@@ -13,8 +13,8 @@ describe("Unit 7 — AGENTS.md", () => {
 	test("names the module, mode, and live switches", () => {
 		const agents = read("AGENTS.md");
 		expect(agents).toContain("extensions/ce-core/compaction-guard/");
-		expect(agents).toContain("PEDSTACK_COMPACTION_GUARD");
-		expect(agents).toContain("PEDSTACK_COMPACTION_GUARD_LIVE");
+		expect(agents).toContain("features.compactionGuard.mode");
+		expect(agents).toContain("features.compactionGuard.live");
 	});
 
 	test("documents the fail-open and shadow-first defaults", () => {
@@ -44,18 +44,18 @@ describe("Unit 7 — CONTEXT.md vocabulary", () => {
 
 describe("Unit 7 — README operator surface", () => {
 	test("documents the mode, live opt-in, log, and calibration gate", () => {
-		const readme = read("README.md");
-		expect(readme).toContain("PEDSTACK_COMPACTION_GUARD");
-		expect(readme).toContain("PEDSTACK_COMPACTION_GUARD_LIVE");
-		expect(readme).toContain("off | shadow | enforce");
+		const readme = read("docs/ARCHITECTURE.md");
+		expect(readme).toContain("features.compactionGuard.mode");
+		expect(readme).toContain("features.compactionGuard.live");
+		expect(readme).toContain('"off" | "shadow" | "enforce"');
 		expect(readme).toContain("compaction-guard.jsonl");
 		expect(readme).toContain("calibrate");
 	});
 
 	test("does not claim a fail-closed knob", () => {
-		expect(read("README.md")).not.toContain("PEDSTACK_COMPACTION_GUARD_FAILCLOSED");
+		expect(read("README.md")).not.toContain("features.compactionGuard.failClosed");
 		expect(read("AGENTS.md")).not.toContain(
-			"PEDSTACK_COMPACTION_GUARD_FAILCLOSED",
+			"features.compactionGuard.failClosed",
 		);
 	});
 });

@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, mock } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
 import * as path from "node:path";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -80,6 +80,8 @@ import {
 import { resetPedstackState } from "../extensions/ce-core/commands/pedstack";
 import ceCoreExtension from "../extensions/ce-core/index";
 import { createMultiReviewerTool } from "../extensions/ce-core/tools/multi-reviewer";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
+import { testFeatures } from "./helpers/feature-config";
 
 const PLAN_FIXTURE = `# Plan: fixture
 
@@ -97,7 +99,22 @@ ${'Detailed problem context. '.repeat(40)}
 `;
 
 describe("ce-core extension runtime registration", () => {
-	test("registers 19 workflow control tools (no subagent tools)", () => {
+	afterEach(() => {
+		setStartupFeaturesForTests(null);
+	});
+
+	function disableHandoffPolicyForWrapperContract(): void {
+		setStartupFeaturesForTests(
+			testFeatures({
+				stageGate: { mode: "off" },
+				handoffReadiness: { mode: "off" },
+				docsVerification: { mode: "off" },
+				driftGuard: { mode: "off" },
+			}),
+		);
+	}
+
+	test("registers 20 workflow control tools (no subagent tools)", () => {
 		const registeredNames: string[] = [];
 		const eventHandlers = new Map<string, any[]>();
 		const pi = {
@@ -118,6 +135,7 @@ describe("ce-core extension runtime registration", () => {
 
 		expect(registeredNames).toEqual([
 			"artifact_helper",
+			"stage_report",
 			"workflow_state",
 			"review_router",
 			"session_checkpoint",
@@ -245,6 +263,7 @@ describe("ce-core extension runtime registration", () => {
 	});
 
 	test("context_handoff wrapper passes structured runtime-memory fields through", async () => {
+		disableHandoffPolicyForWrapperContract();
 		const definitions = new Map<string, any>();
 		const pi = {
 			registerTool(definition: { name: string }) {
@@ -290,6 +309,7 @@ describe("ce-core extension runtime registration", () => {
 	});
 
 	test("context_handoff wrapper supports validate operation with probes and checks", async () => {
+		disableHandoffPolicyForWrapperContract();
 		const definitions = new Map<string, any>();
 		const pi = {
 			registerTool(definition: { name: string }) {
@@ -719,11 +739,112 @@ describe("auto-advance tool_result wiring", () => {
 		ceCoreExtension(pi as never);
 
 		expect(registeredNames).toContain("stage_gate");
+		expect(registeredNames).toContain("stage_report");
 		expect(registeredNames).toContain("solution_search");
 		expect(registeredNames).toContain("docs_verification");
 		expect(registeredNames).toContain("semantic_read");
 		expect(registeredNames).toContain("semantic_scout");
-		expect(registeredNames.length).toBe(19);
+		expect(registeredNames.length).toBe(20);
+	});
+
+	test("enforced stage escalation auto-reloads the same stage under SOTA after agent_end", async () => {
+		const repoRoot = await mkdtemp(path.join(os.tmpdir(), "pi-ce-sota-reload-"));
+		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+			JSON.stringify({
+				models: {
+					default: { model: "openai/small" },
+					sota: { model: "openai/strong" },
+				},
+				routing: { shadow: false },
+			}),
+		);
+		const {
+			pi, eventHandlers, registeredCommands, sendUserMessageCalls,
+			appendEntryCalls, setModelCalls, makeEventCtx, makeCommandCtx,
+		} = createPiMock();
+		ceCoreExtension(pi as never);
+		const { ctx, navigateCalls } = makeCommandCtx(repoRoot);
+		try {
+			await registeredCommands.get("ped-start").handler("Build a CLI", ctx);
+			sendUserMessageCalls.length = 0;
+			appendEntryCalls.length = 0;
+			setModelCalls.length = 0;
+			const gateDir = path.join(repoRoot, ".context", "compound-engineering", "stage-gates");
+			await mkdir(gateDir, { recursive: true });
+			await writeFile(path.join(gateDir, "01-brainstorm.json"), JSON.stringify({
+				stage: "01-brainstorm",
+				attempts: [{
+					stage: "01-brainstorm", verdict: "escalate",
+					review: { action: "escalate", reviewerCount: 0, reason: "gate" },
+					updatedAt: new Date().toISOString(),
+				}],
+			}));
+			const gateHandler = eventHandlers.get("tool_result")![4];
+			const gateEvent = {
+				toolName: "stage_gate",
+				isError: false,
+				details: { stage: "01-brainstorm", action: "escalate", enforcing: true },
+			};
+			await gateHandler(gateEvent, makeEventCtx({
+				cwd: repoRoot, model: { provider: "openai", id: "small" },
+			}));
+			expect(sendUserMessageCalls).toHaveLength(0);
+			await eventHandlers.get("agent_end")![0](
+				{ type: "agent_end" }, makeEventCtx({ cwd: repoRoot }),
+			);
+			await settleAutoAdvance();
+			expect(sendUserMessageCalls).toHaveLength(1);
+			expect(sendUserMessageCalls[0].message).toContain("SOTA escalation");
+			expect(appendEntryCalls.at(-1)?.data.stage).toBe("01-brainstorm");
+			expect(appendEntryCalls.at(-1)?.type).toBe("ped-stage-reload");
+			expect(setModelCalls).toContainEqual({ provider: "openai", id: "strong" });
+			expect(navigateCalls).toHaveLength(2);
+			await gateHandler(gateEvent, makeEventCtx({
+				cwd: repoRoot, model: { provider: "openai", id: "small" },
+			}));
+			await eventHandlers.get("agent_end")![0](
+				{ type: "agent_end" }, makeEventCtx({ cwd: repoRoot }),
+			);
+			await settleAutoAdvance();
+			expect(sendUserMessageCalls).toHaveLength(1);
+		} finally {
+			resetPedstackState();
+		}
+	});
+
+	test("shadow-mode gate escalation does not auto-reload", async () => {
+		const repoRoot = await mkdtemp(path.join(os.tmpdir(), "pi-ce-shadow-reload-"));
+		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+			JSON.stringify({
+				models: { default: { model: "openai/small" }, sota: { model: "openai/strong" } },
+				routing: { shadow: true },
+			}),
+		);
+		const { pi, eventHandlers, registeredCommands, sendUserMessageCalls, makeEventCtx, makeCommandCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		const { ctx } = makeCommandCtx(repoRoot);
+		try {
+			await registeredCommands.get("ped-start").handler("Build a CLI", ctx);
+			sendUserMessageCalls.length = 0;
+			await eventHandlers.get("tool_result")![4]({
+				toolName: "stage_gate",
+				isError: false,
+				details: { stage: "01-brainstorm", action: "escalate", enforcing: true },
+			}, makeEventCtx({
+				cwd: repoRoot, model: { provider: "openai", id: "small" },
+			}));
+			await eventHandlers.get("agent_end")![0](
+				{ type: "agent_end" }, makeEventCtx({ cwd: repoRoot }),
+			);
+			await settleAutoAdvance();
+			expect(sendUserMessageCalls).toHaveLength(0);
+		} finally {
+			resetPedstackState();
+		}
 	});
 
 	test("does not queue for non-context_handoff tool", async () => {

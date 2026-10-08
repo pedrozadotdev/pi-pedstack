@@ -6,8 +6,9 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 ## Workflow
 
 - **Stage** — one step of the strict pipeline: `01-brainstorm` → `02-plan` →
-  `03-work` → `04-review` → `05-learn` → `06-docsync`, plus on-demand
-  `04-5-debug` (entered via `/ped-debug`). Stages are never skipped or combined.
+  `03-work` → `04-review`. A review with confirmed findings routes back to `03-work`
+  and must be reviewed again; only a clean review continues to `05-learn` → `06-docsync`.
+  `04-5-debug` remains on-demand via `/ped-debug`. Unresolved findings are never skipped.
 - **Capability matrix** — the pure TypeScript table (`extensions/ce-core/utils/capability-matrix.ts`)
   that classifies a repo-relative path and decides whether the active stage may write it.
 - **Artifact** — a dated workflow document under `docs/` (`brainstorms/`, `plans/`,
@@ -55,7 +56,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 ## Model roles & routing (#6)
 
 - **Model role** — one of `default` (cheap normal-execution workhorse), `review`
-  (independent stronger reviewer), or `sota` (highest-capability escalation), declared once
+  (isolated reviewer; may reuse the SOTA model id), or `sota` (highest-capability escalation), declared once
   in the optional top-level `models` block.
 - **Execution role** — the role actually applied to a stage turn: `default | sota` only.
   `review` is never an execution target.
@@ -99,12 +100,11 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Review budget** — `MAX_INDEPENDENT_REVIEW = 1`: at most one independent review per stage
   loop, counted from the retained prior attempts whose verdict is `review` since the newest
   `accept`. A second `review` maps to `escalate`.
-- **Independent reviewer** — a reviewer whose model differs from every execution-model writer
-  (`models.default`, `models.sota`, and the per-stage `config[<stage>].model`; the union
-  enumerated by `collectExecutionModels`). Explicit `reviewers[]` entries that collide are
-  dropped with a warning (`filterIndependentReviewers`); a stage with no surviving
-  independent reviewer maps `review → escalate` with a reason, so an unconfigured operator
-  cannot deadlock.
+- **Independent reviewer** — an isolated reviewer invocation: `multi_reviewer` runs in a
+  separate no-session process with a reviewer-specific prompt. The review model may reuse the
+  same model id as `models.sota`, `models.default`, or a per-stage execution override;
+  model-id equality does not make the reviewer unavailable. A stage with no configured reviewer
+  at all still maps `review → escalate` with a reason, so an unconfigured operator cannot deadlock.
 - **Findings freshness** — a findings sidecar satisfies a `review` demand only when its
   `observedAt` (`generatedAt`, else the file mtime) is on or after the demanding gate
   record's `updatedAt`. A sidecar predating the demand is stale and contributes no review
@@ -141,8 +141,8 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   came from: `http`, `gh-issue`, `gh-pr`, `gh-api`, or `external-path`. Anything else
   classifies as `null` and is never screened.
 - **Untrusted source** — a provenance kind the injection screen treats as external input.
-- **Screen mode** — `off | shadow | enforce`, resolved from `PEDSTACK_INJECTION_SCREEN`
-  once at init; default and invalid value resolve to `shadow`.
+- **Screen mode** — `off | shadow | enforce`, resolved from `features.injectionScreen.mode`
+  once at init; omitted values default to `enforce`; invalid values are rejected by config validation.
 - **Flagged / clean / degraded** — the three screen outcomes. `degraded` is the
   fail-open result produced when Jev is unavailable; it never adds a warning.
 - **Untrusted wrapper** — the fixed deterministic delimiter + warning prefix applied
@@ -172,7 +172,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Degraded** — the fail-open source recorded when Jev is unavailable or returns an
   unusable answer set; non-blocking unless `FAILCLOSED` is set in `enforce`.
 - **Shadow mode** — compute, record, and log the readiness verdict without blocking
-  (the default). `PEDSTACK_HANDOFF_READINESS = off | shadow | enforce`.
+  when explicitly selected. `features.handoffReadiness.mode = "off" | "shadow" | "enforce"` defaults to `enforce`.
 
 ## Docs verification (#15)
 
@@ -198,9 +198,9 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   backticked token is only a candidate package; it is promoted to a fact by intersection with the
   nearest manifest, never by a regex allowlist alone. A declared `Files` path is contained
   (`canonicalRel`/`isInside`) before any `exists`/`readFile`/hash.
-- **Mode** — `PEDSTACK_DOCS_VERIFICATION = off | shadow | enforce` (default `shadow`);
-  `PEDSTACK_DOCS_VERIFICATION_FAILCLOSED=1` opts into blocking in `enforce` on a degraded
-  semantic layer (default `0`, fail-open).
+- **Mode** — `features.docsVerification.mode = "off" | "shadow" | "enforce"` (default `enforce`);
+  `features.docsVerification.failClosed = true` opts into blocking in `enforce` on a degraded
+  semantic layer (default `false`, fail-open).
 
 ## Stage drift (#8)
 
@@ -232,8 +232,8 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 - **Turn signature** — the hash of the compact turn state (stage, mandate, actions,
   excerpt). An unchanged signature reuses the last judged outcome without a second Jev
   call (`source: "deterministic"`, reason `unchanged turn`).
-- **Drift mode** — `off | shadow | enforce`, resolved from `PEDSTACK_DRIFT_GUARD` once
-  at init; default and any invalid value resolve to `shadow`. Only `enforce` blocks or
+- **Drift mode** — `off | shadow | enforce`, resolved from `features.driftGuard.mode` once
+  at init; omitted values default to `enforce`; invalid values are rejected by config validation. Only `enforce` blocks or
   injects.
 - **Drift record** — the latest **state** (not a hash-fresh judgment) written by a Jev
   verdict for one stage, at `.context/compound-engineering/drift/<stage>.json`. Fresh
@@ -247,7 +247,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   `thresholdsVersion`, `updatedAt`). It is distinct from the **drift record** (verdict
   state) and the shadow log, and uses the same **6 h TTL** through the one shared
   `isDriftStatusFresh` predicate; a corrupt or unreadable status is absent (fail-open).
-- **Narrowed fail-closed** — `PEDSTACK_DRIFT_GUARD_FAILCLOSED=1` blocks a cross-stage
+- **Narrowed fail-closed** — `features.driftGuard.failClosed = true` blocks a cross-stage
   save in `enforce` only when the status is fresh **and** `degraded === true`. A
   never-judged stage, a session/version mismatch, a TTL-expired status, an empty
   (`"unknown-session"`) key, or a non-degraded last evaluation does **not** block.
@@ -299,8 +299,8 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   consulted by `context_handoff save` when no explicit `contextHealth` is supplied; an
   unexplained `null` never claims `good`.
 - **Compaction mode** — `off | shadow | enforce`, resolved from
-  `PEDSTACK_COMPACTION_GUARD` once at init. `shadow` is deterministic-only unless
-  `PEDSTACK_COMPACTION_GUARD_LIVE=1`; only `enforce` returns `{ cancel: true }`. There is
+  `features.compactionGuard.mode` once at init. `shadow` is deterministic-only unless
+  `features.compactionGuard.live = true`; only `enforce` returns `{ cancel: true }`. There is
   no fail-closed knob: a degraded semantic layer always allows stock Pi compaction.
 - **Module** — `extensions/ce-core/compaction-guard/` (named `compaction-guard`, not
   `context-health`, to avoid colliding with the existing `ContextHealth` type).
@@ -322,4 +322,4 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   or a `request_too_large` trim. A skipped dimension is absent from `sem` with a reason in
   `skippedDimensions[]` — never a sentinel score.
 - **Shadow mode** — compute, persist, and log the dimensions without changing
-  `weightedScore` or `verdict` (the default). `PEDSTACK_OVERENGINEERING = off | shadow | enforce`.
+  `weightedScore` or `verdict` when explicitly selected. `features.overengineering.mode = "off" | "shadow" | "enforce"` defaults to `enforce`.

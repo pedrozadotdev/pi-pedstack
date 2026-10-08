@@ -159,7 +159,27 @@ describe("stage_gate tool (Unit 6)", () => {
 		expect(result.action).toBe("review");
 	});
 
-	test("maps a review verdict to escalate when no independent reviewer is configured", async () => {
+	test("models.review may reuse models.sota without forcing escalation", async () => {
+		await write("docs/plans/plan.md", PLAN);
+		await writeConfig({
+			models: {
+				default: { model: "role/default" },
+				review: { model: "role/sota", thinkingLevel: "max" },
+				sota: { model: "role/sota", thinkingLevel: "max" },
+			},
+		});
+		const tool = createStageGateTool({
+			mode: "enforce",
+			runtime: createFakeJevRuntime({ handler: scoring([2, 2, 2, 2]) }),
+		});
+
+		const result = await tool.execute({ repoRoot: root, stage: "02-plan" });
+
+		expect(result.verdict).toBe("review");
+		expect(result.action).toBe("review");
+	});
+
+	test("preserves review verdict when no reviewer is configured", async () => {
 		await write("docs/plans/plan.md", PLAN);
 		// A project config wins over the global one; this one has no reviewers and
 		// no models.review, so no independent reviewer resolves.
@@ -172,6 +192,6 @@ describe("stage_gate tool (Unit 6)", () => {
 		const result = await tool.execute({ repoRoot: root, stage: "02-plan" });
 
 		expect(result.verdict).toBe("review");
-		expect(result.action).toBe("escalate");
+		expect(result.action).toBe("review");
 	});
 });

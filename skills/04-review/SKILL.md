@@ -25,7 +25,7 @@ See [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-p
    - Call the **`solution_search`** tool with the change summary → read only the returned top 1–3 cards
    - Honor `status`: `ok` → apply guidance; `none` → no prior learnings (proceed); `degraded` → prior-ranked candidates only
 7. Produce a compiled review findings report under `docs/reviews/` using the current plan filename without the `-plan` suffix, i.e., `docs/reviews/<topic>.md` (using `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/findings-schema.md` as the baseline structured findings format and `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/review-findings-template.md` as the document layout).
-8. **Autofixable findings:** apply and re-review (max 3 iterations)
+8. **Review-only boundary:** do not modify source/tests/config to address findings in this stage. Verify findings, remove false positives from the report, and route confirmed findings back to `03-work` for fixes.
 
 ## Review discipline
 
@@ -42,8 +42,8 @@ Code review is **technical evaluation**, not social performance:
 1. **Read** — complete all findings without reacting
 2. **Verify** — check each against codebase reality
 3. **Evaluate** — is it sound for THIS codebase?
-4. **Act** — fix confirmed issues, push back on incorrect ones
-5. **Test** — verify each fix individually, no regressions
+4. **Classify** — keep confirmed actionable issues in the report; remove or explicitly reject incorrect findings
+5. **Route** — confirmed findings go back to `03-work`; `04-review` never fixes implementation itself
 
 ## Workflow
 
@@ -57,12 +57,20 @@ Code review is **technical evaluation**, not social performance:
 8. Verify each finding against codebase and update the report
 9. Run **`stage_gate`** for `04-review` and act on its `action`:
     - `accept` → do not run `multi_reviewer`; use the compiled report as the stage artifact.
-    - `revise` → apply fixes and re-run `stage_gate`; no independent audit.
+    - `revise` → revise the review report/artifact itself and re-run `stage_gate`; do not modify implementation.
     - `review` → invoke **`multi_reviewer`** with `stepName: "04-review"` and `mode: "single"`, passing the report content as the `primaryOutput` parameter; inspect the returned findings, verify each against the codebase, apply the confirmed ones to the compiled report (or add the missing issues it surfaced), then re-run `stage_gate`.
-    - `escalate` → stop the current stage loop. Do not continue with the current execution model, and do not invoke `/ped-reload` yourself; ask the operator to run `/ped-reload`. The persisted escalation makes Pedstack re-enter this same `04-review` stage under `models.sota` when routing is enforced (`routing.shadow: false`); in shadow mode the decision is recorded but not applied.
+    - `escalate` → Stop the current stage loop and do not invoke `/ped-reload` yourself. Under enforced routing (`routing.shadow: false`), Pedstack automatically re-enters the same stage under `models.sota` after this turn ends; if that fails, the operator can use `/ped-reload` manually. Shadow mode records the decision but does not switch models.
     A missing `action` (unknown stage or a tool regression) is treated as `none`; use the compiled report as the stage artifact.
-    Use `mode: "deep"` only on an explicit user request. The tool auto-persists the structured findings JSON to `.context/compound-engineering/review-findings/<timestamp>-<stepName>.json` (gitignored) — including a `count: 0` sidecar for a clean review — and returns `findingsRelativePath`; use this path in the handoff's `artifacts.review` field. **Do NOT write your own `review-findings.json` to the repo root** — the tool already handles persistence inside `.context/`.
-10. Apply autofixes, re-run tests, re-review if needed
+    Use `mode: "deep"` only on an explicit user request. The tool auto-persists the structured findings JSON to `.context/compound-engineering/review-findings/<timestamp>-<stepName>.json` (gitignored) — including a `count: 0` sidecar for a clean review — and returns `findingsRelativePath`; use that sidecar path in the handoff's `artifacts.reviewFindings` field. The compiled `docs/reviews/*.md` report stays in `artifacts.review`. **Do NOT write your own `review-findings.json` to the repo root** — the tool already handles persistence inside `.context/`.
+10. Finalize the report outcome:
+    - Count the confirmed actionable findings using the canonical `- **Finding**:` entries.
+    - Write `## Review Outcome` with `Status: findings` and the exact non-zero count when any confirmed finding remains.
+    - Write `Status: clean` and `Findings: 0` only when the implementation has no confirmed unresolved findings.
+    - Keep `artifacts.review` pointing to the compiled `docs/reviews/*.md` report. If `multi_reviewer` produced a structured sidecar, store that separately as `artifacts.reviewFindings`.
+11. Save the handoff conditionally:
+    - `Status: findings` → `nextStage: "03-work"`. Carry the review report path and concise highest-priority findings so work can fix them.
+    - `Status: clean` → `nextStage: "05-learn"`.
+    - Never route unresolved findings to `05-learn`. The runtime validates this transition against the report.
 
 ## Optional: QA Test Mode
 
@@ -72,13 +80,17 @@ After code review complete, offer browser QA:
 >
 > - **A) Done** — stop here
 > - **B) Browser QA** — find visual/functional bugs
-> - **C) QA + regression tests** — find bugs, fix, add tests
+> - **C) QA + regression-test recommendations** — find bugs and specify the regression coverage `03-work` should add
 
 If B or C: read `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/qa-test-mode.md` and execute workflow.
-After QA: include findings in handoff, note fix commits/test files.
+After QA: include any confirmed findings in the report/handoff. Do not fix implementation in `04-review`; route findings to `03-work`.
 
 ## Handoff
 
-Handoff to `05-learn` (using the template in `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/handoff.md`). If bugs were found during review, the user can enter `04-5-debug` on demand via `/ped-debug`.
+Use the template in `~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/04-review/references/handoff.md`.
+
+- If the review report has confirmed findings, hand off to `03-work` to fix them.
+- Only a clean report (`Status: clean`, `Findings: 0`) may hand off to `05-learn`.
+- `/ped-debug` remains available for an operator-requested debugging session, but ordinary review findings use the `04-review → 03-work → 04-review` fix-forward loop.
 
 Before finishing this skill, apply the completion checklist in [shared pipeline instructions](~/.pi/agent/git/github.com/pedrozadotdev/pi-pedstack/skills/references/pipeline-config.md).

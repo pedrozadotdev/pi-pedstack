@@ -6,7 +6,6 @@ import {
 	MIN_EFFECT_CONFIDENCE,
 	MIN_INTENT_CONFIDENCE,
 	MESSAGE_COMMAND_MAX_CHARS,
-	parseGuardMode,
 	planCommandGuard,
 	redactCommand,
 	TRUNCATION_MARKER,
@@ -115,6 +114,52 @@ describe("planCommandGuard deterministic policy", () => {
 		}
 	});
 
+	test("bash may publish only the active stage's canonical report", () => {
+		const own = plan(
+			"03-work",
+			"cp stage-reports/03-work.md .context/compound-engineering/stage-reports/03-work.md",
+		);
+		expect(own.needsJev).toBe(false);
+		expect(own.verdict?.verdict).toBe("allow");
+		expect(
+			own.targets.some(
+				(target) =>
+					target.pathClass === "stage-report" && target.allow === true,
+			),
+		).toBe(true);
+
+		const foreign = plan(
+			"03-work",
+			"cp stage-reports/03-work.md .context/compound-engineering/stage-reports/04-5-debug.md",
+		);
+		expect(foreign.needsJev).toBe(false);
+		expect(foreign.verdict?.verdict).toBe("block");
+		expect(
+			foreign.targets.some(
+				(target) =>
+					target.pathClass === "stage-report" && target.allow === false,
+			),
+		).toBe(true);
+	});
+
+	test("bash cannot write protected context paths without a matching active stage", () => {
+		for (const stage of [null, undefined, "99-other"]) {
+			const report = plan(
+				stage as string | null,
+				"touch .context/compound-engineering/stage-reports/03-work.md",
+			);
+			expect(report.needsJev).toBe(false);
+			expect(report.verdict?.verdict).toBe("block");
+
+			const state = plan(
+				stage as string | null,
+				"touch .context/compound-engineering/context-state.json",
+			);
+			expect(state.needsJev).toBe(false);
+			expect(state.verdict?.verdict).toBe("block");
+		}
+	});
+
 	test("read-only is allowed in every stage", () => {
 		for (const stage of [
 			"01-brainstorm",
@@ -185,7 +230,7 @@ describe("applyJevAnswers", () => {
 		);
 		expect(verdict.verdict).toBe("block");
 		expect(verdict.reason).toContain("02-plan");
-		expect(verdict.reason).toContain("PEDSTACK_DISABLE_GUARD=1");
+		expect(verdict.reason).toContain("features.stageGuard.disabled");
 	});
 
 	test("mutates without intent allows", () => {
@@ -347,12 +392,3 @@ describe("redactCommand and truncateCommand", () => {
 
 // ── parseGuardMode ─────────────────────────────────────────────────
 
-describe("parseGuardMode", () => {
-	test("maps the documented values and fails safe to shadow", () => {
-		expect(parseGuardMode("off")).toBe("off");
-		expect(parseGuardMode("shadow")).toBe("shadow");
-		expect(parseGuardMode("enforce")).toBe("enforce");
-		expect(parseGuardMode(undefined)).toBe("shadow");
-		expect(parseGuardMode("bogus")).toBe("shadow");
-	});
-});

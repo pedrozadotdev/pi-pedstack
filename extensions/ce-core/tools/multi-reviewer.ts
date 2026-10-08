@@ -9,9 +9,10 @@ import {
 	type PiPedstackConfig,
 	type StepConfigKey,
 } from "../utils/config-types";
-import { collectExecutionModels, filterIndependentReviewers } from "../review/policy";
+import { filterIndependentReviewers } from "../review/policy";
 import { normalizeSlug } from "../utils/name-utils";
 import { createAgyCommand, isGeminiModel, runAgyReviewer } from "../review/agy-runner";
+import { isStageKey, readLatestRecord, isRecordFresh } from "../stage-gate/store";
 
 export interface ReviewerConfig {
 	model: string;
@@ -83,6 +84,7 @@ async function persistFindings(
 	stepName: string,
 	findings: ReviewFinding[],
 	compiledSummary: string,
+	reviewedGate?: { updatedAt: string; artifactsHash: string },
 ): Promise<{ absolute: string; relative: string }> {
 	const dir = reviewFindingsDir(repoRoot);
 	await mkdir(dir, { recursive: true });
@@ -103,6 +105,7 @@ async function persistFindings(
 		count: findings.length,
 		findings,
 		compiledSummary,
+		...(reviewedGate ? { completed: true, reviewedGate } : {}),
 	};
 
 	await writeFile(absolute, JSON.stringify(payload, null, 2), "utf8");
@@ -289,25 +292,16 @@ async function runReviewerProcess(
 }
 
 /**
- * Resolve the `models.review` role as a single reviewer, but never when it is
- * not independent from an execution model (a model must not review itself).
- * The comparison set is the union of every execution-model writer, including
- * the per-stage override (`collectExecutionModels`).
+ * Resolve the `models.review` role as a single reviewer. Review independence
+ * comes from the dedicated no-session reviewer process, so this role may reuse
+ * the same model id as default/SOTA execution.
  */
 function resolveReviewRole(
 	config: PiPedstackConfig | null,
-	configKey: StepConfigKey | null,
+	_configKey: StepConfigKey | null,
 ): ReviewerConfig[] | undefined {
 	const review = config?.models?.review;
 	if (!review?.model) return undefined;
-
-	if (collectExecutionModels(config, configKey).includes(review.model)) {
-		console.warn(
-			`[multi-reviewer] models.review (${review.model}) matches an execution role model; review independence requires a distinct model. Ignoring.`,
-		);
-		return undefined;
-	}
-
 	return [{ model: review.model, thinkingLevel: review.thinkingLevel ?? "high" }];
 }
 
@@ -331,7 +325,7 @@ function resolveConfigKey(stepName: string): StepConfigKey | null {
 	return getConfigKeyForSkill(normalized) ?? BARE_CONFIG_KEYS.get(normalized) ?? null;
 }
 
-/** Non-empty, independent explicit `reviewers[]` for the stage, or undefined. */
+/** Non-empty explicit `reviewers[]` for the stage, or undefined. */
 function explicitReviewers(
 	config: PiPedstackConfig | null,
 	configKey: StepConfigKey | null,
@@ -345,17 +339,12 @@ function explicitReviewers(
 		model: reviewer.model,
 		thinkingLevel: reviewer.thinkingLevel,
 	}));
-	const { reviewers: independent, dropped } = filterIndependentReviewers(
+	const { reviewers: filteredReviewers } = filterIndependentReviewers(
 		mapped,
 		config,
 		configKey,
 	);
-	for (const model of dropped) {
-		console.warn(
-			`[multi-reviewer] explicit reviewer (${model}) matches an execution role model; review independence requires a distinct model. Ignoring.`,
-		);
-	}
-	return independent.length > 0 ? independent : undefined;
+	return filteredReviewers.length > 0 ? filteredReviewers : undefined;
 }
 
 export function createMultiReviewerTool() {
@@ -366,9 +355,8 @@ export function createMultiReviewerTool() {
 			const config = await readPiPedstackConfig(input.repoRoot);
 			const configKey = resolveConfigKey(input.stepName);
 
-			// Explicit reviewers[] win; otherwise fall back to the `models.review` role
-			// when it is independent from the execution roles. `single` bounds the
-			// selection to one reviewer; omitted mode keeps legacy behavior.
+			// Explicit reviewers[] win; otherwise fall back to the `models.review` role.
+			// `single` bounds the selection to one reviewer; omitted mode keeps legacy behavior.
 			let reviewers = explicitReviewers(config, configKey);
 			if (!reviewers || reviewers.length === 0) {
 				reviewers = resolveReviewRole(config, configKey);
@@ -383,6 +371,15 @@ export function createMultiReviewerTool() {
 					compiledSummary: "No reviewers configured.",
 				};
 			}
+
+			// Bind completion to the gate that requested review, when one exists.
+			const stage = input.stepName.trim();
+			const requestedGate = isStageKey(stage)
+				? await readLatestRecord(input.repoRoot, stage)
+				: null;
+			const reviewGate = requestedGate?.verdict === "review" && requestedGate.review?.action === "review" && await isRecordFresh(input.repoRoot, requestedGate)
+				? { updatedAt: requestedGate.updatedAt, artifactsHash: requestedGate.artifactsHash }
+				: undefined;
 
 			// Run all reviewer processes concurrently
 			const promises = reviewers.map((reviewer, idx) =>
@@ -452,11 +449,13 @@ export function createMultiReviewerTool() {
 			// to the repo root, which leaked into git history. A zero-finding run still
 			// writes the empty sidecar so a clean review is auditable and does not deadlock
 			// the completion gate (`count: 0` === `findings.length`).
+			const stillFresh = requestedGate && reviewGate && await isRecordFresh(input.repoRoot, requestedGate);
 			const persisted = await persistFindings(
 				input.repoRoot,
 				input.stepName,
 				findings,
 				trimmedSummary,
+				stillFresh ? reviewGate : undefined,
 			);
 
 			return {

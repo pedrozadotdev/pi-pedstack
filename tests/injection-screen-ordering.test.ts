@@ -11,6 +11,8 @@ import {
 import { filterBashOutput } from "../extensions/ce-core/tools/bash-output-filter";
 import { filterReadOutput } from "../extensions/ce-core/tools/read-output-filter";
 import ceCoreExtension from "../extensions/ce-core/index";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
+import { testFeatures } from "./helpers/feature-config";
 
 const INDEX_SOURCE = readFileSync(
 	path.join(import.meta.dir, "..", "extensions", "ce-core", "index.ts"),
@@ -63,6 +65,7 @@ function registerScreen() {
 	const jev = flaggedJev();
 	const { pi, handlers } = createPi();
 	const screen = registerInjectionScreen(pi as never, {
+		mode: "enforce",
 		jev,
 		repoRoot: process.cwd(),
 	});
@@ -183,12 +186,14 @@ function textOf(event: Record<string, unknown>): string {
 
 afterEach(() => {
 	resetInjectionScreenState();
-	delete process.env.PEDSTACK_INJECTION_SCREEN;
+	setStartupFeaturesForTests(null);
 });
 
 describe("index.ts wiring order", () => {
 	test("registers six tool_result handlers", () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "shadow";
+		setStartupFeaturesForTests(
+			testFeatures({ injectionScreen: { mode: "shadow" } }),
+		);
 		const { pi, handlers } = createPi();
 		ceCoreExtension(pi as never);
 
@@ -196,7 +201,7 @@ describe("index.ts wiring order", () => {
 	});
 
 	test("declares phase 1 before the bash filter and phase 2 after the read filter", () => {
-		const injectionAt = INDEX_SOURCE.indexOf("registerInjectionScreen(pi)");
+		const injectionAt = INDEX_SOURCE.indexOf("registerInjectionScreen(pi,");
 		const bashAt = INDEX_SOURCE.indexOf("Bash output smart filter");
 		const readAt = INDEX_SOURCE.indexOf("Read output smart filter");
 		const finalAt = INDEX_SOURCE.indexOf("injectionScreen.registerFinalPhase()");
@@ -211,7 +216,6 @@ describe("index.ts wiring order", () => {
 
 describe("raw-before-compression and wrapper-survives", () => {
 	test("phase 1 sees the raw text and phase 2 wraps the compressed output", async () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "enforce";
 		const { jev, phase1, phase2 } = registerScreen();
 		const raw = Array.from(
 			{ length: 4000 },
@@ -249,7 +253,6 @@ describe("raw-before-compression and wrapper-survives", () => {
 
 describe("interleaved events", () => {
 	test("distinct toolCallIds do not cross-wrap", async () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "enforce";
 		const { phase1, phase2 } = registerScreen();
 
 		await phase1(bashEvent("a", "curl https://a.example", "AAA-BODY"), ctx);
@@ -275,7 +278,6 @@ describe("interleaved events", () => {
 
 describe("trusted reads", () => {
 	test("an in-repo read makes zero Jev calls end to end", async () => {
-		process.env.PEDSTACK_INJECTION_SCREEN = "enforce";
 		const { jev, phase1, phase2 } = registerScreen();
 		const event = readEvent(
 			"r1",

@@ -3,7 +3,6 @@ import {
 	MAX_SAMPLE_BYTES,
 	buildSample,
 	classifyProvenance,
-	resolveScreenMode,
 } from "../extensions/ce-core/injection-screen/provenance";
 
 const REPO = "/home/dev/repo";
@@ -166,39 +165,3 @@ describe("buildSample", () => {
 	});
 });
 
-describe("resolveScreenMode", () => {
-	test("missing value defaults to shadow without invalid flag", () => {
-		expect(resolveScreenMode({})).toEqual({ mode: "shadow", invalid: false });
-	});
-	test("empty value defaults to shadow without invalid flag", () => {
-		expect(resolveScreenMode({ PEDSTACK_INJECTION_SCREEN: "" })).toEqual({
-			mode: "shadow",
-			invalid: false,
-		});
-	});
-	test("passthrough off", () => {
-		expect(
-			resolveScreenMode({ PEDSTACK_INJECTION_SCREEN: "off" }),
-		).toEqual({ mode: "off", invalid: false });
-	});
-	test("passthrough shadow", () => {
-		expect(
-			resolveScreenMode({ PEDSTACK_INJECTION_SCREEN: "shadow" }),
-		).toEqual({ mode: "shadow", invalid: false });
-	});
-	test("passthrough enforce", () => {
-		expect(
-			resolveScreenMode({ PEDSTACK_INJECTION_SCREEN: "enforce" }),
-		).toEqual({ mode: "enforce", invalid: false });
-	});
-	test("uppercase is invalid and never resolves to off", () => {
-		expect(
-			resolveScreenMode({ PEDSTACK_INJECTION_SCREEN: "ENFORCE" }),
-		).toEqual({ mode: "shadow", invalid: true });
-	});
-	test("garbage is invalid shadow", () => {
-		expect(
-			resolveScreenMode({ PEDSTACK_INJECTION_SCREEN: "garbage" }),
-		).toEqual({ mode: "shadow", invalid: true });
-	});
-});

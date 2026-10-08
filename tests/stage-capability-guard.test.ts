@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import ceCoreExtension, {
 	__setStageGuardJevFactory,
 } from "../extensions/ce-core/index";
+import { setStartupFeaturesForTests } from "../extensions/ce-core/utils/startup-features";
+import { testFeatures } from "./helpers/feature-config";
 import {
 	clearActiveStage,
 	setActiveStage,
@@ -16,12 +18,14 @@ import { createFakeJevRuntime } from "../extensions/ce-core/jev/runtime";
 
 function createPiMock() {
 	const registeredNames: string[] = [];
+	const registeredTools = new Map<string, { execute: (...args: any[]) => Promise<any> }>();
 	const eventHandlers = new Map<string, any[]>();
 	const notifyCalls: Array<{ message: string; level: string }> = [];
 
 	const pi = {
-		registerTool(definition: { name: string }) {
+		registerTool(definition: { name: string; execute: (...args: any[]) => Promise<any> }) {
 			registeredNames.push(definition.name);
+			registeredTools.set(definition.name, definition);
 		},
 		on(event: string, handler: any) {
 			const handlers = eventHandlers.get(event) ?? [];
@@ -49,7 +53,7 @@ function createPiMock() {
 		};
 	}
 
-	return { pi, registeredNames, eventHandlers, notifyCalls, makeCtx };
+	return { pi, registeredNames, registeredTools, eventHandlers, notifyCalls, makeCtx };
 }
 
 function writeEvent(target: string) {
@@ -92,14 +96,12 @@ async function seedWorkflowState(repo: string, stage: string): Promise<void> {
 
 beforeEach(() => {
 	clearActiveStage();
-	delete process.env.PEDSTACK_DISABLE_GUARD;
+	setStartupFeaturesForTests(testFeatures());
 });
 
 afterEach(async () => {
 	clearActiveStage();
-	delete process.env.PEDSTACK_DISABLE_GUARD;
-	delete process.env.PEDSTACK_JEV_STAGE_GUARD;
-	delete process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED;
+	setStartupFeaturesForTests(null);
 	__setStageGuardJevFactory(null);
 	await Promise.all(
 		tempRepos.splice(0).map((repo) => rm(repo, { recursive: true, force: true })),
@@ -116,11 +118,37 @@ describe("stage capability guard", () => {
 		expect(eventHandlers.get("tool_call")?.length).toBe(1);
 		expect(eventHandlers.get("tool_result")?.length).toBe(6);
 		expect(registeredNames).toContain("stage_gate");
+		expect(registeredNames).toContain("stage_report");
 		expect(registeredNames).toContain("solution_search");
 		expect(registeredNames).toContain("docs_verification");
 		expect(registeredNames).toContain("semantic_read");
 		expect(registeredNames).toContain("semantic_scout");
-		expect(registeredNames.length).toBe(19);
+		expect(registeredNames.length).toBe(20);
+	});
+
+	test("stage_report receives ExtensionContext in the fifth tool argument", async () => {
+		const repo = await makeRepo();
+		const { pi, registeredTools, makeCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		setActiveStage("06-docsync");
+
+		const tool = registeredTools.get("stage_report");
+		expect(tool).toBeDefined();
+		const report = "# Docsync\\nREADME updated, AGENTS unchanged.\\n## Exit criteria\\nMet.";
+		const result = await tool!.execute(
+			"tool-call-id",
+			{ stage: "06-docsync", markdown: report },
+			undefined,
+			undefined,
+			makeCtx(repo),
+		);
+		expect(result.details.path).toBe(
+			".context/compound-engineering/stage-reports/06-docsync.md",
+		);
+		expect(await readFile(path.join(repo, result.details.path), "utf8")).toBe(report);
+		await expect(
+			tool!.execute("another-call", { stage: "03-work", markdown: "wrong" }, undefined, undefined, makeCtx(repo)),
+		).rejects.toThrow("not active");
 	});
 
 	test("02-plan blocks a source write with a reason naming stage and path", async () => {
@@ -256,8 +284,10 @@ describe("stage capability guard", () => {
 		expect(result?.block).toBe(true);
 	});
 
-	test("PEDSTACK_DISABLE_GUARD=1 allows every write", async () => {
-		process.env.PEDSTACK_DISABLE_GUARD = "1";
+	test("features.stageGuard.disabled allows every write", async () => {
+		setStartupFeaturesForTests(
+			testFeatures({ stageGuard: { disabled: true } }),
+		);
 		const { pi, eventHandlers, makeCtx } = createPiMock();
 		ceCoreExtension(pi as never);
 		setActiveStage("02-plan");
@@ -490,12 +520,20 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 		error?: boolean;
 		stage?: string | null;
 	} = {}) {
-		if (options.mode !== undefined) {
-			process.env.PEDSTACK_JEV_STAGE_GUARD = options.mode;
-		}
-		if (options.failClosed) {
-			process.env.PEDSTACK_JEV_STAGE_GUARD_FAILCLOSED = "1";
-		}
+		const mode =
+			options.mode === "off" ||
+			options.mode === "shadow" ||
+			options.mode === "enforce"
+				? options.mode
+				: "shadow";
+		setStartupFeaturesForTests(
+			testFeatures({
+				stageGuard: {
+					mode,
+					failClosed: options.failClosed ?? false,
+				},
+			}),
+		);
 		const fake = fakeJev(options);
 		__setStageGuardJevFactory(() => fake);
 		const { pi, eventHandlers, notifyCalls, makeCtx, registeredNames } =
@@ -535,7 +573,7 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 
 		expect(result?.block).toBe(true);
 		expect(result?.reason).toContain("02-plan");
-		expect(result?.reason).toContain("PEDSTACK_DISABLE_GUARD=1");
+		expect(result?.reason).toContain("features.stageGuard.disabled");
 		expect(fake.calls.length).toBe(0);
 	});
 
@@ -590,7 +628,7 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 		expect(notifyCalls.length).toBe(1);
 	});
 
-	test("FAILCLOSED=1 in enforce blocks when Jev is unavailable", async () => {
+	test("failClosed=true in enforce blocks when Jev is unavailable", async () => {
 		const { handler, makeCtx } = await setup({
 			mode: "enforce",
 			failClosed: true,
@@ -614,10 +652,17 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 		).toBe(true);
 	});
 
-	test("PEDSTACK_DISABLE_GUARD=1 suppresses bash classification and logging", async () => {
-		process.env.PEDSTACK_DISABLE_GUARD = "1";
+	test("features.stageGuard.disabled suppresses bash classification and logging", async () => {
 		const repo = await makeRepo();
-		const { handler, fake, makeCtx } = await setup({ mode: "shadow" });
+		setStartupFeaturesForTests(
+			testFeatures({ stageGuard: { mode: "shadow", disabled: true } }),
+		);
+		const fake = fakeJev({});
+		__setStageGuardJevFactory(() => fake);
+		const { pi, eventHandlers, makeCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		setActiveStage("02-plan");
+		const handler = eventHandlers.get("tool_call")![0];
 
 		expect(
 			await handler(bashEvent("rm extensions/ce-core/index.ts"), makeCtx(repo)),
@@ -655,13 +700,6 @@ describe("Unit 5 — bash dispatch via the Jev semantic guard", () => {
 		await expect(readFile(path.join(repo, GUARD_LOG_FILE), "utf8")).rejects.toThrow();
 	});
 
-	test("invalid mode warns once and still behaves as shadow", async () => {
-		const { handler, notifyCalls, makeCtx } = await setup({ mode: "SHADOW" });
-
-		await handler(bashEvent("python gen.py"), makeCtx("/repo"));
-		await handler(bashEvent("python gen.py"), makeCtx("/repo"));
-		expect(notifyCalls.length).toBe(1);
-	});
 
 	test("mutating-tool coverage: only write/edit/bash are intercepted", async () => {
 		const { handler, registeredNames, fake, makeCtx } = await setup({

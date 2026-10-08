@@ -114,7 +114,7 @@ describe("package bootstrap structure", () => {
 
 	test("AGENTS documents the overengineering mode and module", () => {
 		const agents = readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
-		expect(agents).toContain("PEDSTACK_OVERENGINEERING");
+		expect(agents).toContain("features.overengineering.mode");
 		expect(agents).toContain("overengineering/");
 	});
 
@@ -125,6 +125,6 @@ describe("package bootstrap structure", () => {
 		expect(context).toContain("scope_fidelity");
 		expect(context).toContain("complexity_proportionality");
 		expect(context).toContain("dependency_justification");
-		expect(context).toContain("PEDSTACK_OVERENGINEERING");
+		expect(context).toContain("features.overengineering.mode");
 	});
 });

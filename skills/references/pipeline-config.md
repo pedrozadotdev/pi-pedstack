@@ -1,10 +1,10 @@
 # Shared pipeline instructions
 
-Use these rules in all pipeline skills: `01-brainstorm` → `02-plan` → `03-work` → `04-review` → `05-learn` → `06-docsync`.
+Use these rules in all pipeline skills: `01-brainstorm` → `02-plan` → `03-work` → `04-review`; confirmed findings loop back to `03-work` until review is clean, then continue `05-learn` → `06-docsync`.
 
 ## Workflow Discipline
 
-- **STRICT PIPELINE SEQUENCE:** The step-by-step workflow (`01-brainstorm` → `02-plan` → `03-work` → `04-review` → `05-learn` → `06-docsync`) is strictly required. No stage can be bypassed or combined.
+- **STRICT PIPELINE SEQUENCE:** `01-brainstorm → 02-plan → 03-work → 04-review`; if review has findings, route `04-review → 03-work → 04-review` until clean; then `05-learn → 06-docsync`. Do not bypass unresolved findings.
 - **NO DIRECT-TO-IMPLEMENTATION BYPASS:** The model is prohibited from skipping the initial stages (Brainstorming/Planning) to go straight to code implementation or file editing. You must start every new feature or task with the `01-brainstorm` skill.
 
 ## Start of skill: model routing
@@ -60,15 +60,13 @@ stage_gate
   stage: <stageKey>
 ```
 
-`PEDSTACK_STAGE_GATE` controls the gate: `off` disables it, `shadow` (default)
+`features.stageGate.mode` controls the gate: `off` disables it, `enforce` (default)
 records the verdict and blocks only deterministic failures, and `enforce` also
 requires a fresh `accept` record. Deterministic failures block in **both**
 `shadow` and `enforce`; semantic verdicts warn in `shadow` and block in
 `enforce`. A `revise` or `review` verdict means: fix the artifact and re-run
 `stage_gate` before saving. An `escalate` verdict means: stop the current stage
-loop and ask the operator to run `/ped-reload` — under enforced routing
-(`routing.shadow: false`) the persisted escalation re-enters this same stage
-under `models.sota`; in shadow mode the decision is recorded but not applied.
+loop and let Pedstack automatically re-enter the same stage under `models.sota` after the turn finishes when routing is enforced (`routing.shadow: false`). In shadow mode, the decision is recorded but not applied. If automatic reload fails, use `/ped-reload` manually.
 
 ```
 context_handoff save
@@ -107,7 +105,7 @@ Next step mapping:
 - `01-brainstorm` → `/ped-next`
 - `02-plan` → `/ped-next`
 - `03-work` → `/ped-next`
-- `04-review` → `/ped-next`
+- `04-review` → `/ped-next` after saving the outcome-directed handoff (`03-work` for findings, `05-learn` for clean)
 - `04-5-debug` → `/ped-next`
 - `05-learn` → `/ped-next`
 - `06-docsync` → `Completed`
@@ -126,7 +124,8 @@ The **ce-core extension** registers a `tool_result` handler that intercepts succ
 **Gated transitions (2) — prompt user with confirm dialog:**
 
 - `02-plan` → `03-work` (user should read the plan first)
-- `04-review` → `05-learn` (user may want `/ped-debug` instead)
+- `04-review` → `03-work` when the validated review outcome has findings
+- `04-review` → `05-learn` only when the validated review outcome is clean (`Findings: 0`)
 
 **Mechanism:** The `tool_result` handler in `extensions/ce-core/index.ts` calls the pure `evaluateAutoAdvance()` function from `extensions/ce-core/utils/auto-advance.ts`. The handler is additive — it runs in parallel with existing bash/read filters and never throws (all errors are caught and surfaced as notifications).
 

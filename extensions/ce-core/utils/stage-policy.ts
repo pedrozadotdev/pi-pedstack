@@ -15,8 +15,10 @@ export interface StageDiscipline {
 	mandate: string;
 	/** What the model MUST NOT do in this stage. */
 	forbidden: string;
-	/** The next stage to handoff to, or null for the terminal stage. */
+	/** The default next stage, or null for the terminal stage. */
 	nextStage: PipelineStageKey | null;
+	/** Optional conditional completion instruction that overrides the default prompt. */
+	completionInstruction?: string;
 }
 
 export const STAGE_DISCIPLINES: Record<PipelineStageKey, StageDiscipline> = {
@@ -45,8 +47,10 @@ export const STAGE_DISCIPLINES: Record<PipelineStageKey, StageDiscipline> = {
 		mandate:
 			"Review every changed file for correctness, style, type safety, test coverage, and adherence to project standards.",
 		forbidden:
-			"Do NOT modify code, do NOT re-implement anything, do NOT add features, and do NOT fix issues yourself — only identify and document them.",
+			"Do NOT modify code, do NOT re-implement anything, do NOT add features, and do NOT fix issues yourself — only identify, verify, and document them.",
 		nextStage: "05-learn",
+		completionInstruction:
+			'When review is complete, inspect the compiled report Review Outcome and save a context handoff (using the context_handoff tool with operation="save"). If Status is "findings", target **03-work** so confirmed findings are fixed and then reviewed again. Only when Status is "clean" with Findings: 0 may the handoff target **05-learn**. Do NOT carry unresolved findings into learning.',
 	},
 	"04-5-debug": {
 		mandate:

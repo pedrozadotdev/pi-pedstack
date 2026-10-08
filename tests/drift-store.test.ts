@@ -24,8 +24,6 @@ import {
 	isDriftStatusFresh,
 	readDriftRecord,
 	readDriftStatus,
-	resolveDriftFailClosed,
-	resolveDriftMode,
 	resolveSessionKey,
 	setCurrentDriftSessionKey,
 	shouldBlockCompletion,
@@ -72,27 +70,6 @@ afterEach(async () => {
 	await fs.rm(root, { recursive: true, force: true });
 });
 
-describe("mode and fail-closed resolution", () => {
-	test("resolves mode, defaulting missing/invalid to shadow", () => {
-		expect(resolveDriftMode({})).toBe("shadow");
-		expect(resolveDriftMode({ PEDSTACK_DRIFT_GUARD: "" })).toBe("shadow");
-		expect(resolveDriftMode({ PEDSTACK_DRIFT_GUARD: "wat" })).toBe("shadow");
-		expect(resolveDriftMode({ PEDSTACK_DRIFT_GUARD: "off" })).toBe("off");
-		expect(resolveDriftMode({ PEDSTACK_DRIFT_GUARD: "enforce" })).toBe(
-			"enforce",
-		);
-	});
-
-	test("resolves fail-closed only for the literal 1", () => {
-		expect(resolveDriftFailClosed({})).toBe(false);
-		expect(
-			resolveDriftFailClosed({ PEDSTACK_DRIFT_GUARD_FAILCLOSED: "true" }),
-		).toBe(false);
-		expect(
-			resolveDriftFailClosed({ PEDSTACK_DRIFT_GUARD_FAILCLOSED: "1" }),
-		).toBe(true);
-	});
-});
 
 describe("session-key resolver (AD-1b)", () => {
 	test("prefers getSessionId", () => {

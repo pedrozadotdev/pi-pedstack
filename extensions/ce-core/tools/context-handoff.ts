@@ -4,6 +4,10 @@ import path from "node:path";
 import { appendHealthDegradedLog } from "../compaction-guard/store";
 import type { ContextHealth } from "../compaction-guard/types";
 import { normalizeSlug } from "../utils/name-utils";
+import {
+	parseReviewOutcome,
+	requiredNextStageForReview,
+} from "../utils/review-outcome";
 import { evaluateCompletionGate } from "../stage-gate/guard";
 import { isCompletionSave } from "../stage-gate/store";
 import type { StageGateMode } from "../stage-gate/types";
@@ -484,6 +488,85 @@ export function createContextHandoffTool(
 	};
 }
 
+interface ReviewTransitionCheck {
+	blocker?: string;
+	outcome?: "clean" | "findings";
+	findings?: number;
+}
+
+async function validateReviewTransition(
+	input: ContextHandoffInput,
+	currentStage: string,
+	nextStage: string | undefined,
+): Promise<ReviewTransitionCheck> {
+	if (
+		currentStage !== "04-review" ||
+		!nextStage ||
+		nextStage === currentStage
+	) {
+		return {};
+	}
+
+	const reviewPath = input.artifacts?.review;
+	if (!reviewPath) {
+		return {
+			blocker:
+				'Cannot save 04-review handoff: artifacts.review must point to the compiled docs/reviews/*.md report so Pedstack can determine whether fixes are required.',
+		};
+	}
+
+	const absolute = path.resolve(input.repoRoot, reviewPath);
+	const relative = path.relative(input.repoRoot, absolute).replace(/\\/g, "/");
+	if (
+		relative.startsWith("../") ||
+		path.isAbsolute(relative) ||
+		!relative.startsWith("docs/reviews/") ||
+		!relative.endsWith(".md")
+	) {
+		return {
+			blocker:
+				`Cannot save 04-review handoff: artifacts.review must be a repo-local docs/reviews/*.md file, got "${reviewPath}".`,
+		};
+	}
+
+	let markdown: string;
+	try {
+		markdown = await readFile(absolute, "utf8");
+	} catch {
+		return {
+			blocker:
+				`Cannot save 04-review handoff: review report "${relative}" could not be read.`,
+		};
+	}
+
+	const outcome = parseReviewOutcome(markdown);
+	if (!outcome.valid) {
+		return {
+			blocker:
+				`Cannot save 04-review handoff: review report "${relative}" has an invalid Review Outcome: ${outcome.reason}. Regenerate/update the report before leaving review.`,
+		};
+	}
+
+	const requiredNextStage = requiredNextStageForReview(outcome);
+	if (nextStage !== requiredNextStage) {
+		const reason =
+			outcome.status === "findings"
+				? `${outcome.findings} unresolved finding(s) require a fix-forward loop through 03-work before review can be considered clean.`
+				: "the review is clean and may advance to learning.";
+		return {
+			blocker:
+				`Cannot save 04-review handoff to "${nextStage}": ${reason} Set nextStage to "${requiredNextStage}".`,
+			outcome: outcome.status,
+			findings: outcome.findings,
+		};
+	}
+
+	return {
+		outcome: outcome.status,
+		findings: outcome.findings,
+	};
+}
+
 /** Runs the stage gate for a save and returns a blocker or a warning only. */
 async function runCompletionGate(
 	input: ContextHandoffInput,
@@ -674,7 +757,7 @@ function strongDriftBlocker(record: DriftRecord): string {
 		`strong drift: ${dims}. ${reason}` +
 		`Do in-scope work for ${DRIFT_CLEAR_STREAK} turn${DRIFT_CLEAR_STREAK === 1 ? "" : "s"} to clear, delete ` +
 		`${driftRecordRelPath(record.stage)} to clear, or set ` +
-		`PEDSTACK_DRIFT_GUARD=off (restart required).`
+		`"features.driftGuard.mode": "off" in config.json (restart required).`
 	);
 }
 
@@ -682,8 +765,8 @@ function degradedDriftBlocker(stage: string): string {
 	return (
 		`Cannot save cross-stage handoff: drift status for stage ` +
 		`"${stage}" is degraded (the last evaluated turn failed) and ` +
-		`PEDSTACK_DRIFT_GUARD_FAILCLOSED=1. Re-run in-scope work, delete ` +
-		`${driftStatusRelPath(stage)} to clear, or set PEDSTACK_DRIFT_GUARD=off ` +
+		`features.driftGuard.failClosed=true. Re-run in-scope work, delete ` +
+		`${driftStatusRelPath(stage)} to clear, or set "features.driftGuard.mode": "off" ` +
 		`(restart required).`
 	);
 }
@@ -933,7 +1016,27 @@ async function save(
 	}
 	const gateWarning = gate.warning;
 
-	// Drift block: after the stage gate, before the readiness guard (AD-5).
+	// Review outcome routing: review quality and implementation cleanliness are
+	// separate concerns. A well-formed 04-review report may pass the stage gate
+	// while still containing actionable findings; those findings must return to
+	// 03-work rather than being carried into 05-learn.
+	const reviewTransition = await validateReviewTransition(
+		input,
+		currentStage,
+		nextStage,
+	);
+	if (reviewTransition.blocker) {
+		return {
+			operation: "save",
+			found: true,
+			currentStage,
+			nextStage,
+			contextHealth,
+			blocker: reviewTransition.blocker,
+		};
+	}
+
+	// Drift block: after the stage gate and review routing, before readiness (AD-5).
 	const driftRun = await runDriftCompletion(
 		drift,
 		input.repoRoot,

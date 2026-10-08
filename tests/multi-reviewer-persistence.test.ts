@@ -557,16 +557,11 @@ describe("multi_reviewer role fallback", () => {
 		}
 	});
 
-	test("ignores models.review when it collides with an execution model", async () => {
+	test("uses models.review even when it reuses an execution model id", async () => {
 		mockState.findings = [];
 		resetSpawnArgs();
-		const warnings: string[] = [];
-		const originalWarn = console.warn;
-		console.warn = (...args: unknown[]) => {
-			warnings.push(args.map((arg) => String(arg)).join(" "));
-		};
 
-		const repoRoot = `/tmp/pi-ce-reviewer-collision-${Date.now()}`;
+		const repoRoot = `/tmp/pi-ce-reviewer-reuse-${Date.now()}`;
 		await writeConfig(repoRoot, {
 			models: {
 				default: { model: "exec/cheap" },
@@ -581,11 +576,9 @@ describe("multi_reviewer role fallback", () => {
 				repoRoot,
 			});
 
-			expect(spawnedModels()).toEqual([]);
-			expect(result.compiledSummary).toBe("No reviewers configured.");
-			expect(warnings.some((w) => w.includes("models.review"))).toBe(true);
+			expect(spawnedModels()).toEqual(["exec/cheap"]);
+			expect(result.compiledSummary).not.toBe("No reviewers configured.");
 		} finally {
-			console.warn = originalWarn;
 			await rm(repoRoot, { recursive: true, force: true });
 		}
 	});
