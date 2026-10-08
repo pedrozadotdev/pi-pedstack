@@ -233,7 +233,7 @@ function toResult(
 			allowed: false,
 			blocker:
 				`Cannot complete this stage: ${open.length} docs-verification ` +
-				`obligation(s) are open (${slugs}). Run the contextqmd verification ` +
+				`obligation(s) are open (${slugs}). Check official documentation ` +
 				`and record a docs-verified: line, or waive with a reason.`,
 		};
 	}

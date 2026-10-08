@@ -378,7 +378,7 @@ Anti-rationalization: do not rationalize, downgrade, or explain away failures. S
 
 ### Source-driven verification
 
-When implementation depends on a framework/library API, version-specific behavior, or a recommended pattern: verify against official documentation using the `contextqmd` CLI as the primary tool (see [shared contextqmd docs instruction](../skills/references/contextqmd-docs.md)) before implementing. Pure logic, renaming, or in-project pattern reuse does not require external citation.
+When implementation depends on a framework/library API, version-specific behavior, or a recommended pattern: verify against official vendor or package documentation using available tools before implementing. Keep an authoritative source URL or stable documentation path as evidence. Pure logic, renaming, or in-project pattern reuse does not require external citation.
 
 ### Docs-verification runtime trigger (#15)
 

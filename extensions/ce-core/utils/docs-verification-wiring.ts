@@ -66,15 +66,15 @@ function docsPhaseForStage(stage: string | null): DocsPhase | null {
 	return null;
 }
 
-const CONTEXTQMD_STEPS = [
-	"1. `contextqmd libraries list --json` to find the installed library.",
-	'2. `contextqmd docs search "<package> <topic>"` to find the page.',
-	"3. `contextqmd docs get <doc-path-or-page-uid>` to read it.",
-	"4. Add a line to the unit: `docs-verified: <package>@<version> <doc-path-or-page-uid>`.",
-	"Ask the user before installing contextqmd; never auto-install.",
+const VERIFICATION_STEPS = [
+	"1. Identify the package and version from the unit's dependency facts.",
+	"2. Check official documentation for that package/version using available tools.",
+	"3. Verify the API or pattern and retain its authoritative URL or stable documentation path.",
+	"4. Add a line to the unit: `docs-verified: <package>@<version> <documentation-url-or-path>`.",
+	"5. If authoritative documentation is unavailable, use `docs_verification` to waive with an explicit reason; do not invent evidence.",
 ];
 
-/** Bounded block naming every open obligation and the exact contextqmd steps. */
+/** Bounded block naming open obligations and tool-agnostic verification steps. */
 function formatDocsVerificationBlock(
 	obligations: DocsObligation[],
 ): string {
@@ -90,8 +90,8 @@ function formatDocsVerificationBlock(
 		"The runtime detected open source-verification obligation(s):",
 		...lines,
 		"",
-		"Close each with compact contextqmd evidence:",
-		...CONTEXTQMD_STEPS,
+		"Close each with evidence from official documentation:",
+		...VERIFICATION_STEPS,
 		"",
 	].join("\n");
 }

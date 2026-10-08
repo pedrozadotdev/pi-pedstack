@@ -173,7 +173,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 ## Docs verification (#15)
 
 - **Docs-verification obligation** — a persisted, per-unit record that a unit requires
-  authoritative `contextqmd` verification and has not yet produced compact evidence;
+  authoritative external-package documentation verification and has not yet produced compact evidence;
   `open` until `satisfied` (a validated `docs-verified:` line) or `waived` (operator
   reason). A waived obligation re-opens when the unit content hash changes.
 - **Evaluation unit** — one `### Unit` block extracted from the active plan, identified
@@ -186,7 +186,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   `version_sensitivity`, `verification_material`) and never derives the decision.
 - **Compact evidence** — a bounded `docs-verified: PACKAGE@VERSION DOC_REF` line naming a
   detected package, the matching version (or `unknown` when the fact is version-unknown),
-  and a `contextqmd` doc path or page UID; format plus package/version match only, never
+  and an official documentation URL or stable documentation path; format plus package/version match only, never
   content match.
 - **Fallback evidence** — a `docs-verified:` line accepted while Jev is degraded, recorded
   `source: "fallback"` and re-scored on recovery.

@@ -17,7 +17,6 @@ const NON_PACKAGES = new Set([
 	"api",
 	"bash",
 	"bun",
-	"contextqmd",
 	"docs-verified",
 	"git",
 	"github",
@@ -158,7 +157,7 @@ export function parseEvidenceLines(unitText: string): string[] {
 
 const EVIDENCE_LINE = /^docs-verified:\s+(\S+)\s+(\S+)$/;
 
-/** A `contextqmd` `--doc-path` or `--page-uid`: no whitespace, path- or uid-like. */
+/** A compact documentation URL or stable path/identifier (no whitespace). */
 function looksLikeDocRef(value: string): boolean {
 	if (value.length < 3) return false;
 	if (!/^[A-Za-z0-9][\w./@:-]*$/.test(value)) return false;
