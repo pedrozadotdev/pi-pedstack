@@ -176,7 +176,7 @@ Every `mode` accepts only `"off"`, `"shadow"`, or `"enforce"`. There are no envi
 3. Otherwise Jev answers five bounded `noul` questions (`complexity`, `risk`, `cross_cutting`, `deep_reasoning`, `ambiguity`); TypeScript combines them with fixed weights and thresholds. Cleared with budget available → `sota`; threshold cleared but budget spent → `budget_exhausted`.
 4. Anything else — including a Jev outage or invalid answer → `default`.
 
-**Manual escalation.** When `stage_gate.action === "escalate"`, stop the current stage loop and ask the operator to run `/ped-reload`. Under enforced routing (`routing.shadow = false`) the persisted escalation makes stage-entry routing re-enter the same stage under `models.sota`; under shadow mode (the default) the decision is recorded but not applied. The model never invokes `/ped-reload` automatically and never switches models mid-turn.
+**Automatic escalation.** When `stage_gate.action === "escalate"`, the agent stops its current stage loop. Under enforced routing (`routing.shadow = false`), the extension queues an automatic same-stage reload after `agent_end` and idle; stage-entry routing reads the persisted escalation and selects `models.sota`. In shadow mode, the decision is recorded but not applied. The model does not call `/ped-reload` and no model switch happens during an active tool call. If the automatic reload cannot start, `/ped-reload` remains the operator fallback.
 
 Every decision is persisted to `.context/compound-engineering/routing/<stage>.json` with its `role`, `reason` (`override | gate_escalate | jev | budget_exhausted | fallback`), `source`, and (for Jev) the atomic scores.
 
