@@ -23,6 +23,8 @@ export interface CombineInput {
 	sem: SemanticScoreInput[];
 	/** Prior `revise` records for this stage at evaluation time. */
 	attempts: number;
+	/** False for stages where automatic SOTA escalation is forbidden. */
+	allowEscalation?: boolean;
 	jevUnavailable: boolean;
 	/** True only when features.overengineering.mode is "enforce". */
 	overengineeringEnforced?: boolean;
@@ -95,12 +97,12 @@ export function combineVerdict(input: CombineInput): CombineResult {
 				? "critical deterministic check failed (hard verdict floor)"
 				: "a deterministic check failed",
 		);
-		return finish("revise", null, criticalFailed, sem, reasons, input.attempts);
+		return finish("revise", null, criticalFailed, sem, reasons, input.attempts, input.allowEscalation);
 	}
 
 	if (unavailable) {
 		reasons.push("Jev unavailable: deterministic-only evaluation");
-		return finish("accept", null, false, sem, reasons, input.attempts);
+		return finish("accept", null, false, sem, reasons, input.attempts, input.allowEscalation);
 	}
 
 	const weightedScore = weightedAverage(base);
@@ -124,7 +126,7 @@ export function combineVerdict(input: CombineInput): CombineResult {
 		verdict = "revise";
 	}
 	if (verdict === "accept") reasons.push("deterministic and semantic contract satisfied");
-	return finish(verdict, weightedScore, false, sem, reasons, input.attempts);
+	return finish(verdict, weightedScore, false, sem, reasons, input.attempts, input.allowEscalation);
 }
 
 function finish(
@@ -134,9 +136,10 @@ function finish(
 	sem: SemanticScore[],
 	reasons: string[],
 	attempts: number,
+	allowEscalation = true,
 ): CombineResult {
 	return {
-		verdict: applyReviseBudget(verdict, attempts, reasons),
+		verdict: allowEscalation ? applyReviseBudget(verdict, attempts, reasons) : verdict,
 		weightedScore,
 		criticalFailed,
 		sem,

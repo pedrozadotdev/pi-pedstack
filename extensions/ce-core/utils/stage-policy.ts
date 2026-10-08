@@ -75,6 +75,21 @@ export const STAGE_DISCIPLINES: Record<PipelineStageKey, StageDiscipline> = {
 	},
 };
 
+/**
+ * Only exploratory/design stages and explicit debugging may automatically
+ * escalate to SOTA. Implementation, review and closing stages stay on the
+ * configured default model (unless the operator explicitly overrides one).
+ */
+const SOTA_ESCALATION_STAGES: ReadonlySet<string> = new Set([
+	"01-brainstorm",
+	"02-plan",
+	"04-5-debug",
+]);
+
+export function stageAllowsSotaEscalation(stage: string): boolean {
+	return SOTA_ESCALATION_STAGES.has(stage);
+}
+
 const STAGE_KEY_SET = new Set<string>(Object.keys(STAGE_DISCIPLINES));
 
 /** Resolve a stage key to its discipline, or `null` when unknown/absent. */

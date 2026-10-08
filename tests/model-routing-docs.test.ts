@@ -21,12 +21,7 @@ const ESCALATION_DOCS = [
 	"skills/02-plan/SKILL.md",
 	"skills/02-plan/references/ceo-review-mode.md",
 	"skills/02-plan/references/handoff.md",
-	"skills/03-work/references/handoff.md",
 	"skills/04-5-debug/SKILL.md",
-	"skills/04-review/SKILL.md",
-	"skills/04-review/references/handoff.md",
-	"skills/05-learn/SKILL.md",
-	"skills/06-docsync/SKILL.md",
 	"skills/references/pipeline-config.md",
 ];
 
@@ -80,6 +75,25 @@ describe("model-routing docs — shadow vs enforced", () => {
 		expect(readme).toContain("workflow-scoped");
 		expect(readme).toContain("/ped-fix-issues");
 		expect(readme).toContain("/ped-reload");
+	});
+
+	test("restricted stage instructions do not direct SOTA escalation", () => {
+		for (const rel of [
+			"skills/03-work/references/handoff.md",
+			"skills/04-review/SKILL.md",
+			"skills/04-review/references/handoff.md",
+			"skills/05-learn/SKILL.md",
+			"skills/06-docsync/SKILL.md",
+		]) {
+			const text = read(rel);
+			expect(text).not.toContain("automatically re-enters the same stage under `models.sota`");
+		}
+	});
+
+	test("shared instructions enumerate escalation-eligible stages", () => {
+		const shared = read("skills/references/pipeline-config.md");
+		for (const stage of ["01-brainstorm", "02-plan", "04-5-debug", "03-work", "04-review", "05-learn", "06-docsync"])
+			expect(shared).toContain(stage);
 	});
 
 	test("no escalation doc promises unconditional SOTA application", () => {
