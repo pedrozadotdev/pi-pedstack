@@ -916,9 +916,26 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("ped-start", cmdPedStart(pi));
+	const startCommand = cmdPedStart(pi);
+	pi.registerCommand("ped-start", {
+		...startCommand,
+		handler: async (args, ctx) => {
+			// A new workflow has a fresh stage-escalation budget.
+			pendingGateReload = null;
+			attemptedAutoReload.clear();
+			await startCommand.handler(args, ctx);
+		},
+	});
 	pi.registerCommand("ped-next", cmdPedNext(pi));
-	pi.registerCommand("ped-fix-issues", cmdPedFixIssues(pi));
+	const fixIssuesCommand = cmdPedFixIssues(pi);
+	pi.registerCommand("ped-fix-issues", {
+		...fixIssuesCommand,
+		handler: async (args, ctx) => {
+			pendingGateReload = null;
+			attemptedAutoReload.clear();
+			await fixIssuesCommand.handler(args, ctx);
+		},
+	});
 	pi.registerCommand("ped-reload", cmdPedReload(pi));
 	pi.registerCommand("ped-debug", cmdPedDebug(pi));
 
