@@ -1,5 +1,5 @@
 // Overengineering engine wiring (plan Unit 6): conditional request injection,
-// floor-only semantics, schema-2 persistence, and the size trim ladder.
+// floor-only semantics, schema-3 persistence, and the size trim ladder.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -124,7 +124,7 @@ afterEach(async () => {
 });
 
 describe("overengineering engine (Unit 6)", () => {
-	test("signal-ready enforcement scores the four dims and persists schema 2", async () => {
+	test("signal-ready enforcement scores the four dims and persists schema 3", async () => {
 		await writeReviewRepo(true);
 		const runtime = createFakeJevRuntime({ handler: scoring(4) });
 		const result = await evaluateStageGate(
@@ -140,7 +140,7 @@ describe("overengineering engine (Unit 6)", () => {
 		expect(overIds).toHaveLength(4);
 		expect(result.verdict).toBe("accept");
 		const record = await readLatestRecord(root, "04-review");
-		expect(record?.schema).toBe(2);
+		expect(record?.schema).toBe(3);
 		expect(record?.overengineering?.source).toBe("jev");
 		expect(record?.overengineering?.baselinePaths).toEqual([
 			"docs/brainstorms/req.md",

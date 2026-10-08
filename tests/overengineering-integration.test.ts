@@ -1,5 +1,5 @@
 // End-to-end wiring (plan Unit 8): a real plan artifact + requirements
-// baseline + fake git patch + fake runtime produce a schema-2 record, a shadow
+// baseline + fake git patch + fake runtime produce a schema-3 gate record, a shadow
 // log line, and a re-derivable reading.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
@@ -92,7 +92,7 @@ afterEach(async () => {
 });
 
 describe("overengineering integration (Unit 8)", () => {
-	test("writes a schema-2 record and a shadow log line", async () => {
+	test("writes a schema-3 gate record and a shadow log line", async () => {
 		const runtime = allFourRuntime();
 		const result = await evaluateStageGate(
 			{ runtime, now: () => new Date("2026-10-06T12:00:00.000Z") },
@@ -106,7 +106,7 @@ describe("overengineering integration (Unit 8)", () => {
 		expect(result.verdict).toBe("accept");
 
 		const record = await readLatestRecord(root, "02-plan");
-		expect(record?.schema).toBe(2);
+		expect(record?.schema).toBe(3);
 		expect(record?.overengineering?.source).toBe("jev");
 		expect(record?.overengineering?.baselinePaths).toEqual([
 			"docs/brainstorms/req.md",

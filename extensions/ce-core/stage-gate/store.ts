@@ -159,8 +159,8 @@ function baselinePathsOf(record: StageGateAttempt): string[] {
 }
 
 /**
- * Recomputes the hash over the currently resolved artifact set plus the
- * record's baseline paths and compares it with the record. Edits, additions,
+ * Recomputes the hash over the originally scored artifacts plus the
+ * record's baseline paths and compares it with the record. Auto-discovered additions,
  * removals, and renames all invalidate (R7); a changed/removed baseline does
  * too. A malformed `overengineering` field is treated as absent (schema-1
  * tolerance).
@@ -169,9 +169,28 @@ export async function isRecordFresh(
 	repoRoot: string,
 	record: StageGateAttempt,
 ): Promise<boolean> {
+	// Explicit hints are an intentional restricted scoring set. Re-discovering
+	// the full rubric here would hash files that the gate never scored.
+	// Automatic selection still detects additions/removals via fresh discovery.
 	const resolved = await resolveArtifactPaths(repoRoot, record.stage);
+	const scored = record.artifacts;
+	if (record.artifactSelection !== "hint") {
+		const sameSet =
+			resolved.paths.length === scored.length &&
+			resolved.paths.every((entry, index) => entry === [...scored].sort()[index]);
+		if (!sameSet) return false;
+	}
+	// computeArtifactsHash skips missing files. Check existence explicitly so a
+	// removed hinted artifact cannot be silently omitted from the manifest.
+	for (const rel of [...scored, ...baselinePathsOf(record)]) {
+		try {
+			if (!(await fs.stat(path.join(repoRoot, rel))).isFile()) return false;
+		} catch {
+			return false;
+		}
+	}
 	const hash = await computeArtifactsHash(repoRoot, [
-		...resolved.paths,
+		...scored,
 		...baselinePathsOf(record),
 	]);
 	return hash === record.artifactsHash;
