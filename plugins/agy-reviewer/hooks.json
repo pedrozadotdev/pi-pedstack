@@ -1,0 +1,42 @@
+{
+  "pi-pedstack-reviewer-guard": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "bun $HOME/.gemini/config/plugins/pi-pedstack-reviewer/guard.js PreInvocation",
+        "timeout": 12
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun $HOME/.gemini/config/plugins/pi-pedstack-reviewer/guard.js PreToolUse",
+            "timeout": 12
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun $HOME/.gemini/config/plugins/pi-pedstack-reviewer/guard.js PostToolUse",
+            "timeout": 12
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "bun $HOME/.gemini/config/plugins/pi-pedstack-reviewer/guard.js Stop",
+        "timeout": 12
+      }
+    ]
+  }
+}

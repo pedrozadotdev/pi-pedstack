@@ -23,6 +23,7 @@
   "files": [
     "skills",
     "extensions",
+    "plugins",
     "rules",
     "README.md",
     "package.json"
@@ -32,7 +33,9 @@
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "bun x tsc --noEmit"
+    "typecheck": "bun x tsc --noEmit",
+    "build:agy-guard": "bun build extensions/ce-core/review/agy-guard.ts --target=bun --outfile=plugins/agy-reviewer/guard.js",
+    "prepack": "bun run build:agy-guard"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.74.0",
