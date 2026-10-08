@@ -66,9 +66,7 @@ requires a fresh `accept` record. Deterministic failures block in **both**
 `shadow` and `enforce`; semantic verdicts warn in `shadow` and block in
 `enforce`. A `revise` or `review` verdict means: fix the artifact and re-run
 `stage_gate` before saving. An `escalate` verdict means: stop the current stage
-loop and ask the operator to run `/ped-reload` — under enforced routing
-(`routing.shadow: false`) the persisted escalation re-enters this same stage
-under `models.sota`; in shadow mode the decision is recorded but not applied.
+loop and let Pedstack automatically re-enter the same stage under `models.sota` after the turn finishes when routing is enforced (`routing.shadow: false`). In shadow mode, the decision is recorded but not applied. If automatic reload fails, use `/ped-reload` manually.
 
 ```
 context_handoff save

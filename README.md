@@ -85,7 +85,7 @@ For an explicit **stage model override** (wins over routing), use any of `brains
 }
 ```
 
-`reviewers` is supported on `brainstorm`, `plan`, `review`, and `learn` only. The other stages accept `model` and optional `thinkingLevel`. Use `models` for normal configuration and stage overrides only when intentional. During enforced routing (`routing.shadow: false`), a gate escalation stops the stage and asks you to run `/ped-reload`; the same stage restarts using SOTA. The review model is not the normal execution model.
+`reviewers` is supported on `brainstorm`, `plan`, `review`, and `learn` only. The other stages accept `model` and optional `thinkingLevel`. Use `models` for normal configuration and stage overrides only when intentional. During enforced routing (`routing.shadow: false`), a gate escalation automatically restarts the same stage under SOTA after the turn finishes. `/ped-reload` remains a manual fallback if automatic re-entry cannot start. The review model is not the normal execution model.
 
 ### Feature modes
 

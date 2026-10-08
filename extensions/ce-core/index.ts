@@ -18,6 +18,7 @@ import {
 	getAndClearPendingFixIssues,
 	isValidStageKey,
 	startStageFromRememberedContext,
+	autoReloadEscalatedStage,
 	clearRememberedCommandContext,
 	type PipelineStageKey,
 } from "./commands/pedstack";
@@ -99,6 +100,7 @@ import {
 import { createJevRuntime } from "./jev/runtime";
 import type { JevRuntime } from "./jev/types";
 import { resolveStartupFeatures } from "./utils/startup-features";
+import { readPiPedstackConfig } from "./utils/config-types";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -556,6 +558,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		stagePair: string | null;
 		isGated: boolean;
 	} | null = null;
+	let pendingGateReload: { repoRoot: string; stageKey: PipelineStageKey } | null = null;
+	const attemptedAutoReload = new Set<string>();
 
 	let persistedStageResolved = false;
 	let persistedStage: string | null = null;
@@ -818,6 +822,46 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		},
 	});
 
+	// An escalation is observed after the stage_gate tool returns, then acted
+	// on only at agent_end so navigation never interrupts an executing turn.
+	async function queueGateEscalation(event: {
+		toolName: string;
+		isError?: boolean;
+		details?: unknown;
+	}, ctx: ExtensionContext): Promise<void> {
+		if (event.toolName !== "stage_gate" || event.isError) return;
+		const result = event.details as {
+			stage?: unknown;
+			action?: unknown;
+			enforcing?: unknown;
+		} | undefined;
+		if (!result || typeof result.stage !== "string" || !isValidStageKey(result.stage)) return;
+		if (result.action !== "escalate" || result.enforcing !== true) {
+			if (pendingGateReload?.stageKey === result.stage) pendingGateReload = null;
+			return;
+		}
+		let config;
+		try {
+			config = await readPiPedstackConfig(ctx.cwd);
+		} catch (err) {
+			if (ctx.hasUI) ctx.ui.notify(`Cannot queue SOTA escalation: invalid model configuration (${String(err)})`, "warning");
+			return;
+		}
+		const stageKey = result.stage as PipelineStageKey;
+		const stageConfigKey = stageKey === "04-5-debug" ? "debug" : stageKey.slice(3);
+		const override = (config as Record<string, { model?: string }> | null)?.[stageConfigKey]?.model;
+		const sota = config?.models?.sota?.model;
+		if (config?.routing?.shadow !== false || !sota || override) return;
+		const active = getActiveStage() ?? await readPersistedActiveStage(ctx.cwd);
+		if (active !== stageKey) return;
+		if (ctx.model && `${ctx.model.provider}/${ctx.model.id}` === sota) return;
+		const key = `${ctx.cwd}:${stageKey}`;
+		if (attemptedAutoReload.has(key)) return;
+		pendingGateReload = { repoRoot: ctx.cwd, stageKey };
+		if (ctx.hasUI) ctx.ui.notify(`Stage gate escalation queued: ${stageKey} will automatically restart under SOTA when the turn finishes.`, "info");
+		return;
+	}
+
 	pi.registerTool({
 		name: checklistAdd.name,
 		label: "Checklist Add",
@@ -872,9 +916,26 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("ped-start", cmdPedStart(pi));
+	const startCommand = cmdPedStart(pi);
+	pi.registerCommand("ped-start", {
+		...startCommand,
+		handler: async (args, ctx) => {
+			// A new workflow has a fresh stage-escalation budget.
+			pendingGateReload = null;
+			attemptedAutoReload.clear();
+			await startCommand.handler(args, ctx);
+		},
+	});
 	pi.registerCommand("ped-next", cmdPedNext(pi));
-	pi.registerCommand("ped-fix-issues", cmdPedFixIssues(pi));
+	const fixIssuesCommand = cmdPedFixIssues(pi);
+	pi.registerCommand("ped-fix-issues", {
+		...fixIssuesCommand,
+		handler: async (args, ctx) => {
+			pendingGateReload = null;
+			attemptedAutoReload.clear();
+			await fixIssuesCommand.handler(args, ctx);
+		},
+	});
 	pi.registerCommand("ped-reload", cmdPedReload(pi));
 	pi.registerCommand("ped-debug", cmdPedDebug(pi));
 
@@ -1347,6 +1408,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	}
 
 	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName === "stage_gate") {
+			await queueGateEscalation(event, ctx);
+			return undefined;
+		}
 		if (event.toolName !== "context_handoff") return undefined;
 
 		try {
@@ -1474,6 +1539,41 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
+		const escalation = pendingGateReload;
+		pendingGateReload = null;
+		if (escalation) {
+			pendingAutoAdvance = null;
+			const key = `${escalation.repoRoot}:${escalation.stageKey}`;
+			if (!attemptedAutoReload.has(key)) {
+				attemptedAutoReload.add(key);
+				let remainingIdleChecks = 40;
+				const retry = () => {
+					let idle = false;
+					try {
+						idle = ctx.isIdle();
+					} catch {
+						return;
+					}
+					if (!idle) {
+						if (--remainingIdleChecks === 0) {
+							if (ctx.hasUI) ctx.ui.notify("Automatic SOTA reload timed out waiting for idle. Run /ped-reload manually.", "warning");
+							return;
+						}
+						setTimeout(retry, 50);
+						return;
+					}
+					void autoReloadEscalatedStage(pi, escalation.repoRoot, escalation.stageKey)
+						.then((started) => {
+							if (!started && ctx.hasUI) ctx.ui.notify("Automatic SOTA reload could not start. Run /ped-reload manually.", "warning");
+						})
+						.catch((err) => {
+							if (ctx.hasUI) ctx.ui.notify(`Automatic SOTA reload failed: ${String(err)}`, "error");
+						});
+				};
+				setTimeout(retry, 0);
+			}
+			return undefined;
+		}
 		const queued = pendingAutoAdvance;
 		if (!queued) return undefined;
 		pendingAutoAdvance = null;
@@ -1482,6 +1582,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async () => {
+		pendingGateReload = null;
+		attemptedAutoReload.clear();
 		// Fresh session: reset per-session state (record files untouched).
 		driftGuard?.reset();
 		setCurrentDriftSessionKey("");
@@ -1491,6 +1593,8 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async () => {
+		pendingGateReload = null;
+		attemptedAutoReload.clear();
 		pendingAutoAdvance = null;
 		clearRememberedCommandContext();
 		clearActiveStage();

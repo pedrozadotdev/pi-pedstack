@@ -42,4 +42,4 @@ Determine if changes alter AI behavior or constraints. Update Intent → Skill M
 
 - Write the docsync stage report to `.context/compound-engineering/stage-reports/06-docsync.md`.
 - Before the handoff save, run `stage_gate` for `06-docsync`; deterministic failures block the save in both `shadow` and `enforce`.
-- If `stage_gate` returns `action: "escalate"`, stop the current stage loop and ask the operator to run `/ped-reload`; under enforced routing (`routing.shadow: false`) the persisted escalation re-enters this same stage under `models.sota`; in shadow mode the decision is recorded but not applied. Do not continue with the current execution model and do not invoke `/ped-reload` yourself.
+- If `stage_gate` returns `action: "escalate"`, Stop the current stage loop and do not invoke `/ped-reload` yourself. Under enforced routing (`routing.shadow: false`), Pedstack automatically re-enters the same stage under `models.sota` after this turn ends; if that fails, the operator can use `/ped-reload` manually. Shadow mode records the decision but does not switch models.
