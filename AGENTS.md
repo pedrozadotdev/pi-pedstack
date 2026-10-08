@@ -79,6 +79,7 @@ skills/          # 7 pipeline skills (01-brainstorm, 02-plan, 03-work, 04-review
 extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt injection)
   ce-core/utils/ # Pure helpers: auto-advance, active-stage store, capability matrix, bash command-effect guard, solution ranking, model-role routing
   ce-core/tools/ # Pi tools + pure helper modules (output filters, failure triage)
+  ce-core/review/ # Reviewer selection policy and fail-closed Gemini/agy lifecycle guard
   ce-core/stage-gate/ # Stage artifact rubrics, evidence, record store, save-side completion guard
   ce-core/handoff-readiness/ # Save-side semantic readiness guard, per-pair record store, shadow log
   ce-core/docs-verification/ # Runtime per-unit docs-verification guard (units, facts, combine, store, guard)
@@ -87,6 +88,7 @@ extensions/      # Optional Pi extensions (ce-core: tools, commands, prompt inje
   ce-core/drift/ # Turn-level stage drift detection: turn-side pre-pass → bounded Jev dimensions → one-shot correction / strong block
   ce-core/compaction-guard/ # Semantic auto-compaction defer: deterministic pressure pre-pass → bounded Jev boundary judgment → enforce-only cancel
   ce-core/jev/   # Typed transport + runtime for CommandCode headless decisions (consumed by solution ranking, model-role routing, the stage gate, handoff readiness, docs verification, the bash stage guard, failure triage, and drift detection; no direct Pi tool surface)
+plugins/         # Bundled external CLI plugins; agy reviewer plugin is installed explicitly
 tests/           # Test files
 docs/            # Documentation, brainstorms, plans, reviews, solutions
 ```
@@ -107,7 +109,7 @@ docs/            # Documentation, brainstorms, plans, reviews, solutions
 | `context_handoff` | Save/load/validate cross-stage handoffs |
 | `stage_gate` | Score a stage artifact: deterministic checks + bounded Jev scoring → one verdict |
 | `docs_verification` | Evaluate, inspect, record, or waive per-unit source-driven documentation obligations (`evaluate` / `status` / `record` / `waive`) |
-| `multi_reviewer` | Orchestrate parallel reviewer subagents; optional `mode: single \| deep` (deep is opt-in) |
+| `multi_reviewer` | Run independent Pi reviewers or exact-ID Gemini reviewers through the explicitly installed, fail-closed agy guard; optional `mode: single \| deep` (deep is opt-in). Any requested reviewer failure aborts without a success sidecar. |
 | `checklist_add` / `checklist_show` / `checklist_del` | Persistent task tracking with handoff gating (bulk add via `descriptions[]`) |
 | `solution_search` | Rank `docs/solutions/**` cards for a query via Jev semantic ranking with a deterministic fallback (`mode: recall` / `overlap`) |
 | `semantic_read` | Answer one bounded semantic question about a single repo file; returns a typed answer plus byte facts, never a file body |

@@ -87,6 +87,34 @@ For an explicit **stage model override** (wins over routing), use any of `brains
 
 `reviewers` is supported on `brainstorm`, `plan`, `review`, and `learn` only. The other stages accept `model` and optional `thinkingLevel`. Use `models` for normal configuration and stage overrides only when intentional. During enforced routing (`routing.shadow: false`), a gate escalation automatically restarts the same stage under SOTA after the turn finishes. `/ped-reload` remains a manual fallback if automatic re-entry cannot start. The review model is not the normal execution model.
 
+### Guarded Gemini reviewers (Antigravity CLI)
+
+Selected Gemini reviewers run through Antigravity CLI (`agy`); other reviewers continue through Pi. Explicit stage `reviewers[]` entries take precedence over the `models.review` fallback, and the configured model ID is passed exactly as supplied. Reviewers run in a fresh no-session process, so they may reuse an execution model ID without reviewing the same session.
+
+Configure an exact ID listed by `agy models`:
+
+```json
+{
+  "models": {
+    "review": {
+      "model": "gemini-<exact-id-from-agy-models>",
+      "thinkingLevel": "high"
+    }
+  }
+}
+```
+
+Unavailable model IDs or unsupported thinking levels abort the review; there is no alias, default-model, or Pi fallback. Install the bundled reviewer plugin explicitly from the package or checkout:
+
+```bash
+agy plugin validate ./plugins/agy-reviewer
+agy plugin install ./plugins/agy-reviewer
+```
+
+The plugin and agent are named `pi-pedstack-reviewer`. Guarded reviews currently support Linux, agy 1.3.1, Bun, Node, CommandCode's `cmd`, and `/usr/bin/git` 2.47.3. Preflight verifies plugin activation and runs a disposable hook challenge before repository access. Unsupported hooks/customizations, missing prerequisites, guard failures, and incomplete reviews abort without a success sidecar. The reviewer can perform bounded repository reads and safe Git status inspection only; writes, arbitrary commands, tests/builds, network/MCP access, and nested agents are denied.
+
+The opt-in native agy end-to-end test and Windows-host validation were not run; Windows is unsupported for guarded Gemini reviews.
+
 ### Feature modes
 
 Each mode accepts `"off" | "shadow" | "enforce"`. All eight feature modes default to **`enforce`**. `shadow` evaluates/logs semantic judgments without enforcing them; `off` disables the feature. Deterministic hard guards may remain active even where semantic mode is shadow.
