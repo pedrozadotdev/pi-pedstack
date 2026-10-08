@@ -44,7 +44,7 @@ describe("Unit 7 — CONTEXT.md vocabulary", () => {
 
 describe("Unit 7 — README operator surface", () => {
 	test("documents the mode, live opt-in, log, and calibration gate", () => {
-		const readme = read("README.md");
+		const readme = read("docs/ARCHITECTURE.md");
 		expect(readme).toContain("features.compactionGuard.mode");
 		expect(readme).toContain("features.compactionGuard.live");
 		expect(readme).toContain('"off" | "shadow" | "enforce"');
