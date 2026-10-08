@@ -824,33 +824,43 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 
 	// An escalation is observed after the stage_gate tool returns, then acted
 	// on only at agent_end so navigation never interrupts an executing turn.
-	pi.on("tool_result", async (event, ctx) => {
-		if (event.toolName !== "stage_gate" || event.isError) return undefined;
+	async function queueGateEscalation(event: {
+		toolName: string;
+		isError?: boolean;
+		details?: unknown;
+	}, ctx: ExtensionContext): Promise<void> {
+		if (event.toolName !== "stage_gate" || event.isError) return;
 		const result = event.details as {
 			stage?: unknown;
 			action?: unknown;
 			enforcing?: unknown;
 		} | undefined;
-		if (!result || typeof result.stage !== "string" || !isValidStageKey(result.stage)) return undefined;
+		if (!result || typeof result.stage !== "string" || !isValidStageKey(result.stage)) return;
 		if (result.action !== "escalate" || result.enforcing !== true) {
 			if (pendingGateReload?.stageKey === result.stage) pendingGateReload = null;
-			return undefined;
+			return;
 		}
-		const config = await readPiPedstackConfig(ctx.cwd);
+		let config;
+		try {
+			config = await readPiPedstackConfig(ctx.cwd);
+		} catch (err) {
+			if (ctx.hasUI) ctx.ui.notify(`Cannot queue SOTA escalation: invalid model configuration (${String(err)})`, "warning");
+			return;
+		}
 		const stageKey = result.stage as PipelineStageKey;
 		const stageConfigKey = stageKey === "04-5-debug" ? "debug" : stageKey.slice(3);
-		const override = (config as Record<string, any> | null)?.[stageConfigKey]?.model;
+		const override = (config as Record<string, { model?: string }> | null)?.[stageConfigKey]?.model;
 		const sota = config?.models?.sota?.model;
-		if (config?.routing?.shadow !== false || !sota || override) return undefined;
+		if (config?.routing?.shadow !== false || !sota || override) return;
 		const active = getActiveStage() ?? await readPersistedActiveStage(ctx.cwd);
-		if (active !== stageKey) return undefined;
-		if (ctx.model && `${ctx.model.provider}/${ctx.model.id}` === sota) return undefined;
+		if (active !== stageKey) return;
+		if (ctx.model && `${ctx.model.provider}/${ctx.model.id}` === sota) return;
 		const key = `${ctx.cwd}:${stageKey}`;
-		if (attemptedAutoReload.has(key)) return undefined;
+		if (attemptedAutoReload.has(key)) return;
 		pendingGateReload = { repoRoot: ctx.cwd, stageKey };
 		if (ctx.hasUI) ctx.ui.notify(`Stage gate escalation queued: ${stageKey} will automatically restart under SOTA when the turn finishes.`, "info");
-		return undefined;
-	});
+		return;
+	}
 
 	pi.registerTool({
 		name: checklistAdd.name,
@@ -1381,6 +1391,10 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	}
 
 	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName === "stage_gate") {
+			await queueGateEscalation(event, ctx);
+			return undefined;
+		}
 		if (event.toolName !== "context_handoff") return undefined;
 
 		try {
@@ -1515,8 +1529,19 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			const key = `${escalation.repoRoot}:${escalation.stageKey}`;
 			if (!attemptedAutoReload.has(key)) {
 				attemptedAutoReload.add(key);
+				let remainingIdleChecks = 40;
 				const retry = () => {
-					if (!ctx.isIdle()) {
+					let idle = false;
+					try {
+						idle = ctx.isIdle();
+					} catch {
+						return;
+					}
+					if (!idle) {
+						if (--remainingIdleChecks === 0) {
+							if (ctx.hasUI) ctx.ui.notify("Automatic SOTA reload timed out waiting for idle. Run /ped-reload manually.", "warning");
+							return;
+						}
 						setTimeout(retry, 50);
 						return;
 					}
