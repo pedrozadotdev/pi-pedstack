@@ -49,11 +49,12 @@ export function planUnitChunks(plan: string): PlanUnitChunk[] {
     const end = next?.index ?? plan.length;
     const body = plan.slice(current.index, end);
     const slices = utf8Chunks(body, UNIT_TEXT_BYTES);
+    const unitOverview = utf8Chunks(body, 1024)[0] ?? "";
     for (let part = 0; part < slices.length; part++) {
       const label = `Unit ${i + 1} (${part + 1}/${slices.length})`;
       chunks.push({
         label,
-        artifact: `Shared plan context (bounded):\n${context}\n\n${label}: ${current[0]}\n${slices[part]}\n\nClosing verification context (bounded):\n${closing}`,
+        artifact: `Shared plan context (bounded):\n${context}\n\n${label}: ${current[0]}\nUnit overview (bounded):\n${unitOverview}\n\nUnit segment:\n${slices[part]}\n\nClosing verification context (bounded):\n${closing}`,
       });
     }
   }
