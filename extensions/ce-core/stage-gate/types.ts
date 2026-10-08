@@ -55,6 +55,8 @@ export interface Evidence {
 	artifacts: string[];
 	files: EvidenceFile[];
 	txt: string;
+	/** Full selected plan text for deterministic validation only; never sent to Jev. */
+	validationText?: string;
 	errors: string[];
 	warnings: string[];
 	reviewFindings: ReviewFindingsFile[];

@@ -165,6 +165,8 @@ describe("stage gate evidence (Unit 2)", () => {
 
 		expect(Buffer.byteLength(evidence.files[0].text, "utf8")).toBeLessThanOrEqual(MAX_FILE_BYTES);
 		expect(evidence.truncated).toBe(true);
+		expect(evidence.validationText).toBe(big);
+		expect(evidence.warnings.join(" ")).toContain("truncated for semantic scoring");
 
 		const half = "b".repeat(40 * 1024);
 		await fs.rm(path.join(root, "docs/plans/big.md"));
@@ -173,12 +175,20 @@ describe("stage gate evidence (Unit 2)", () => {
 		const two = await gatherEvidence({ repoRoot: root, stage: "02-plan" });
 		expect(Buffer.byteLength(two.txt, "utf8")).toBeLessThanOrEqual(MAX_TOTAL_BYTES);
 		expect(two.truncated).toBe(true);
+		expect(two.validationText).toBe(`${half}\n${half}`);
 
 		const full = await computeArtifactsHash(root, ["docs/plans/one.md", "docs/plans/two.md"]);
 		const manual = createHash("sha256");
 		manual.update(`${"docs/plans/one.md"}\0${40 * 1024}\0${await sha256String(half)}\n`);
 		manual.update(`${"docs/plans/two.md"}\0${40 * 1024}\0${await sha256String(half)}\n`);
 		expect(full).toBe(manual.digest("hex"));
+	});
+
+	test("non-plan stages do not include unbounded validation text", async () => {
+		await write("docs/reviews/long.md", "a".repeat(100 * 1024));
+		const evidence = await gatherEvidence({ repoRoot: root, stage: "04-review" });
+		expect(evidence.truncated).toBe(true);
+		expect(evidence.validationText).toBeUndefined();
 	});
 
 	test("returns null for missing or corrupt context-state and checkpoint JSON", async () => {
