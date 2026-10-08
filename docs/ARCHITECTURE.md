@@ -377,7 +377,7 @@ Anti-rationalization: do not rationalize, downgrade, or explain away failures. S
 
 ### Source-driven verification
 
-When implementation depends on a framework/library API, version-specific behavior, or a recommended pattern: verify against official documentation using the `contextqmd` CLI as the primary tool (see [shared contextqmd docs instruction](skills/references/contextqmd-docs.md)) before implementing. Pure logic, renaming, or in-project pattern reuse does not require external citation.
+When implementation depends on a framework/library API, version-specific behavior, or a recommended pattern: verify against official documentation using the `contextqmd` CLI as the primary tool (see [shared contextqmd docs instruction](../skills/references/contextqmd-docs.md)) before implementing. Pure logic, renaming, or in-project pattern reuse does not require external citation.
 
 ### Docs-verification runtime trigger (#15)
 
@@ -391,7 +391,7 @@ Source-driven verification is a **runtime trigger**, not model initiative. At th
 - **Tool** — `docs_verification` exposes `evaluate` / `status` / `record` / `waive`.
 - ``features.docsVerification.mode = "off" | "shadow" | "enforce"`` (default `enforce`) is read once at extension init; a Jev outage degrades to `uncertain` with obligations open and never marks evidence complete.
 
-**Known limitations (deferred to an on-demand `04-5-debug` pass):** the planned-phase extractor is over-broad — it can treat backticked code identifiers (`types.ts`, `status`, `mode`) as external packages and mint false obligations — and declared `Files` paths are resolved without repo containment (`canonicalRel`/`isInside`), so an absolute or `../` entry can be read outside the repo. The save hook also runs on every `02-plan`/`03-work` save rather than only the completion pair, and `status` returns the raw record with no freshness verdict. Both high findings share one root cause — model-authored plan prose trusted as typed data — recorded in the [untrusted plan-field card](docs/solutions/architecture/validate-model-authored-plan-fields-before-read-or-extract.md); the read-site and fallback defects are in the [read-site freshness card](docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md) and [degraded-fallback card](docs/solutions/architecture/keep-degraded-fallbacks-out-of-primary-signal-state.md).
+**Known limitations (deferred to an on-demand `04-5-debug` pass):** the planned-phase extractor is over-broad — it can treat backticked code identifiers (`types.ts`, `status`, `mode`) as external packages and mint false obligations — and declared `Files` paths are resolved without repo containment (`canonicalRel`/`isInside`), so an absolute or `../` entry can be read outside the repo. The save hook also runs on every `02-plan`/`03-work` save rather than only the completion pair, and `status` returns the raw record with no freshness verdict. Both high findings share one root cause — model-authored plan prose trusted as typed data — recorded in the [untrusted plan-field card](../docs/solutions/architecture/validate-model-authored-plan-fields-before-read-or-extract.md); the read-site and fallback defects are in the [read-site freshness card](../docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md) and [degraded-fallback card](../docs/solutions/architecture/keep-degraded-fallbacks-out-of-primary-signal-state.md).
 
 ### Review five axes
 
@@ -408,7 +408,7 @@ Cross-stage progression is not just "the checklist is empty": the ce-core extens
 
 Records are persisted per stage under `.context/compound-engineering/stage-gates/<stage>.json` with a content hash; `enforce` only accepts a fresh, enforcing `accept`.
 
-**Known limitations:** the semantic scorer needs CommandCode to be available — when the runtime is unavailable the score is marked `jev unavailable` and the deterministic floor still decides. The placeholder predicate currently rejects normal schema notation (`<string>`, `<sha256>`) and the shared `stage-reports/` fallback can resolve the wrong stage's report; both confirmed defects are recorded in the [stage-gate solution card](docs/solutions/workflow/stage-artifact-completion-gate-shadow-first-rubrics.md).
+**Known limitations:** the semantic scorer needs CommandCode to be available — when the runtime is unavailable the score is marked `jev unavailable` and the deterministic floor still decides. The placeholder predicate currently rejects normal schema notation (`<string>`, `<sha256>`) and the shared `stage-reports/` fallback can resolve the wrong stage's report; both confirmed defects are recorded in the [stage-gate solution card](../docs/solutions/workflow/stage-artifact-completion-gate-shadow-first-rubrics.md).
 
 ### Overengineering signal
 
@@ -419,7 +419,7 @@ The Ponytail/YAGNI discipline is injected as prompt prose into `02-plan`, `03-wo
 - **Deterministic baseline first.** Each stage's normative excerpt (requirements for `02-plan`, the plan for `03-work`, both for `04-review`) is resolved from files — never a network fetch. A missing baseline short-circuits to `unavailable` with no git call; `off` performs no reads.
 - **Exact evidence, injected I/O.** `facts.ts` extracts diff, manifest, and untracked-file facts behind an injected `runGit`; a git failure degrades to empty facts plus skip reasons. The record's `source` separates a real reading (`jev`) from an outage or a size trim, so the calibration log never counts an outage as a reading.
 
-**Enforcement checkpoint:** flip `features.overengineering.mode` to `enforce` only after the D10 calibration data exists. The `04-review` pass confirmed the feature and found 1 high + 2 moderate + 4 low findings, all in the deterministic evidence path: H1 treats a directory with *no* `package.json` as unreadable (permanently skipping `dependency_justification`), M1 extracts script/nested manifest keys as dependencies, and M2 stamps a Jev outage as `source: "jev"`. None change a verdict while the signal is inert; they are deferred to an on-demand `04-5-debug` pass and recorded in the [floor-only semantic dimensions card](docs/solutions/architecture/floor-only-semantic-dimensions-with-exact-evidence.md).
+**Enforcement checkpoint:** flip `features.overengineering.mode` to `enforce` only after the D10 calibration data exists. The `04-review` pass confirmed the feature and found 1 high + 2 moderate + 4 low findings, all in the deterministic evidence path: H1 treats a directory with *no* `package.json` as unreadable (permanently skipping `dependency_justification`), M1 extracts script/nested manifest keys as dependencies, and M2 stamps a Jev outage as `source: "jev"`. None change a verdict while the signal is inert; they are deferred to an on-demand `04-5-debug` pass and recorded in the [floor-only semantic dimensions card](../docs/solutions/architecture/floor-only-semantic-dimensions-with-exact-evidence.md).
 
 ### Handoff readiness (#10)
 
@@ -434,7 +434,7 @@ A handoff can pass every structural probe and still be semantically empty — a 
 - ``features.handoffReadiness.failClosed = true`` blocks in `enforce` when the semantic layer is **degraded**; the default is `false` (fail-open).
 - ``features.docsVerification.mode = "off" | "shadow" | "enforce"`` (default `enforce`) gates the docs-verification runtime trigger; ``features.docsVerification.failClosed = true`` blocks in `enforce` on a degraded layer (default `false`, fail-open).
 
-**Known limitations (deferred to an on-demand `04-5-debug` pass):** the deterministic pre-pass checks `activeFiles` only, not the union with `recentlyAccessedFiles`, so a deleted recent-only file can still be judged `continue`; and `validate`'s surfacing matches on pair + thresholds version alone, so it can return a stale or degraded record instead of the required “never a stale one”. The fix is to reuse the single exported freshness predicate at every read site — recorded in the [read-site freshness card](docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md).
+**Known limitations (deferred to an on-demand `04-5-debug` pass):** the deterministic pre-pass checks `activeFiles` only, not the union with `recentlyAccessedFiles`, so a deleted recent-only file can still be judged `continue`; and `validate`'s surfacing matches on pair + thresholds version alone, so it can return a stale or degraded record instead of the required “never a stale one”. The fix is to reuse the single exported freshness predicate at every read site — recorded in the [read-site freshness card](../docs/solutions/architecture/one-freshness-predicate-reused-at-every-read-site.md).
 
 ### Turn-level stage drift detection (#8)
 
@@ -449,7 +449,7 @@ The capability matrix (#3) and the bash stage guard (#4) only act on a specific 
 
 Records are persisted per stage at `.context/compound-engineering/drift/<stage>.json`, with a sibling last-evaluation health marker at `.context/compound-engineering/drift/<stage>.status.json`. Both use a **6 h TTL**. The block messages **name these paths**: delete the stage's `.json` / `.status.json` files to clear the block (a missing file means no block), or set ``features.driftGuard.mode = "off"`` (restart required). A session only honors records and statuses whose `sessionKey` matches the current session, so a fresh session starts clean.
 
-**Shadow is not free.** If you explicitly switch `features.driftGuard.mode` to `shadow`, it still calls Jev on the awaited `turn_end` handler — up to 24 distinct non-trivial turns per session, 8 s timeout each — so shadow remains useful for calibration but is not latency-free. See the [shadow-mode-is-not-free card](docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md).
+**Shadow is not free.** If you explicitly switch `features.driftGuard.mode` to `shadow`, it still calls Jev on the awaited `turn_end` handler — up to 24 distinct non-trivial turns per session, 8 s timeout each — so shadow remains useful for calibration but is not latency-free. See the [shadow-mode-is-not-free card](../docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md).
 
 **Stay in `shadow` and calibrate first.** Shadow computes and logs every judgment (including `dimensions`, `triggered`, and `jevCalled`, plus `statusWriteFailed: true` when a status marker write was swallowed) to `.context/compound-engineering/drift.jsonl` (rotated at 1 MiB) while blocking nothing. **Promote to `enforce` only after** at least 100 judged turns over a representative multi-stage run, a mild-correction rate below 20% of non-trivial turns, zero false-positive strong verdicts on a manually labeled in-scope set, a degraded rate below 5%, and no drift-caused blocked save with a false positive.
 
@@ -457,7 +457,7 @@ Records are persisted per stage at `.context/compound-engineering/drift/<stage>.
 
 **Remaining deferred item (M3).** The planned per-stage correction ledger (capped-out recurrence escalates to strong) shipped without the ledger.
 
-Findings are recorded in the [review report](docs/reviews/2026-10-06-turn-level-stage-drift-corrections.md), the [frozen-decision-table drift card](docs/solutions/workflow/frozen-decision-tables-drift-from-implemented-constants.md), the [shadow-mode-is-not-free recurrence](docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md), the [frozen-spec self-contradiction card](docs/solutions/workflow/frozen-spec-can-contradict-its-own-normative-pseudocode.md), and the [enforce-only test card](docs/solutions/testing/enforce-only-branch-tests-must-run-in-enforce.md).
+Findings are recorded in the [review report](../docs/reviews/2026-10-06-turn-level-stage-drift-corrections.md), the [frozen-decision-table drift card](../docs/solutions/workflow/frozen-decision-tables-drift-from-implemented-constants.md), the [shadow-mode-is-not-free recurrence](../docs/solutions/architecture/shadow-mode-is-not-free-on-awaited-hooks.md), the [frozen-spec self-contradiction card](../docs/solutions/workflow/frozen-spec-can-contradict-its-own-normative-pseudocode.md), and the [enforce-only test card](../docs/solutions/testing/enforce-only-branch-tests-must-run-in-enforce.md).
 
 ### Semantic compaction guard (#11)
 
@@ -490,7 +490,7 @@ Stage discipline is not just prompt text. The ce-core extension hooks tool calls
 - When the semantic layer is unavailable, ambiguous commands **fail open** by default. Set ``features.stageGuard.failClosed = true`` (with `enforce`) to block instead; a one-time degraded notice is shown.
 - Set ``features.stageGuard.disabled = true`` to bypass both guards entirely.
 
-**Threat model:** deterrence against a drifting or careless agent, not a sandbox. Accepted bypasses are `$VAR`/globs/symlinks, `eval`, `curl | sh`, heredocs, and any command the classifier cannot prove. The `config` class is an exact-basename allowlist (`package.json`, `tsconfig.json`, `bunfig.toml`, `.github/`), so other config files (`.eslintrc.json`, `biome.json`, `tsconfig.build.json`) classify as `unknown` and are writable in every stage. Reusable lessons are recorded in the [path-classification card](docs/solutions/workflow/deterministic-path-classification-guard-for-stage-scoped-tool-calls.md), the [bash guard card](docs/solutions/workflow/deterministic-first-semantic-guard-for-indirect-bash-tool-actions.md), and the [cross-stage deferral card](docs/solutions/workflow/stage-capability-matrix-defers-a-fix-to-a-later-stage.md) — the planning consequence: a fix whose units target different path classes must schedule each unit in its owning stage and carry the deferred unit through the handoff. One confirmed but unfixed issue remains in the path guard: activation can persist the wrong stage on a cancelled navigation (H1).
+**Threat model:** deterrence against a drifting or careless agent, not a sandbox. Accepted bypasses are `$VAR`/globs/symlinks, `eval`, `curl | sh`, heredocs, and any command the classifier cannot prove. The `config` class is an exact-basename allowlist (`package.json`, `tsconfig.json`, `bunfig.toml`, `.github/`), so other config files (`.eslintrc.json`, `biome.json`, `tsconfig.build.json`) classify as `unknown` and are writable in every stage. Reusable lessons are recorded in the [path-classification card](../docs/solutions/workflow/deterministic-path-classification-guard-for-stage-scoped-tool-calls.md), the [bash guard card](../docs/solutions/workflow/deterministic-first-semantic-guard-for-indirect-bash-tool-actions.md), and the [cross-stage deferral card](../docs/solutions/workflow/stage-capability-matrix-defers-a-fix-to-a-later-stage.md) — the planning consequence: a fix whose units target different path classes must schedule each unit in its owning stage and carry the deferred unit through the handoff. One confirmed but unfixed issue remains in the path guard: activation can persist the wrong stage on a cancelled navigation (H1).
 
 ### Semantic solution ranking (shadow-first)
 
@@ -502,7 +502,7 @@ Stage discipline is not just prompt text. The ce-core extension hooks tool calls
 - **One handler:** auto-injection is composed inside the single existing `before_agent_start` handler; a second handler or a `{ systemPrompt: event.systemPrompt }` no-op would break extension chaining.
 - **Untrusted content:** injected card bodies are reference data, not instructions.
 
-**Enforcement checkpoint:** before setting `solutionRanking.shadow=false`, resolve the deferred findings (M1 request-cap byte-bounding of every serialized frontmatter field, M2 silent catch, M3 module-singleton reset) recorded in the [shadow-first solution card](docs/solutions/architecture/shadow-first-semantic-ranking-with-deterministic-fallback.md) via a `04-5-debug` pass. None block merge while the feature is inert.
+**Enforcement checkpoint:** before setting `solutionRanking.shadow=false`, resolve the deferred findings (M1 request-cap byte-bounding of every serialized frontmatter field, M2 silent catch, M3 module-singleton reset) recorded in the [shadow-first solution card](../docs/solutions/architecture/shadow-first-semantic-ranking-with-deterministic-fallback.md) via a `04-5-debug` pass. None block merge while the feature is inert.
 
 ### Semantic file reads & scouting (#14)
 
@@ -519,7 +519,7 @@ Stage discipline is not just prompt text. The ce-core extension hooks tool calls
 - **Status contract (`semantic_scout`):** `ok` (every attempted path answered), `partial` (some answers and some per-path failures, or zero answers without an outage), `empty` (no eligible candidates after pruning/filtering), `degraded` (Jev outage), `error` (invalid target/question/criteria). A per-path failure is isolated; it never aborts the batch.
 - **Never-weaker degraded fallback:** a full Jev outage returns `status: "degraded"` with explicit `read`/`grep` guidance — the engine never throws and never returns an unexplained empty list.
 
-**Known limitations (deferred to an on-demand `04-5-debug` pass):** the #14 review found that pruning and containment are enforced inside the child loop but not at every expansion entry point — an explicitly named pruned directory (`node_modules`) and a directory-symlink glob base are still walked, a zero-answer batch is reported as `partial` without explanation, and a file named `__proto__` is dropped from the second-pass Choice (M1, M2, M4, L6). Content is still protected by the downstream realpath check before any read, so this is a policy/semantics deviation, not a body leak. Findings are recorded in the [traversal-policy solution card](docs/solutions/architecture/apply-traversal-policy-to-expansion-roots.md).
+**Known limitations (deferred to an on-demand `04-5-debug` pass):** the #14 review found that pruning and containment are enforced inside the child loop but not at every expansion entry point — an explicitly named pruned directory (`node_modules`) and a directory-symlink glob base are still walked, a zero-answer batch is reported as `partial` without explanation, and a file named `__proto__` is dropped from the second-pass Choice (M1, M2, M4, L6). Content is still protected by the downstream realpath check before any read, so this is a policy/semantics deviation, not a body leak. Findings are recorded in the [traversal-policy solution card](../docs/solutions/architecture/apply-traversal-policy-to-expansion-roots.md).
 
 ### Untrusted tool-result injection screen
 
@@ -640,7 +640,7 @@ bun test              # run the suite (transpile-only — it does NOT type-check
 bun run typecheck     # bun x tsc --noEmit (strict); CI runs this after bun install
 ```
 
-A green `bun test` is not a type-safety verdict: Bun transpiles without type-checking, so the CI job runs `bun x tsc --noEmit` after `bun install` (`.github/workflows/test.yml`). The reasoning is in the [transpile-only runner card](docs/solutions/testing/green-test-runner-is-not-a-type-check.md).
+A green `bun test` is not a type-safety verdict: Bun transpiles without type-checking, so the CI job runs `bun x tsc --noEmit` after `bun install` (`.github/workflows/test.yml`). The reasoning is in the [transpile-only runner card](../docs/solutions/testing/green-test-runner-is-not-a-type-check.md).
 
 ---
 
