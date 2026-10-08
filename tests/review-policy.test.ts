@@ -42,24 +42,24 @@ describe("review policy — action mapping (Unit 1)", () => {
 		expect(decision.reviewerCount).toBe(1);
 	});
 
-	test("review at the budget cap escalates", () => {
+	test("review at the budget cap awaits completion", () => {
 		const decision = resolveReviewAction({
 			verdict: "review",
 			independentReviews: MAX_INDEPENDENT_REVIEW,
 			reviewerAvailable: true,
 		});
-		expect(decision.action).toBe("escalate");
+		expect(decision.action).toBe("review");
 		expect(decision.reviewerCount).toBe(0);
 		expect(decision.reason.length).toBeGreaterThan(0);
 	});
 
-	test("review with no available reviewer escalates", () => {
+	test("review with no available reviewer does not escalate", () => {
 		const decision = resolveReviewAction({
 			verdict: "review",
 			independentReviews: 0,
 			reviewerAvailable: false,
 		});
-		expect(decision.action).toBe("escalate");
+		expect(decision.action).toBe("review");
 		expect(decision.reviewerCount).toBe(0);
 		expect(decision.reason.length).toBeGreaterThan(0);
 	});
