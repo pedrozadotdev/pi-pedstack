@@ -95,7 +95,7 @@ describe("resolveStageRouting — inert without config", () => {
 		expect(jev.requests.length).toBe(0);
 		expect(result.appliedModel).toBeNull();
 		expect(result.appliedThinkingLevel).toBeNull();
-		expect(result.shadow).toBe(true);
+		expect(result.shadow).toBe(false);
 		expect(result.decision.reason).toBe("fallback");
 		expect(await readRoutingRecord(repo, "02-plan")).toBeNull();
 	});
@@ -425,7 +425,7 @@ describe("resolveStageRouting — budget semantics", () => {
 });
 
 describe("resolveStageRouting — partial role config", () => {
-	test("routing without models still computes but applies nothing", async () => {
+	test("routing-only config cannot enable model routing", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, { routing: { shadow: false } });
 		const jev = createFakeJevRuntime({ handler: routingHandler() });
@@ -436,9 +436,10 @@ describe("resolveStageRouting — partial role config", () => {
 			jev,
 		});
 
-		expect(result.decision.role).toBe("sota");
+		expect(result.decision.role).toBe("default");
 		expect(result.appliedModel).toBeNull();
-		expect(await readRoutingRecord(repo, "02-plan")).not.toBeNull();
+		expect(jev.requests).toHaveLength(0);
+		expect(await readRoutingRecord(repo, "02-plan")).toBeNull();
 	});
 
 	test("a gate escalate with no sota role falls back to default, never review", async () => {
