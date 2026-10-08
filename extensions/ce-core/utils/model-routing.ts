@@ -247,14 +247,14 @@ export interface StageRoutingResult {
 function safeFallbackResult(): StageRoutingResult {
 	return {
 		decision: plainDecision("default", "fallback", "fallback"),
-		shadow: true,
+		shadow: false,
 		appliedModel: null,
 		appliedThinkingLevel: null,
 	};
 }
 
 function hasRoutingConfig(config: PiPedstackConfig): boolean {
-	return config.models !== undefined || config.routing !== undefined;
+	return config.models !== undefined;
 }
 
 /** Pick the model/thinking level to apply, or nulls in shadow/override/no-role cases. */

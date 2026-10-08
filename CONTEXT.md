@@ -57,7 +57,7 @@ brainstorms, plans, reviews, or code, they mean exactly this.
 
 - **Model role** — one of `default` (cheap normal-execution workhorse), `review`
   (isolated reviewer; may reuse the SOTA model id), or `sota` (highest-capability escalation), declared once
-  in the optional top-level `models` block.
+  in the required top-level `models` block.
 - **Execution role** — the role actually applied to a stage turn: `default | sota` only.
   `review` is never an execution target.
 - **Routing decision** — the persisted `{ role, reason, source, scores, weighted, confidence,
@@ -77,11 +77,10 @@ brainstorms, plans, reviews, or code, they mean exactly this.
   `/ped-start` and `/ped-fix-issues` clear the previous workflow's routing and stage-gate
   records, while `/ped-next`, `/ped-reload`, and `/ped-debug` preserve them.
 - **Eligible stage-gate escalation** — when an eligible stage returns `action: "escalate"`, the stage loop stops; enforced routing automatically reloads it under `models.sota` at the end of the turn. `/ped-reload` remains the manual fallback if automation cannot start. Shadow mode records the decision but does not switch models; no model is changed mid-turn. This does not apply to work, review, learn, or docsync.
-- **Shadow-first routing** — `routing.shadow` defaults `true`: the decision is computed and
-  persisted while the explicit per-stage model (if any) is still applied. Routing runs at all
-  only when a `models` or `routing` block exists. Promotion to `enforce` is gated on the
-  documented README criteria (Model roles → Promotion to enforce) and measured from
-  `.context/compound-engineering/routing/*.json`; the flip is reversible.
+- **Enforced-by-default routing** — `routing.shadow` defaults `false`: stage-entry routing applies
+  `models.default` or (where eligible) `models.sota` without requiring a `routing` block.
+  `models` is the only required config block when a config file exists; all other blocks are optional.
+  Set `routing.shadow: true` to log decisions without applying them. The choice is reversible.
 - **Per-stage override** — an explicit `model`/`thinkingLevel` under a stage key
   (`brainstorm`, `plan`, `work`, `review`, `debug`, `learn`, `docsync`). It wins verbatim over
   stage-gate escalation and Jev routing as an intentional operator override; the three

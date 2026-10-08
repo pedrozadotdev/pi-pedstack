@@ -30,6 +30,7 @@ describe("features config", () => {
 
 	test("partial feature overrides merge independently", () => {
 		const config = validatePiPedstackConfig({
+			models: { default: { model: "cheap" } },
 			features: {
 				stageGate: { mode: "enforce" },
 				docsVerification: { failClosed: true },
@@ -85,6 +86,7 @@ describe("features config", () => {
 		writeFileSync(
 			file,
 			JSON.stringify({
+				models: { default: { model: "cheap" } },
 				features: {
 					stageGate: { mode: "enforce" },
 					stageGuard: { mode: "enforce", failClosed: true },

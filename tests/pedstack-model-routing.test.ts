@@ -196,6 +196,7 @@ describe("switchStageConfig — stage-entry routing", () => {
 	test("shadow mode logs the decision but applies only the legacy model", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, {
+			models: MODELS,
 			brainstorm: { model: "test/legacy" },
 			routing: { shadow: true },
 		});

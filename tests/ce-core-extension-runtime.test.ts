@@ -365,6 +365,7 @@ describe("multi_reviewer tool", () => {
 		await writeFile(
 			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
 			JSON.stringify({
+				models: { default: { model: "test/default" } },
 				review: {
 					model: "anthropic/claude-3-opus",
 					thinkingLevel: "high",
@@ -391,6 +392,7 @@ describe("multi_reviewer tool", () => {
 		await writeFile(
 			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
 			JSON.stringify({
+				models: { default: { model: "test/default" } },
 				review: {
 					model: "anthropic/claude-3-opus",
 					thinkingLevel: "high",
@@ -415,6 +417,7 @@ describe("multi_reviewer tool", () => {
 		await writeFile(
 			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
 			JSON.stringify({
+				models: { default: { model: "test/default" } },
 				review: {
 					model: "anthropic/claude-3-haiku",
 					thinkingLevel: "high",
@@ -445,7 +448,8 @@ describe("multi_reviewer tool", () => {
 		await writeFile(
 			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
 			JSON.stringify({
-				// Empty config, no "review" block
+				models: { default: { model: "test/default" } },
+				// No "review" block
 			}),
 			"utf8",
 		);
@@ -467,6 +471,7 @@ describe("multi_reviewer tool", () => {
 		await writeFile(
 			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
 			JSON.stringify({
+				models: { default: { model: "test/default" } },
 				learn: {
 					model: "opencode-go/deepseek-v4-flash",
 					thinkingLevel: "medium",
@@ -886,6 +891,7 @@ describe("auto-advance tool_result wiring", () => {
 		await writeFile(
 			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
 			JSON.stringify({
+				models: { default: { model: "test/default" } },
 				plan: {
 					model: "anthropic/claude-3-7-sonnet",
 					thinkingLevel: "high",

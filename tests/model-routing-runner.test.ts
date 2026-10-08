@@ -95,7 +95,7 @@ describe("resolveStageRouting — inert without config", () => {
 		expect(jev.requests.length).toBe(0);
 		expect(result.appliedModel).toBeNull();
 		expect(result.appliedThinkingLevel).toBeNull();
-		expect(result.shadow).toBe(true);
+		expect(result.shadow).toBe(false);
 		expect(result.decision.reason).toBe("fallback");
 		expect(await readRoutingRecord(repo, "02-plan")).toBeNull();
 	});
@@ -425,7 +425,7 @@ describe("resolveStageRouting — budget semantics", () => {
 });
 
 describe("resolveStageRouting — partial role config", () => {
-	test("routing without models still computes but applies nothing", async () => {
+	test("routing-only config cannot enable model routing", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, { routing: { shadow: false } });
 		const jev = createFakeJevRuntime({ handler: routingHandler() });
@@ -436,9 +436,10 @@ describe("resolveStageRouting — partial role config", () => {
 			jev,
 		});
 
-		expect(result.decision.role).toBe("sota");
+		expect(result.decision.role).toBe("default");
 		expect(result.appliedModel).toBeNull();
-		expect(await readRoutingRecord(repo, "02-plan")).not.toBeNull();
+		expect(jev.requests).toHaveLength(0);
+		expect(await readRoutingRecord(repo, "02-plan")).toBeNull();
 	});
 
 	test("a gate escalate with no sota role falls back to default, never review", async () => {
@@ -526,4 +527,30 @@ describe("resolveStageRouting — no SOTA for execution and closing stages", () 
 			expect(jev.requests).toHaveLength(0);
 		});
 	}
+});
+
+
+describe("resolveStageRouting — models-only configuration", () => {
+	test("omitting routing enforces default model when Jev does not qualify", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS });
+		const jev = createFakeJevRuntime({ handler: routingHandler({ value: 0.1, confidence: 0.9 }) });
+		const result = await resolveStageRouting({ repoRoot: repo, stage: "02-plan", jev });
+		expect(result.shadow).toBe(false);
+		expect(result.decision.reason).toBe("fallback");
+		expect(result.appliedModel).toBe("cheap");
+		expect(result.appliedThinkingLevel).toBe("medium");
+		expect(jev.requests).toHaveLength(1);
+	});
+	test("omitting routing permits one qualifying SOTA selection", async () => {
+		const repo = makeRepo();
+		writeConfig(repo, { models: MODELS });
+		const jev = createFakeJevRuntime({ handler: routingHandler({ value: 0.9, confidence: 0.9 }) });
+		const result = await resolveStageRouting({ repoRoot: repo, stage: "02-plan", jev });
+		expect(result.shadow).toBe(false);
+		expect(result.decision.reason).toBe("jev");
+		expect(result.appliedModel).toBe("strong");
+		expect(result.appliedThinkingLevel).toBe("high");
+		expect((await readRoutingRecord(repo, "02-plan"))?.escalations).toBe(1);
+	});
 });

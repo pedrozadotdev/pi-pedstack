@@ -81,7 +81,7 @@ async function write(rel: string, content: string): Promise<void> {
 }
 
 async function writeConfig(payload: Record<string, unknown>): Promise<void> {
-	await write(".pi/pi-pedstack/config.json", JSON.stringify(payload));
+	await write(".pi/pi-pedstack/config.json", JSON.stringify({ models: { default: { model: "test/default" } }, ...payload }));
 }
 
 beforeEach(async () => {

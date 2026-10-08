@@ -81,7 +81,7 @@ async function writeConfig(repoRoot: string, payload: Record<string, unknown>) {
 	await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
 	await writeFile(
 		path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
-		JSON.stringify(payload),
+		JSON.stringify({ models: { default: { model: "test/default" } }, ...payload }),
 		"utf8",
 	);
 }

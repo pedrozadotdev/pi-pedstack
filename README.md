@@ -37,7 +37,7 @@ Pedstack reads one JSON configuration file:
 
 The project file **replaces**, rather than merges with, the global file. Invalid configuration is rejected; there are no environment-variable overrides for the feature policies below. Restart Pi after changing startup feature settings.
 
-All blocks are optional. You can start with just `models` and `routing`, then override specific features as needed.
+The only required block in a configuration file is `models`. The entire `routing` block, as well as all stage-specific and feature blocks, is optional. Omitting `routing` enables model selection immediately with the defaults below (`shadow: false`).
 
 ### Model roles and thinking
 
@@ -47,12 +47,6 @@ All blocks are optional. You can start with just `models` and `routing`, then ov
     "default": { "model": "provider/cheap-model", "thinkingLevel": "medium" },
     "review": { "model": "provider/review-model", "thinkingLevel": "high" },
     "sota": { "model": "provider/strong-model", "thinkingLevel": "max" }
-  },
-  "routing": {
-    "shadow": false,
-    "sotaMinScore": 0.6,
-    "sotaMinConfidence": 0.5,
-    "maxEscalationsPerStage": 1
   }
 }
 ```
@@ -64,17 +58,20 @@ All blocks are optional. You can start with just `models` and `routing`, then ov
 | `models.sota` | Unset | Stronger execution model for qualifying complexity or stage-gate escalation |
 | `models.<role>.model` | Unset | Model ID in `provider/model` format |
 | `models.<role>.thinkingLevel` | Unset | Thinking effort; see allowed values below |
-| `routing.shadow` | `true` | `true`: record routing decisions without applying automatic role switches; `false`: apply the selected role |
+| `routing.shadow` | `false` | `true`: record routing decisions without applying automatic role switches; `false`: apply the selected role |
 | `routing.sotaMinScore` | `0.6` | Minimum Jev complexity score to proactively select SOTA |
 | `routing.sotaMinConfidence` | `0.5` | Minimum confidence for proactive SOTA selection |
 | `routing.maxEscalationsPerStage` | `1` | Maximum proactive Jev SOTA selections per stage in a workflow; mandatory gate escalations bypass this budget |
 
 Allowed `thinkingLevel` values: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; legacy string aliases `"0"`, `"1"`, `"2"` are also accepted. An invalid value is rejected instead of becoming `medium`.
 
+To customize routing, optionally add a `"routing"` object; any omitted fields inherit the defaults above. Set `"routing": { "shadow": true }` only if you want to evaluate decisions without applying model changes.
+
 For an explicit **stage model override** (wins over routing), use any of `brainstorm`, `plan`, `work`, `review`, `debug`, `learn`, `docsync`:
 
 ```json
 {
+  "models": { "default": { "model": "provider/cheap-model" } },
   "plan": {
     "model": "provider/planning-model",
     "thinkingLevel": "high",
@@ -123,6 +120,7 @@ Example: change only the features you want to customize.
 
 ```json
 {
+  "models": { "default": { "model": "provider/cheap-model" } },
   "features": {
     "stageGate": { "mode": "enforce" },
     "overengineering": { "mode": "enforce" },
@@ -155,6 +153,7 @@ Example: change only the features you want to customize.
 
 ```json
 {
+  "models": { "default": { "model": "provider/cheap-model" } },
   "solutionRanking": {
     "shadow": false,
     "minRank": 0.6,
@@ -181,6 +180,7 @@ Example: change only the features you want to customize.
 
 ```json
 {
+  "models": { "default": { "model": "provider/cheap-model" } },
   "semanticRead": {
     "excerptBytes": 4096,
     "maxPaths": 24,
@@ -203,7 +203,7 @@ Example: change only the features you want to customize.
 
 ## Common examples
 
-**Use cheap execution with strong review:** set `models.default` to your lower-cost worker, `models.review` to a stronger reviewer, and `models.sota` to your escalation model. Set `routing.shadow: false` to apply automatic routing.
+**Use cheap execution with strong review:** set `models.default` to your lower-cost worker, `models.review` to a stronger reviewer, and `models.sota` to your escalation model. Routing applies automatically; no `routing` block is required.
 
 **Reduce semantic activity for debugging:** set individual `features.<name>.mode` to `"shadow"` to observe results without semantic enforcement, or `"off"` to disable that subsystem. Keep stage hard guards enabled unless you deliberately need a bypass.
 
