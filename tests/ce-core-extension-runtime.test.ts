@@ -745,6 +745,106 @@ describe("auto-advance tool_result wiring", () => {
 		expect(registeredNames.length).toBe(19);
 	});
 
+	test("enforced stage escalation auto-reloads the same stage under SOTA after agent_end", async () => {
+		const repoRoot = await mkdtemp(path.join(os.tmpdir(), "pi-ce-sota-reload-"));
+		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+			JSON.stringify({
+				models: {
+					default: { model: "openai/small" },
+					sota: { model: "openai/strong" },
+				},
+				routing: { shadow: false },
+			}),
+		);
+		const {
+			pi, eventHandlers, registeredCommands, sendUserMessageCalls,
+			appendEntryCalls, setModelCalls, makeEventCtx, makeCommandCtx,
+		} = createPiMock();
+		ceCoreExtension(pi as never);
+		const { ctx, navigateCalls } = makeCommandCtx(repoRoot);
+		try {
+			await registeredCommands.get("ped-start").handler("Build a CLI", ctx);
+			sendUserMessageCalls.length = 0;
+			appendEntryCalls.length = 0;
+			setModelCalls.length = 0;
+			const gateDir = path.join(repoRoot, ".context", "compound-engineering", "stage-gates");
+			await mkdir(gateDir, { recursive: true });
+			await writeFile(path.join(gateDir, "01-brainstorm.json"), JSON.stringify({
+				stage: "01-brainstorm",
+				attempts: [{
+					stage: "01-brainstorm", verdict: "escalate",
+					review: { action: "escalate", reviewerCount: 0, reason: "gate" },
+					updatedAt: new Date().toISOString(),
+				}],
+			}));
+			const gateHandler = eventHandlers.get("tool_result")![4];
+			const gateEvent = {
+				toolName: "stage_gate",
+				isError: false,
+				details: { stage: "01-brainstorm", action: "escalate", enforcing: true },
+			};
+			await gateHandler(gateEvent, makeEventCtx({
+				cwd: repoRoot, model: { provider: "openai", id: "small" },
+			}));
+			expect(sendUserMessageCalls).toHaveLength(0);
+			await eventHandlers.get("agent_end")![0](
+				{ type: "agent_end" }, makeEventCtx({ cwd: repoRoot }),
+			);
+			await settleAutoAdvance();
+			expect(sendUserMessageCalls).toHaveLength(1);
+			expect(sendUserMessageCalls[0].message).toContain("SOTA escalation");
+			expect(appendEntryCalls.at(-1)?.data.stage).toBe("01-brainstorm");
+			expect(appendEntryCalls.at(-1)?.type).toBe("ped-stage-reload");
+			expect(setModelCalls).toContainEqual({ provider: "openai", id: "strong" });
+			expect(navigateCalls).toHaveLength(2);
+			await gateHandler(gateEvent, makeEventCtx({
+				cwd: repoRoot, model: { provider: "openai", id: "small" },
+			}));
+			await eventHandlers.get("agent_end")![0](
+				{ type: "agent_end" }, makeEventCtx({ cwd: repoRoot }),
+			);
+			await settleAutoAdvance();
+			expect(sendUserMessageCalls).toHaveLength(1);
+		} finally {
+			resetPedstackState();
+		}
+	});
+
+	test("shadow-mode gate escalation does not auto-reload", async () => {
+		const repoRoot = await mkdtemp(path.join(os.tmpdir(), "pi-ce-shadow-reload-"));
+		await mkdir(path.join(repoRoot, ".pi", "pi-pedstack"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, ".pi", "pi-pedstack", "config.json"),
+			JSON.stringify({
+				models: { default: { model: "openai/small" }, sota: { model: "openai/strong" } },
+				routing: { shadow: true },
+			}),
+		);
+		const { pi, eventHandlers, registeredCommands, sendUserMessageCalls, makeEventCtx, makeCommandCtx } = createPiMock();
+		ceCoreExtension(pi as never);
+		const { ctx } = makeCommandCtx(repoRoot);
+		try {
+			await registeredCommands.get("ped-start").handler("Build a CLI", ctx);
+			sendUserMessageCalls.length = 0;
+			await eventHandlers.get("tool_result")![4]({
+				toolName: "stage_gate",
+				isError: false,
+				details: { stage: "01-brainstorm", action: "escalate", enforcing: true },
+			}, makeEventCtx({
+				cwd: repoRoot, model: { provider: "openai", id: "small" },
+			}));
+			await eventHandlers.get("agent_end")![0](
+				{ type: "agent_end" }, makeEventCtx({ cwd: repoRoot }),
+			);
+			await settleAutoAdvance();
+			expect(sendUserMessageCalls).toHaveLength(0);
+		} finally {
+			resetPedstackState();
+		}
+	});
+
 	test("does not queue for non-context_handoff tool", async () => {
 		const { pi, eventHandlers, sendUserMessageCalls, makeEventCtx } =
 			createPiMock();
