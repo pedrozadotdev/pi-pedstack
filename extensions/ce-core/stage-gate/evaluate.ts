@@ -6,6 +6,8 @@
 // validator cap. `off`/`unavailable` leave the request byte-identical to a
 // composer-off run.
 import { JevRuntimeError } from "../jev/errors";
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { JevAnswer, JevQuestion, JevRequest, JevRuntime } from "../jev/types";
 import { BASELINE_MAX_BYTES } from "../overengineering/baseline";
 import { composeOverengineeringSignal } from "../overengineering/compose";
@@ -405,6 +407,37 @@ function independentReviewCount(attempts: StageGateAttempt[]): number {
 	return count;
 }
 
+/** Completed reviewer results are tied to the specific previously scored files.
+ * A newly added sidecar is not itself part of the originally scored manifest. */
+async function completedReviewFor(
+	repoRoot: string,
+	prior: StageGateAttempt | null,
+	evidence: Evidence,
+): Promise<{ findings: number } | undefined> {
+	if (!prior || prior.verdict !== "review" || prior.review?.action !== "review") return;
+	const baselines = prior.overengineering?.baselinePaths ?? [];
+	const paths = [...prior.artifacts, ...baselines];
+	for (const rel of paths) {
+		try {
+			if (!(await fs.stat(path.join(repoRoot, rel))).isFile()) return;
+		} catch {
+			return;
+		}
+	}
+	if (await computeArtifactsHash(repoRoot, paths) !== prior.artifactsHash) return;
+	const matches = evidence.reviewFindings
+		.filter((file) =>
+			file.completed === true &&
+			file.reviewedGate?.updatedAt === prior.updatedAt &&
+			file.reviewedGate?.artifactsHash === prior.artifactsHash &&
+			file.count === file.findings.length &&
+			typeof file.observedAt === "string" &&
+			Date.parse(file.observedAt) >= Date.parse(prior.updatedAt),
+		)
+		.sort((a, b) => Date.parse(b.observedAt!) - Date.parse(a.observedAt!));
+	return matches.length ? { findings: matches[0].findings.length } : undefined;
+}
+
 /** Evaluates one stage artifact and persists the combined verdict. */
 export async function evaluateStageGate(
 	deps: StageGateDeps,
@@ -426,6 +459,8 @@ export async function evaluateStageGate(
 	const priorAttempts = await readAttempts(input.repoRoot, input.stage);
 	const attempts = priorAttempts.filter((entry) => entry.verdict === "revise").length;
 	const independentReviews = independentReviewCount(priorAttempts);
+	const priorAttempt = priorAttempts.at(-1) ?? null;
+	const completedReview = await completedReviewFor(input.repoRoot, priorAttempt, evidence);
 	const signal = await resolveOverengineeringSignal(input, overMode);
 	const built = buildStageGateRequest(evidence, rubric, det, signal);
 	const outcome = await resolveOutcome(
@@ -445,8 +480,10 @@ export async function evaluateStageGate(
 	const review = resolveReviewAction({
 		verdict: combined.verdict,
 		independentReviews,
+		completedReview,
 		reviewerAvailable: input.reviewerAvailable ?? true,
 	});
+	const effectiveVerdict = combined.verdict === "review" && completedReview?.findings === 0 ? "accept" : combined.verdict;
 	const warnings = [...evidence.warnings, ...outcome.warnings];
 	const enforcing = input.mode === "enforce";
 	const overengineering = toOverengineeringRecord(
@@ -460,7 +497,7 @@ export async function evaluateStageGate(
 		input.mode,
 		{
 			stage: input.stage,
-			verdict: combined.verdict,
+			verdict: effectiveVerdict,
 			enforcing,
 			weightedScore: combined.weightedScore,
 			det,
@@ -493,12 +530,12 @@ export async function evaluateStageGate(
 		signal,
 		overengineering,
 		combined.sem,
-		combined.verdict,
+		effectiveVerdict,
 		now,
 	);
 
 	return {
-		verdict: combined.verdict,
+		verdict: effectiveVerdict,
 		action: review.action,
 		actionReason: review.reason,
 		weightedScore: combined.weightedScore,
