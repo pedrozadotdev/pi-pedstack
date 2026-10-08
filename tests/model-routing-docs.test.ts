@@ -15,7 +15,7 @@ function read(rel: string): string {
 const ESCALATION_DOCS = [
 	"AGENTS.md",
 	"CONTEXT.md",
-	"README.md",
+	"docs/ARCHITECTURE.md",
 	"skills/01-brainstorm/SKILL.md",
 	"skills/01-brainstorm/references/handoff.md",
 	"skills/02-plan/SKILL.md",
@@ -74,7 +74,7 @@ describe("model-routing docs — shadow vs enforced", () => {
 		expect(shared).toContain("never suppressed");
 	});
 
-	test("README identifies the enforced path and the workflow-scoped reset", () => {
+	test("architecture reference identifies enforced routing and workflow-scoped reset", () => {
 		const readme = read("docs/ARCHITECTURE.md");
 		expect(readme.toLowerCase()).toContain("under enforced routing");
 		expect(readme).toContain("workflow-scoped");
