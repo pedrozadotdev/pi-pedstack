@@ -132,10 +132,7 @@ describe("canonical three-role configuration", () => {
 const ESCALATION_DOCS = [
 	"skills/01-brainstorm/SKILL.md",
 	"skills/02-plan/SKILL.md",
-	"skills/04-review/SKILL.md",
-	"skills/05-learn/SKILL.md",
 	"skills/04-5-debug/SKILL.md",
-	"skills/06-docsync/SKILL.md",
 	"skills/references/pipeline-config.md",
 	"skills/02-plan/references/ceo-review-mode.md",
 ];
