@@ -81,6 +81,32 @@ unrecorded warmup and 20 recorded runs for each scenario on the instrumented
 baseline revision and each candidate. Keep the output folders private because
 they contain local workflow measurements and task metadata.
 
+To summarize **recorded live samples** (not the offline Bun batches), store
+each run under a unique subdirectory of one runs root and execute:
+
+```sh
+bun docs/benchmarks/issue-62/summarize-live-runs.ts /tmp/issue-62 \
+  > /tmp/issue-62-baseline-summary.json
+```
+
+The summarizer discovers run metadata and validation results, groups runs only
+when revision, model, thinking level, configuration, fixture and decision-plan
+hash match, and refuses to mark the baseline complete unless all four pinned
+scenarios have **exactly 20 validated runs each**. It counts failed/aborted Pi
+sessions too. A nonzero exit means the baseline is incomplete; inspect the
+sanitized report before retrying. Keep warmups **outside** the recorded-runs
+directory so they cannot inflate the sample count. Do not delete failed runs to
+improve metrics.
+
+The report distinguishes `sessionElapsedMs` (including time waiting for human
+input/confirmations) from `activeStageWallMs` (sum of measured stage episodes,
+which may be incomplete for aborted work). Neither should be described as pure
+model latency. Missing provider tokens or cost stay unknown/partial, not zero;
+only sanitized aggregated output should be shared publicly. Recorded runs must
+be collected in a working Pi environment with the configured provider
+credentials and routing models; the fixture scripts do **not** simulate live
+LLM/Jev calls.
+
 The offline batches are supplemental regression checks; they do not satisfy
 Issue #62's live workflow baseline. The original `f39d684` predates diagnostics
 and cannot produce comparable live JSONL. Use the instrumented PR revision as
