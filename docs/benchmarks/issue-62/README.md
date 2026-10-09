@@ -33,9 +33,10 @@ Provider response latency measures request-to-response-headers; it excludes
 stream consumption and token generation after headers. Full stage wall time
 includes that remaining wait. A saved handoff is recorded separately; its
 transition is counted only when the destination stage actually starts after
-any confirmation. A declined transition stays interrupted. A successful final
-`06-docsync` save marks the workflow complete; an active stage is marked
-interrupted if the session shuts down. Token and cost completeness uses only
+any confirmation. A declined transition stays a successful handoff with no
+stage transition count. A successful, non-skipped `06-docsync` stage-gate accept
+marks the workflow complete; an active stage is marked interrupted if the
+session shuts down. Token and cost completeness uses only
 usage-capable `model_response` and `jev_decision` rows, not request/response
 latency observations.
 
@@ -51,29 +52,38 @@ machine and runtime, preserve all 20 raw times, and use median, nearest-rank p95
 and sample variance (for even sample counts, median averages the two middle
 values). Run the full pinned batches; don't compare partial outputs.
 
-`live-scenarios.json` defines the four real workflow paths and their expected
-stage traces. Capture one Pi session with local diagnostics using:
+`live-scenarios.json` pins four workflow tasks, entry commands, stage traces,
+review outcomes, and operator decisions. Each task has a checked-in fixture
+under `fixtures/`; the runner copies it into a disposable workspace and starts
+the extension from the revision being measured. Capture a Pi session with
+local diagnostics using:
 
 ```sh
 bash docs/benchmarks/issue-62/run-live.sh clean-pipeline openai/<model-id> /tmp/issue-62/clean-pipeline-01
 ```
 
-The runner prints the exact `/ped-start` input, opens Pi with diagnostics
-enabled, and saves the raw JSONL, compact report, revision, model, runtime, and
-Pedstack config hash. Enter the printed command, finish the scenario, then
-repeat with the identical fixture and decisions. Run one unrecorded warmup and
-20 recorded runs for each scenario on both revisions. Keep the output folders
-private because they contain local workflow measurements and task metadata.
+The runner prints the scenario's exact `/ped-start` or `/ped-debug` command,
+opens Pi with diagnostics enabled, and saves the raw JSONL, compact report,
+revision, model, runtime, config hash, and final fixture-tree hash. Its
+validator checks the recorded stage trace, actual transition count, terminal
+completion, review outcomes, checkpoint, SOTA selection, and verification
+outcomes required by that scenario. It writes an artifact-tree hash, a hash of
+the pinned operator-decision plan, and a hash of the observed workflow
+decisions to `validation.json`. Enter the printed command, finish the scenario,
+then repeat with the identical fixture and decisions. Run one
+unrecorded warmup and 20 recorded runs for each scenario on the instrumented
+baseline revision and each candidate. Keep the output folders private because
+they contain local workflow measurements and task metadata.
 
 The offline batches are supplemental regression checks; they do not satisfy
-Issue #62's live workflow baseline. That baseline remains pending until each
-workflow path below has repeatable task inputs and measurements from both the
-baseline and candidate revisions. Keep the issue open until those artifacts
-exist. For live before/after comparisons, use isolated disposable repositories
-at both revisions and keep model/provider, thinking level, routing and feature
-configuration, artifacts, and operator decisions constant. Record revision and
-configuration hashes, one warmup, then at least 20 sequential runs per scenario.
-Preserve each diagnostics JSONL file and its report. Live usage/cost is present
-only when the model or Jev response exposes it; never infer it from duration.
-The resume case must use the same saved checkpoint/handoff input, and escalation
-must use the same explicit eligible-stage routing configuration.
+Issue #62's live workflow baseline. The original `f39d684` predates diagnostics
+and cannot produce comparable live JSONL. Use the instrumented PR revision as
+the pre-optimization baseline for later changes, with a candidate-specific
+worktree and the same fixture, model/provider, thinking level, routing and
+feature configuration, artifacts, and operator decisions. Record one warmup
+and at least 20 sequential runs per scenario; preserve every diagnostics file,
+report, and validation result. Live usage/cost is present only when the model or
+Jev response exposes it; never infer it from duration. The resume case must use
+the same saved checkpoint/handoff input, and escalation must use the same
+explicit eligible-stage routing configuration. The live run data is still
+pending, so Issue #62 must remain open until those artifacts are captured.

@@ -6,29 +6,52 @@
   "scenarios": [
     {
       "id": "clean-pipeline",
-      "prompt": "Add a small, isolated behavior to the fixture repository. Follow the full Pedstack pipeline through docs sync. Keep the change limited to the requested behavior.",
+      "fixture": "fixtures/clean-pipeline",
+      "entryCommand": "/ped-start Add the documented slugify function to this fixture, add focused tests, and carry it through the full workflow.",
+      "prompt": "Add the documented slugify function to this fixture, add focused tests, and carry it through the full workflow.",
       "stages": ["01-brainstorm", "02-plan", "03-work", "04-review", "05-learn", "06-docsync"],
+      "expectedStageStarts": ["01-brainstorm", "02-plan", "03-work", "04-review", "05-learn", "06-docsync"],
+      "expectedTransitions": 5,
+      "expectedReviewOutcomes": ["clean, zero findings"],
+      "terminalCompletion": true,
       "operatorDecisions": ["accept each required gated transition", "use the same decisions for baseline and candidate"],
-      "assertions": ["review outcome is clean with zero findings", "workflow reaches terminal docs sync", "terminal workflow is recorded complete"]
+      "assertions": ["review outcome is clean with zero findings", "stage report and accepted stage gate complete docs sync", "terminal workflow is recorded complete"]
     },
     {
       "id": "review-fix-loop",
-      "prompt": "Implement the fixture change with its seeded defect left in place for review. Fix every confirmed finding in the work stage, then repeat review until clean.",
+      "fixture": "fixtures/review-fix-loop",
+      "entryCommand": "/ped-start Implement percentage discounts in the fixture. Preserve the review finding about percentages above 100 on the first implementation; fix it in the required work loop and re-review until clean.",
+      "prompt": "Implement percentage discounts in the fixture. Preserve the review finding about percentages above 100 on the first implementation; fix it in the required work loop and re-review until clean.",
       "stages": ["01-brainstorm", "02-plan", "03-work", "04-review", "03-work", "04-review", "05-learn", "06-docsync"],
+      "expectedStageStarts": ["01-brainstorm", "02-plan", "03-work", "04-review", "03-work", "04-review", "05-learn", "06-docsync"],
+      "expectedTransitions": 7,
+      "expectedReviewOutcomes": ["findings", "clean, zero findings"],
+      "terminalCompletion": true,
       "operatorDecisions": ["accept each required gated transition", "use the same decisions for baseline and candidate"],
       "assertions": ["first review has a confirmed finding", "finding routes back to 03-work", "second review is clean with zero findings", "transition count includes only entered stages"]
     },
     {
       "id": "long-plan-resume-escalation",
-      "prompt": "Plan the fixture's multi-part change as a long plan. Save a checkpoint at the agreed boundary, resume from that checkpoint in a fresh session, and complete the plan stage with eligible explicit SOTA routing configured.",
+      "fixture": "fixtures/long-plan-resume-escalation",
+      "entryCommand": "/ped-start Plan the catalog requirements in this fixture as a long multi-unit plan. Checkpoint after the first two units, resume from that exact checkpoint in a fresh session, and finish the plan under the explicit eligible SOTA routing config recorded in metadata.",
+      "prompt": "Plan the catalog requirements in this fixture as a long multi-unit plan. Checkpoint after the first two units, resume from that exact checkpoint in a fresh session, and finish the plan under the explicit eligible SOTA routing config recorded in metadata.",
       "stages": ["01-brainstorm", "02-plan"],
+      "expectedStageStarts": ["01-brainstorm", "02-plan", "02-plan"],
+      "expectedTransitions": 1,
       "operatorDecisions": ["use identical explicit eligible-stage SOTA routing config", "resume from the same saved checkpoint input"],
+      "requiresCheckpoint": true,
+      "requiresSotaRole": true,
       "assertions": ["long plan remains bounded and complete", "resume preserves workflow routing state", "SOTA selection is recorded only when selected", "model and Jev usage/cost stay unknown when providers omit usage"]
     },
     {
       "id": "debug-verify",
-      "prompt": "Enter 04-5-debug with a concrete prompt, reproduce the fixture failure, fix it, run verification, and save the handoff to the next required stage.",
+      "fixture": "fixtures/debug-verify",
+      "entryCommand": "/ped-debug Fix the seeded rectangle-area defect in this fixture. Reproduce the failing test, correct the function, and run test and typecheck.",
+      "prompt": "Fix the seeded rectangle-area defect in this fixture. Reproduce the failing test, correct the function, and run test and typecheck.",
       "stages": ["04-5-debug", "03-work", "04-review"],
+      "expectedStageStarts": ["04-5-debug", "03-work", "04-review"],
+      "expectedTransitions": 2,
+      "verificationOutcomes": ["failure", "success"],
       "operatorDecisions": ["use the same debug prompt and confirmation decisions for baseline and candidate"],
       "assertions": ["debug entry requires a prompt", "failing and successful verification calls have timings and outcomes", "the completed review reports its findings honestly"]
     }

@@ -306,3 +306,12 @@ export async function resetDiagnosticWorkflow(): Promise<void> {
 	activeRole = "unknown";
 	searchFingerprints.clear();
 }
+
+/** @internal Isolates singleton-backed diagnostics tests. */
+export async function __resetDiagnosticsForTests(): Promise<void> {
+	if (shared) await shared.shutdown();
+	shared = undefined;
+	activeEpisode = undefined;
+	activeRole = "unknown";
+	searchFingerprints.clear();
+}

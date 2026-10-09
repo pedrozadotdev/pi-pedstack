@@ -1710,14 +1710,26 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 				durationMs: diagnosticNow() - started.startedAt,
 			});
 		}
+		if (event.toolName === "stage_gate" && !event.isError) {
+			const result = event.result as { details?: { stage?: unknown; verdict?: unknown; action?: unknown; skipped?: unknown; error?: unknown } } | undefined;
+			const details = result?.details;
+			if (
+				getActiveStage() === "06-docsync" &&
+				details?.stage === "06-docsync" &&
+				details.verdict === "accept" &&
+				details.action === "none" &&
+				details.skipped !== true &&
+				!details.error
+			) {
+				await completeDiagnosticWorkflow("06-docsync");
+			}
+		}
 		if (event.toolName === "context_handoff" && !event.isError) {
 			const result = event.result as { details?: { operation?: unknown; currentStage?: unknown; nextStage?: unknown; blocker?: unknown } } | undefined;
 			const details = result?.details;
 			if (details?.operation === "save" && typeof details.currentStage === "string" && !details.blocker) {
 				if (typeof details.nextStage === "string" && details.nextStage && details.currentStage !== details.nextStage) {
 					recordDiagnosticHandoff(details.currentStage, details.nextStage);
-				} else if (details.currentStage === "06-docsync" && (details.nextStage === undefined || details.nextStage === "")) {
-					await completeDiagnosticWorkflow(details.currentStage);
 				}
 			}
 		}
