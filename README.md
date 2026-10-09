@@ -213,6 +213,7 @@ Example: change only the features you want to customize.
 
 ## More information
 
+- [Local cost and latency diagnostics](docs/benchmarks/issue-62/README.md) — opt-in run capture, compact reports and pinned regression baselines
 - [Architecture and development reference](docs/ARCHITECTURE.md) — detailed architecture, gates, stage contracts, internals, debugging and development
 - [Pipeline instructions](skills/references/pipeline-config.md) — skill execution and handoff rules
 - [GitHub issues](https://github.com/pedrozadotdev/pi-pedstack/issues) — bugs and requests

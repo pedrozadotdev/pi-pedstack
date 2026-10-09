@@ -7,6 +7,8 @@ import {
 	formatSolutionsBlock,
 } from "../commands/prompt-inject";
 import { createSolutionSearchTool } from "../tools/solution-search";
+import { diagnosticJevOptions } from "../diagnostics";
+import { getActiveStage } from "./active-stage";
 import type { SolutionSearchDeps } from "../tools/solution-search";
 import {
 	readPiPedstackConfig,
@@ -64,7 +66,7 @@ let sharedJevFactory: (() => JevRuntime) | undefined;
 /** One Jev runtime per extension instance, created on first real use. */
 function getSharedJev(): JevRuntime {
 	if (sharedJev) return sharedJev;
-	sharedJev = sharedJevFactory ? sharedJevFactory() : createJevRuntime();
+	sharedJev = sharedJevFactory ? sharedJevFactory() : createJevRuntime({ ...diagnosticJevOptions("solution_search", getActiveStage) });
 	return sharedJev;
 }
 

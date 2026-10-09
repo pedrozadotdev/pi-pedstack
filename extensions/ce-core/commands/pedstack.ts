@@ -15,6 +15,7 @@ import {
 import { resolveStageRouting } from "../utils/model-routing";
 import { createJevRuntime } from "../jev/runtime";
 import type { JevRuntime } from "../jev/types";
+import { startDiagnosticStage, recordDiagnostic, diagnosticJevOptions, setDiagnosticRole, resetDiagnosticWorkflow } from "../diagnostics";
 import {
 	loadAllAppendContext,
 	loadAppendContext,
@@ -134,6 +135,7 @@ export function resetPedstackState(): void {
  */
 async function activateStage(repoRoot: string, stage: string): Promise<void> {
 	setActiveStage(stage);
+	await startDiagnosticStage(stage);
 	try {
 		await persistActiveStage(repoRoot, stage);
 	} catch {
@@ -561,7 +563,7 @@ export function __setModelRoutingJevFactory(
 
 function getRoutingJevRuntime(): JevRuntime {
 	try {
-		return modelRoutingJevFactory ? modelRoutingJevFactory() : createJevRuntime();
+		return modelRoutingJevFactory ? modelRoutingJevFactory() : createJevRuntime({ ...diagnosticJevOptions("routing", getActiveStage) });
 	} catch {
 		// ponytail: a broken factory degrades to fallback, never aborts stage entry.
 		return {
@@ -588,6 +590,8 @@ async function applyRoleModel(
 			prompt: prompt ?? null,
 			jev: getRoutingJevRuntime(),
 		});
+		recordDiagnostic({ feature: "routing", event: "role_selected", stage: stageKey, role: result.decision.role, outcome: "success" });
+		setDiagnosticRole(result.shadow ? "unknown" : (result.decision.reason === "override" ? "override" : result.decision.role));
 
 		if (result.shadow) {
 			if (ctx.hasUI) {
@@ -630,6 +634,8 @@ async function switchStageConfig(
 	switchThinkingLevel(pi, ctx, stageKey, stepConfig ?? {});
 	if (routingConfigured) {
 		await applyRoleModel(pi, ctx, stageKey, stepConfig ?? null, prompt);
+	} else {
+		setDiagnosticRole(stepConfig?.model ? "override" : "default");
 	}
 	await loadStageAppend(ctx, stageKey);
 }
@@ -861,6 +867,7 @@ export function cmdPedStart(
 			if (!nav) return;
 
 			if (!(await resetWorkflowScopedState(ctx))) return;
+			await resetDiagnosticWorkflow();
 
 			const stageKey: PipelineStageKey = "01-brainstorm";
 			await activateStage(ctx.cwd, stageKey);
@@ -1151,6 +1158,7 @@ export function cmdPedFixIssues(
 			if (!nav) return;
 
 			if (!(await resetWorkflowScopedState(ctx))) return;
+			await resetDiagnosticWorkflow();
 
 			const stageKey: PipelineStageKey = "01-brainstorm";
 			await activateStage(ctx.cwd, stageKey);

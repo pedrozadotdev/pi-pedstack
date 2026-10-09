@@ -1,0 +1,176 @@
+{
+  "schema": 1,
+  "base_revision": "f39d6845d309e540a8198215668f31ead0d13d0e",
+  "source_tree_hash": "095329244821b0d8a4056d2d90bea889abc4e3350fc8f92023be339eb335db1f",
+  "kind": "offline-regression-batches",
+  "environment": {
+    "platform": "Linux-6.12.111+deb13-cloud-amd64-x86_64-with-glibc2.41",
+    "bun": "1.4.2",
+    "pi": "0.80.10"
+  },
+  "methodology": {
+    "warmups": 1,
+    "repetitions": 20,
+    "order": "sequential scenario batches; no parallel tests",
+    "p95": "nearest rank ceil(0.95*n)",
+    "variance": "sample variance (ms squared)",
+    "includes": "Bun startup and regression test execution",
+    "excludes": "Live model latency, human waiting and full workflow execution"
+  },
+  "live_metrics": {
+    "stage_wall_ms": null,
+    "jev_invocations": null,
+    "model_calls": null,
+    "tokens": null,
+    "cost": null
+  },
+  "scenarios": [
+    {
+      "id": "fast",
+      "command": [
+        "bun",
+        "test",
+        "tests/auto-advance.test.ts",
+        "tests/review-outcome.test.ts",
+        "tests/context-handoff-gate.test.ts"
+      ],
+      "outcome": "success",
+      "samples_ms": [
+        224.58,
+        223.853,
+        222.404,
+        223.304,
+        229.27,
+        202.883,
+        221.582,
+        216.571,
+        208.924,
+        224.5,
+        226.273,
+        214.819,
+        224.489,
+        207.496,
+        208.873,
+        218.336,
+        214.903,
+        213.247,
+        207.571,
+        213.355
+      ],
+      "median_ms": 217.45350000000002,
+      "p95_ms": 226.273,
+      "variance_ms2": 57.310783818421065
+    },
+    {
+      "id": "standard",
+      "command": [
+        "bun",
+        "test",
+        "tests/context-handoff.test.ts",
+        "tests/multi-reviewer-persistence.test.ts",
+        "tests/review-outcome.test.ts",
+        "tests/auto-advance.test.ts"
+      ],
+      "outcome": "success",
+      "samples_ms": [
+        360.839,
+        349.262,
+        345.856,
+        342.668,
+        343.36,
+        343.619,
+        365.13,
+        354.821,
+        362.355,
+        342.359,
+        336.356,
+        358.808,
+        345.514,
+        353.608,
+        348.865,
+        346.048,
+        352.93,
+        356.772,
+        363.371,
+        354.942
+      ],
+      "median_ms": 351.096,
+      "p95_ms": 363.371,
+      "variance_ms2": 66.8752761342105
+    },
+    {
+      "id": "deep",
+      "command": [
+        "bun",
+        "test",
+        "tests/plan-unit-scoring.test.ts",
+        "tests/pedstack-model-routing.test.ts",
+        "tests/multi-reviewer-mode.test.ts",
+        "tests/stage-gate-engine.test.ts"
+      ],
+      "outcome": "success",
+      "samples_ms": [
+        543.697,
+        556.359,
+        562.969,
+        544.744,
+        535.638,
+        543.494,
+        542.406,
+        536.566,
+        539.834,
+        537.844,
+        537.993,
+        543.257,
+        554.723,
+        528.986,
+        530.883,
+        538.883,
+        565.153,
+        529.944,
+        549.904,
+        534.84
+      ],
+      "median_ms": 541.1199999999999,
+      "p95_ms": 562.969,
+      "variance_ms2": 105.87199097631584
+    },
+    {
+      "id": "debug",
+      "command": [
+        "bun",
+        "test",
+        "tests/pedstack-commands.test.ts",
+        "tests/failure-triage.test.ts",
+        "tests/drift-guard.test.ts",
+        "tests/compaction-guard-guard.test.ts"
+      ],
+      "outcome": "success",
+      "samples_ms": [
+        399.431,
+        396.9,
+        389.553,
+        398.229,
+        407.335,
+        404.824,
+        396.441,
+        405.966,
+        407.398,
+        394.196,
+        402.802,
+        398.424,
+        467.226,
+        420.403,
+        403.041,
+        404.637,
+        395.47,
+        389.488,
+        390.107,
+        386.386
+      ],
+      "median_ms": 398.9275,
+      "p95_ms": 420.403,
+      "variance_ms2": 292.4843773973684
+    }
+  ]
+}

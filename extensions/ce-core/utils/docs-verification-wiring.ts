@@ -3,6 +3,8 @@
 // ONE `before_agent_start` handler (in `index.ts`); this module exposes helpers.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createJevRuntime } from "../jev/runtime";
+import { diagnosticJevOptions } from "../diagnostics";
+import { getActiveStage } from "./active-stage";
 import type { JevRuntime } from "../jev/types";
 import { extractStageKey } from "../commands/prompt-inject";
 import {
@@ -104,7 +106,7 @@ export function createDocsVerificationWiring(
 		createDocsVerificationGuard({
 			mode: options.mode,
 			failClosed: options.failClosed,
-			createJev: () => options.runtime ?? createJevRuntime(),
+			createJev: () => options.runtime ?? createJevRuntime({ ...diagnosticJevOptions("docs_verification", getActiveStage) }),
 			...(options.deps ?? {}),
 		});
 
