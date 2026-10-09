@@ -4,6 +4,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createJevRuntime } from "../jev/runtime";
+import { diagnosticJevOptions } from "../diagnostics";
+import { getActiveStage } from "./active-stage";
 import type { JevRuntime } from "../jev/types";
 import { createSemanticReadTool } from "../tools/semantic-read";
 import { createSemanticScoutTool } from "../tools/semantic-scout";
@@ -52,7 +54,7 @@ let sharedJev: JevRuntime | null = null;
 /** One Jev runtime per extension instance, created on first real use. */
 function getSharedJev(): JevRuntime {
 	if (sharedJev) return sharedJev;
-	sharedJev = createJevRuntime();
+	sharedJev = createJevRuntime({ ...diagnosticJevOptions("semantic_files", getActiveStage) });
 	return sharedJev;
 }
 

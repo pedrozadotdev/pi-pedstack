@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "kind": "offline-regression-batches",
+  "scenarios": [
+    {
+      "id": "fast",
+      "task": "Small clean workflow, all artifacts accepted, through docsync.",
+      "files": [
+        "tests/auto-advance.test.ts",
+        "tests/review-outcome.test.ts",
+        "tests/context-handoff-gate.test.ts"
+      ],
+      "invariants": [
+        "Validated clean review requires zero findings.",
+        "Fresh accept cannot bypass deterministic failure.",
+        "Authorization gates remain intact."
+      ]
+    },
+    {
+      "id": "standard",
+      "task": "One confirmed review finding, fix in work, re-review clean, then learn.",
+      "files": [
+        "tests/context-handoff.test.ts",
+        "tests/multi-reviewer-persistence.test.ts",
+        "tests/review-outcome.test.ts",
+        "tests/auto-advance.test.ts"
+      ],
+      "invariants": [
+        "Findings must return to work before learn.",
+        "Clean independent review persists count: 0.",
+        "Pending checklist blocks advancement."
+      ]
+    },
+    {
+      "id": "deep",
+      "task": "Explicit deep review of a long plan, checkpoint resume and eligible plan SOTA escalation.",
+      "files": [
+        "tests/plan-unit-scoring.test.ts",
+        "tests/pedstack-model-routing.test.ts",
+        "tests/multi-reviewer-mode.test.ts",
+        "tests/stage-gate-engine.test.ts"
+      ],
+      "invariants": [
+        "Long-plan requests stay bounded.",
+        "Deep mode is explicit.",
+        "Only brainstorm, plan and debug escalate automatically.",
+        "Resume preserves routing state; new roots reset it."
+      ]
+    },
+    {
+      "id": "debug",
+      "task": "Enter debug with a required prompt, reproduce a failure, fix and verify, then advance.",
+      "files": [
+        "tests/pedstack-commands.test.ts",
+        "tests/failure-triage.test.ts",
+        "tests/drift-guard.test.ts",
+        "tests/compaction-guard-guard.test.ts"
+      ],
+      "invariants": [
+        "Debug requires prompt and entry gating.",
+        "Triage remains advisory and preserves failures.",
+        "Compaction outages fail open."
+      ]
+    }
+  ],
+  "live_procedure": "Run each task in an isolated disposable repo with identical config, models, prompts, artifacts and acceptance decisions for before/after. Record their hashes. Offline batches do not execute full live workflows."
+}

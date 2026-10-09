@@ -13,6 +13,7 @@ import { filterIndependentReviewers } from "../review/policy";
 import { normalizeSlug } from "../utils/name-utils";
 import { createAgyCommand, isGeminiModel, runAgyReviewer } from "../review/agy-runner";
 import { isStageKey, readLatestRecord, isRecordFresh } from "../stage-gate/store";
+import { recordDiagnostic } from "../diagnostics";
 
 export interface ReviewerConfig {
 	model: string;
@@ -366,6 +367,7 @@ export function createMultiReviewerTool() {
 			}
 
 			if (!reviewers || reviewers.length === 0) {
+				recordDiagnostic({ feature: "review", event: "review_skipped", stage: input.stepName, independentReviewers: 0, outcome: "success" });
 				return {
 					findings: [],
 					compiledSummary: "No reviewers configured.",
@@ -391,8 +393,8 @@ export function createMultiReviewerTool() {
 					input.stepName,
 				),
 			);
-
 			const settled = await Promise.allSettled(promises);
+			recordDiagnostic({ feature: "review", event: "review_attempt", stage: input.stepName, independentReviewers: reviewers.length, outcome: settled.some((result) => result.status === "rejected") ? "failure" : "success" });
 			const failures = settled.flatMap((result, index) => result.status === "rejected"
 				? [`Reviewer #${index + 1} (${reviewers[index]?.model ?? "unknown"}): ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`]
 				: []);

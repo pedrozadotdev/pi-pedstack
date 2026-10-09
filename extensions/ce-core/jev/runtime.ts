@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import {
 	JevRuntimeError,
 	buildStderrExcerpt,
@@ -162,9 +163,10 @@ export function createJevRuntime(options: JevRuntimeOptions = {}): JevRuntime {
 	const command = options.command ?? DEFAULT_COMMAND;
 	const defaultTimeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const platform = options.platform ?? process.platform;
-	const now = options.now ?? (() => Date.now());
+	const now = options.now ?? (() => performance.now());
 	const sink = options.telemetry;
 	const redactIds = options.redactIds ?? false;
+	const feature = options.feature ?? "unknown";
 
 	const emit = (event: JevTelemetryEvent): void => {
 		if (!sink) return;
@@ -185,6 +187,9 @@ export function createJevRuntime(options: JevRuntimeOptions = {}): JevRuntime {
 			const telemetry: JevTelemetryEvent = {
 				outcome: "failure",
 				durationMs: 0,
+				processDurationMs: 0,
+				processInvoked: false,
+				feature,
 				model: "unknown",
 				questionIds: redactIds ? asked.ids.map(redactId) : asked.ids,
 				questionTypes: asked.types,
@@ -194,6 +199,7 @@ export function createJevRuntime(options: JevRuntimeOptions = {}): JevRuntime {
 				stderrBytes: 0,
 				warnings: [],
 			};
+			let processStartedAt: number | undefined;
 			const finish = (
 				outcome: "success" | "failure",
 				errorCode?: JevErrorCode,
@@ -219,8 +225,21 @@ export function createJevRuntime(options: JevRuntimeOptions = {}): JevRuntime {
 				telemetry.stateBytes = validated.stateBytes;
 				telemetry.requestBytes = Buffer.byteLength(validated.body, "utf8");
 
+				const measuredRunner: JevProcessRunner = {
+					async run(input) {
+						processStartedAt = now();
+						telemetry.processInvoked = true;
+						try {
+							const output = await runner.run(input);
+							telemetry.exitCode = output.exitCode;
+							return output;
+						} finally {
+							telemetry.processDurationMs = now() - processStartedAt;
+						}
+					},
+				};
 				const run = await executeDecision(validated, {
-					runner,
+					runner: measuredRunner,
 					command,
 					platform,
 					timeoutMs,

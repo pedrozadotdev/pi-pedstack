@@ -40,6 +40,8 @@ import {
 	stagePairFromHandoffPath,
 } from "../handoff-readiness/store";
 import { createJevRuntime } from "../jev/runtime";
+import { diagnosticJevOptions } from "../diagnostics";
+import { getActiveStage } from "../utils/active-stage";
 import type { JevRuntime } from "../jev/types";
 import type {
 	ReadinessMode,
@@ -127,6 +129,8 @@ interface ContextHandoffResult {
 	recentlyAccessedFiles?: string[];
 	compressionRisk?: string[];
 	activeRules?: string[];
+	reviewOutcome?: "clean" | "findings";
+	reviewFindings?: number;
 	updatedAt?: string;
 	gateWarning?: string;
 	readiness?: ReadinessOutcome;
@@ -455,7 +459,7 @@ export function createContextHandoffTool(
 		? createReadinessGuard({
 				mode: readiness.mode,
 				failClosed: readiness.failClosed,
-				createJev: () => readiness.runtime ?? createJevRuntime(),
+				createJev: () => readiness.runtime ?? createJevRuntime({ ...diagnosticJevOptions("handoff_readiness", getActiveStage) }),
 				now: readiness.now,
 				fileExists: readiness.fileExists,
 			})
@@ -1179,6 +1183,8 @@ async function save(
 		recentlyAccessedFiles,
 		compressionRisk,
 		activeRules,
+		reviewOutcome: reviewTransition.outcome,
+		reviewFindings: reviewTransition.findings,
 		recommendNewSession,
 		updatedAt: state.updatedAt,
 		gateWarning: combinedWarning,

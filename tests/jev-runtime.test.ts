@@ -468,7 +468,11 @@ describe("jev runtime decide (Unit 3)", () => {
 		expect(events).toHaveLength(1);
 		const event = events[0];
 		expect(event.outcome).toBe("success");
-		expect(event.durationMs).toBe(5);
+		expect(event.durationMs).toBe(15);
+		expect(event.processDurationMs).toBe(5);
+		expect(event.processInvoked).toBe(true);
+		expect(event.feature).toBe("unknown");
+		expect(event.usage).toEqual({ input_tokens: 10, output_tokens: 20 });
 		expect(event.model).toBe("typesafe/jev");
 		expect(event.decisions?.noul).toEqual({ noul: 0.8 });
 		expect(event.stateBytes).toBeGreaterThan(0);
@@ -520,7 +524,9 @@ describe("jev runtime decide (Unit 3)", () => {
 
 	test("invalid request fails before spawning", async () => {
 		let spawned = false;
+		const events: JevTelemetryEvent[] = [];
 		const runtime = createJevRuntime({
+			telemetry: (event) => events.push(event),
 			process: {
 				async run() {
 					spawned = true;
@@ -535,6 +541,7 @@ describe("jev runtime decide (Unit 3)", () => {
 			"questions",
 		);
 		expect(spawned).toBe(false);
+		expect(events[0]?.processInvoked).toBe(false);
 	});
 });
 function responseFor(model: string) {
@@ -628,8 +635,11 @@ describe("jev fake runtime (Unit 5)", () => {
 		const second = await runtime.decide(validRequest);
 
 		expect(first).toEqual(second);
-		expect(events[0].durationMs).toBe(1);
-		expect(events[1].durationMs).toBe(1);
+		expect(events[0].durationMs).toBe(3);
+		expect(events[0].processDurationMs).toBe(1);
+		expect(events[1].durationMs).toBe(3);
+		expect(events[1].processDurationMs).toBe(1);
+		expect(events.every((event) => event.processInvoked)).toBe(true);
 	});
 
 	test("concurrent decides receive distinct queued responses", async () => {

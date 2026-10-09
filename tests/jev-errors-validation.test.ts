@@ -126,6 +126,9 @@ describe("jev errors (Unit 1)", () => {
 		const event: JevTelemetryEvent = {
 			outcome: "success",
 			durationMs: 1,
+			processDurationMs: 0,
+			processInvoked: false,
+			feature: "test",
 			model: "typesafe/jev",
 			questionIds: ["q1"],
 			questionTypes: ["noul"],

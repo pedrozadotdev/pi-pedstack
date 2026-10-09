@@ -102,6 +102,11 @@ export interface JevDecisionRecord {
 export interface JevTelemetryEvent {
 	outcome: "success" | "failure";
 	durationMs: number;
+	/** Time in the actual cmd runner; excludes request validation and parsing. */
+	processDurationMs: number;
+	/** True only after execution crossed the process runner boundary. */
+	processInvoked: boolean;
+	feature: string;
 	model: string;
 	questionIds: string[];
 	questionTypes: JevQuestionType[];
@@ -128,6 +133,8 @@ export interface JevRuntimeOptions {
 	now?: () => number;
 	redactIds?: boolean;
 	platform?: NodeJS.Platform;
+	/** Safe feature label; never derived from prompt or Jev request content. */
+	feature?: string;
 }
 
 export interface JevDecideOptions {

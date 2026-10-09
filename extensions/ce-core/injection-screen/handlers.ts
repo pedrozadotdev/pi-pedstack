@@ -25,6 +25,8 @@ import type {
 	TurnEndEvent,
 } from "@earendil-works/pi-coding-agent";
 import { createJevRuntime } from "../jev/runtime";
+import { diagnosticJevOptions } from "../diagnostics";
+import { getActiveStage } from "../utils/active-stage";
 import type { JevRuntime } from "../jev/types";
 import {
 	createInjectionScreenEngine,
@@ -229,7 +231,7 @@ export function registerInjectionScreen(
 		({
 			decide(request, options) {
 				if (!lazyJev) {
-					lazyJev = deps.jevFactory ? deps.jevFactory() : createJevRuntime();
+					lazyJev = deps.jevFactory ? deps.jevFactory() : createJevRuntime({ ...diagnosticJevOptions("injection_screen", getActiveStage) });
 				}
 				return lazyJev.decide(request, options);
 			},

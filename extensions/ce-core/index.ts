@@ -103,6 +103,7 @@ import type { JevRuntime } from "./jev/types";
 import { resolveStartupFeatures } from "./utils/startup-features";
 import { readPiPedstackConfig } from "./utils/config-types";
 import { stageAllowsSotaEscalation } from "./utils/stage-policy";
+import { diagnosticJevOptions, isDiagnosticVerificationCall, recordDiagnostic, recordSolutionSearch, recordDiagnosticHandoff, completeDiagnosticWorkflow, shutdownDiagnostics, getDiagnosticRole } from "./diagnostics";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -572,11 +573,21 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	let persistedStageResolved = false;
 	let persistedStage: string | null = null;
 	let guardNotified = false;
+	const activeDiagnosticTools = new Map<string, { startedAt: number; feature: "tool" | "review" | "workflow" | "stage_gate" | "solution_search" | "verification"; event: string }>();
+	const activeDiagnosticProviders: number[] = [];
+	const diagnosticNow = () => performance.now();
+	const diagnosticFeatureForTool = (name: string): "tool" | "review" | "workflow" | "stage_gate" | "solution_search" => {
+		if (name === "multi_reviewer") return "review";
+		if (name === "stage_gate") return "stage_gate";
+		if (name === "context_handoff") return "workflow";
+		if (name === "solution_search") return "solution_search";
+		return "tool";
+	};
 
 	// ponytail: Jev runtime created once, lazily; no process spawns until decide().
 	let jevRuntime: ReturnType<typeof createJevRuntime> | null = null;
 	function getJevRuntime() {
-		jevRuntime ??= createJevRuntime();
+		jevRuntime ??= createJevRuntime({ ...diagnosticJevOptions("failure_triage", getActiveStage) });
 		return jevRuntime;
 	}
 
@@ -1000,7 +1011,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			mode: guardMode,
 			failClosed: guardFailClosed,
 			createJev: () =>
-				stageGuardJevFactory ? stageGuardJevFactory() : createJevRuntime(),
+				stageGuardJevFactory ? stageGuardJevFactory() : createJevRuntime({ ...diagnosticJevOptions("shell_guard", getActiveStage) }),
 		});
 		return stageGuard;
 	}
@@ -1012,7 +1023,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			failClosed: driftFailClosed,
 			sessionKey: () => getCurrentDriftSessionKey(),
 			createJev: () =>
-				driftJevFactory ? driftJevFactory() : createJevRuntime(),
+				driftJevFactory ? driftJevFactory() : createJevRuntime({ ...diagnosticJevOptions("drift", getActiveStage) }),
 		});
 		return driftGuard;
 	}
@@ -1024,7 +1035,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			live: compactionLive,
 			sessionKey: () => getCurrentCompactionSessionKey(),
 			createJev: () =>
-				compactionJevFactory ? compactionJevFactory() : createJevRuntime(),
+				compactionJevFactory ? compactionJevFactory() : createJevRuntime({ ...diagnosticJevOptions("compaction", getActiveStage) }),
 		});
 		return compactionGuard;
 	}
@@ -1612,6 +1623,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		setCurrentDriftSessionKey("");
 		resetAllSessionState();
 		clearContextSnapshot();
+		await shutdownDiagnostics(true);
 		return undefined;
 	});
 
@@ -1626,6 +1638,113 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		setCurrentDriftSessionKey("");
 		resetAllSessionState();
 		clearContextSnapshot();
+		await shutdownDiagnostics();
+		return undefined;
+	});
+
+	pi.on("message_end", async (event) => {
+		const message = event.message as unknown as Record<string, unknown>;
+		if (!message || typeof message !== "object" || message.role !== "assistant") return undefined;
+		const usage = typeof message.usage === "object" && message.usage !== null
+			? message.usage as Record<string, unknown> : null;
+		const inputTokens = usage && typeof usage.input === "number" ? usage.input : undefined;
+		const outputTokens = usage && typeof usage.output === "number" ? usage.output : undefined;
+		const cost = usage && typeof usage.cost === "object" && usage.cost !== null
+			? usage.cost as Record<string, unknown> : null;
+		const costUsd = cost && typeof cost.total === "number" ? cost.total : undefined;
+		if (message.stopReason === "error" || message.stopReason === "aborted") activeDiagnosticProviders.length = 0;
+		recordDiagnostic({
+			feature: "model", event: "model_response", stage: getActiveStage() ?? "unknown",
+			role: getDiagnosticRole(),
+			usageKnown: inputTokens !== undefined && outputTokens !== undefined,
+			...(inputTokens !== undefined ? { inputTokens } : {}),
+			...(outputTokens !== undefined ? { outputTokens } : {}),
+			...(costUsd !== undefined ? { costUsd } : {}),
+		});
+		return undefined;
+	});
+
+	pi.on("before_provider_request", async () => {
+		activeDiagnosticProviders.push(diagnosticNow());
+		recordDiagnostic({
+			feature: "model", event: "provider_request", stage: getActiveStage() ?? "unknown",
+			role: getDiagnosticRole(), modelCalls: 1, providerRequests: 1,
+		});
+		return undefined;
+	});
+
+	pi.on("after_provider_response", async (event) => {
+		const startedAt = activeDiagnosticProviders.shift();
+		if (startedAt !== undefined) {
+			recordDiagnostic({
+				feature: "model", event: "provider_response", stage: getActiveStage() ?? "unknown",
+				role: getDiagnosticRole(),
+				providerResponseMs: diagnosticNow() - startedAt,
+				outcome: event.status >= 400 ? "failure" : "success",
+			});
+		}
+		return undefined;
+	});
+
+	pi.on("tool_execution_start", async (event) => {
+		const verification = isDiagnosticVerificationCall(event.toolName, event.args);
+		activeDiagnosticTools.set(event.toolCallId, {
+			startedAt: diagnosticNow(),
+			feature: verification ? "verification" : diagnosticFeatureForTool(event.toolName),
+			event: verification ? "verification_execution" : "tool_execution",
+		});
+		if (event.toolName === "solution_search") {
+			const args = event.args as { query?: unknown } | null;
+			recordSolutionSearch(getActiveStage(), args?.query);
+		}
+		return undefined;
+	});
+
+	pi.on("tool_execution_end", async (event) => {
+		const started = activeDiagnosticTools.get(event.toolCallId);
+		activeDiagnosticTools.delete(event.toolCallId);
+		if (started) {
+			recordDiagnostic({
+				feature: started.feature, event: started.event, stage: getActiveStage() ?? "unknown",
+				outcome: event.isError ? "failure" : "success",
+				durationMs: diagnosticNow() - started.startedAt,
+			});
+		}
+		if (event.toolName === "stage_gate" && !event.isError) {
+			const result = event.result as { details?: { stage?: unknown; verdict?: unknown; action?: unknown; skipped?: unknown; error?: unknown } } | undefined;
+			const details = result?.details;
+			if (
+				getActiveStage() === "06-docsync" &&
+				details?.stage === "06-docsync" &&
+				details.verdict === "accept" &&
+				details.action === "none" &&
+				details.skipped !== true &&
+				!details.error
+			) {
+				await completeDiagnosticWorkflow("06-docsync");
+			}
+		}
+		if (event.toolName === "context_handoff" && !event.isError) {
+			const result = event.result as { details?: { operation?: unknown; currentStage?: unknown; nextStage?: unknown; blocker?: unknown; reviewOutcome?: unknown; reviewFindings?: unknown } } | undefined;
+			const details = result?.details;
+			if (details?.operation === "save" && typeof details.currentStage === "string" && !details.blocker) {
+				if (
+					details.currentStage === "04-review" &&
+					(details.reviewOutcome === "clean" || details.reviewOutcome === "findings") &&
+					typeof details.reviewFindings === "number" &&
+					Number.isSafeInteger(details.reviewFindings) &&
+					details.reviewFindings >= 0
+				) {
+					recordDiagnostic({
+						feature: "review", event: "review_outcome", stage: "04-review",
+						outcome: "success", reviewFindings: details.reviewFindings,
+					});
+				}
+				if (typeof details.nextStage === "string" && details.nextStage && details.currentStage !== details.nextStage) {
+					recordDiagnosticHandoff(details.currentStage, details.nextStage);
+				}
+			}
+		}
 		return undefined;
 	});
 

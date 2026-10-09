@@ -239,6 +239,8 @@ export interface StageRoutingInput {
 export interface StageRoutingResult {
 	decision: RoleDecision;
 	shadow: boolean;
+	/** Effective configured role selected for application; null when no role model is applied. */
+	appliedRole: ExecutionRole | null;
 	/** Model to apply, or null to keep legacy behavior (shadow/no roles/no config). */
 	appliedModel: string | null;
 	appliedThinkingLevel: string | null;
@@ -248,6 +250,7 @@ function safeFallbackResult(): StageRoutingResult {
 	return {
 		decision: plainDecision("default", "fallback", "fallback"),
 		shadow: false,
+		appliedRole: null,
 		appliedModel: null,
 		appliedThinkingLevel: null,
 	};
@@ -262,13 +265,14 @@ function resolveAppliedRole(
 	decision: RoleDecision,
 	roles: ModelRolesConfig,
 	shadow: boolean,
-): { model: string | null; thinkingLevel: string | null } {
+): { role: ExecutionRole | null; model: string | null; thinkingLevel: string | null } {
 	if (shadow || decision.reason === "override") {
-		return { model: null, thinkingLevel: null };
+		return { role: null, model: null, thinkingLevel: null };
 	}
 	const entry =
 		decision.role === "sota" ? roles.sota ?? roles.default : roles.default;
 	return {
+		role: !entry ? null : decision.role === "sota" && roles.sota ? "sota" : "default",
 		model: entry?.model ?? null,
 		thinkingLevel: entry?.thinkingLevel ?? null,
 	};
@@ -456,6 +460,7 @@ export async function resolveStageRouting(
 		return {
 			decision,
 			shadow,
+			appliedRole: applied.role,
 			appliedModel: applied.model,
 			appliedThinkingLevel: applied.thinkingLevel,
 		};

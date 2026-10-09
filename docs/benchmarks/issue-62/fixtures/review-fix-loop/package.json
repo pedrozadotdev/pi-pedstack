@@ -1,0 +1,6 @@
+{
+  "name": "pedstack-benchmark-review-loop",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "bun test" }
+}

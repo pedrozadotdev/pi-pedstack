@@ -7,6 +7,8 @@ import {
 	formatSolutionsBlock,
 } from "../commands/prompt-inject";
 import { createSolutionSearchTool } from "../tools/solution-search";
+import { diagnosticJevOptions, recordSolutionSearch } from "../diagnostics";
+import { getActiveStage } from "./active-stage";
 import type { SolutionSearchDeps } from "../tools/solution-search";
 import {
 	readPiPedstackConfig,
@@ -64,7 +66,7 @@ let sharedJevFactory: (() => JevRuntime) | undefined;
 /** One Jev runtime per extension instance, created on first real use. */
 function getSharedJev(): JevRuntime {
 	if (sharedJev) return sharedJev;
-	sharedJev = sharedJevFactory ? sharedJevFactory() : createJevRuntime();
+	sharedJev = sharedJevFactory ? sharedJevFactory() : createJevRuntime({ ...diagnosticJevOptions("solution_search", getActiveStage) });
 	return sharedJev;
 }
 
@@ -115,6 +117,7 @@ export async function buildSolutionsAppend(
 			stageKey,
 		});
 		if (!query) return undefined;
+		recordSolutionSearch(getActiveStage(), query, "automatic");
 
 		const config = await readPiPedstackConfig(input.repoRoot);
 		const ranking = resolveSolutionRankingConfig(config);

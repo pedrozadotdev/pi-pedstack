@@ -9,6 +9,8 @@ import type { GatherEvidenceOptions } from "../stage-gate/evidence";
 import { isStageKey } from "../stage-gate/store";
 import { getConfigKeyForSkill, readPiPedstackConfig } from "../utils/config-types";
 import type { OverengineeringMode } from "../overengineering/types";
+import { diagnosticJevOptions } from "../diagnostics";
+import { getActiveStage } from "../utils/active-stage";
 import type {
 	DeterministicResult,
 	Evidence,
@@ -70,7 +72,7 @@ interface StageGateToolResult {
 export function createStageGateTool(deps: StageGateToolDeps) {
 	let runtime: JevRuntime | null = deps.runtime ?? null;
 	const getRuntime = (): JevRuntime => {
-		if (!runtime) runtime = createJevRuntime();
+		if (!runtime) runtime = createJevRuntime({ ...diagnosticJevOptions("stage_gate", getActiveStage) });
 		return runtime;
 	};
 

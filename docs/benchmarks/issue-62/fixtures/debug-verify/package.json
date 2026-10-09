@@ -1,0 +1,6 @@
+{
+  "name": "pedstack-benchmark-debug",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "bun test", "typecheck": "bun x tsc --noEmit" }
+}
