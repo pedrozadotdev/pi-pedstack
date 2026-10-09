@@ -12,7 +12,8 @@
       "stages": ["01-brainstorm", "02-plan", "03-work", "04-review", "05-learn", "06-docsync"],
       "expectedStageStarts": ["01-brainstorm", "02-plan", "03-work", "04-review", "05-learn", "06-docsync"],
       "expectedTransitions": 5,
-      "expectedReviewOutcomes": ["clean, zero findings"],
+      "expectedFixtureCommitSha": "59da4afd9846ddd01346900811f11190a07aa2cf",
+      "expectedReviewOutcomes": ["clean"],
       "terminalCompletion": true,
       "operatorDecisions": ["accept each required gated transition", "use the same decisions for baseline and candidate"],
       "assertions": ["review outcome is clean with zero findings", "stage report and accepted stage gate complete docs sync", "terminal workflow is recorded complete"]
@@ -25,7 +26,8 @@
       "stages": ["01-brainstorm", "02-plan", "03-work", "04-review", "03-work", "04-review", "05-learn", "06-docsync"],
       "expectedStageStarts": ["01-brainstorm", "02-plan", "03-work", "04-review", "03-work", "04-review", "05-learn", "06-docsync"],
       "expectedTransitions": 7,
-      "expectedReviewOutcomes": ["findings", "clean, zero findings"],
+      "expectedFixtureCommitSha": "f4c8de9b48cabf521447150e91d557c170072fea",
+      "expectedReviewOutcomes": ["findings", "clean"],
       "terminalCompletion": true,
       "operatorDecisions": ["accept each required gated transition", "use the same decisions for baseline and candidate"],
       "assertions": ["first review has a confirmed finding", "finding routes back to 03-work", "second review is clean with zero findings", "transition count includes only entered stages"]
@@ -38,6 +40,7 @@
       "stages": ["01-brainstorm", "02-plan"],
       "expectedStageStarts": ["01-brainstorm", "02-plan", "02-plan"],
       "expectedTransitions": 1,
+      "expectedFixtureCommitSha": "91fcedf1f4586a55289903d84767500ad1f104fd",
       "operatorDecisions": ["use identical explicit eligible-stage SOTA routing config", "resume from the same saved checkpoint input"],
       "requiresCheckpoint": true,
       "requiresSotaRole": true,
@@ -46,14 +49,16 @@
     {
       "id": "debug-verify",
       "fixture": "fixtures/debug-verify",
-      "entryCommand": "/ped-debug Fix the seeded rectangle-area defect in this fixture. Reproduce the failing test, correct the function, and run test and typecheck.",
-      "prompt": "Fix the seeded rectangle-area defect in this fixture. Reproduce the failing test, correct the function, and run test and typecheck.",
-      "stages": ["04-5-debug", "03-work", "04-review"],
-      "expectedStageStarts": ["04-5-debug", "03-work", "04-review"],
-      "expectedTransitions": 2,
+      "entryCommand": "/ped-start Document the area helper API in README.md, leave the seeded defect unchanged through the clean review, then enter /ped-debug before accepting the 05-learn transition.",
+      "followupCommands": ["/ped-debug Fix the seeded rectangle-area defect. Reproduce the failing test, correct the function, and run bun test tests/area.fixture.ts plus bun x tsc --noEmit."],
+      "stages": ["01-brainstorm", "02-plan", "03-work", "04-review", "04-5-debug", "05-learn", "06-docsync"],
+      "expectedStageStarts": ["01-brainstorm", "02-plan", "03-work", "04-review", "04-5-debug", "05-learn", "06-docsync"],
+      "expectedTransitions": 5,
+      "expectedFixtureCommitSha": "5b3e07f799d9408895529225fbf4283985381d75",
+      "expectedReviewOutcomes": ["clean"],
       "verificationOutcomes": ["failure", "success"],
       "operatorDecisions": ["use the same debug prompt and confirmation decisions for baseline and candidate"],
-      "assertions": ["debug entry requires a prompt", "failing and successful verification calls have timings and outcomes", "the completed review reports its findings honestly"]
+      "assertions": ["/ped-start establishes the workflow needed for /ped-debug", "debug follows a clean review and hands off to 05-learn", "failing and successful verification calls have timings and outcomes"]
     }
   ],
   "capture": {

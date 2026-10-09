@@ -129,6 +129,8 @@ interface ContextHandoffResult {
 	recentlyAccessedFiles?: string[];
 	compressionRisk?: string[];
 	activeRules?: string[];
+	reviewOutcome?: "clean" | "findings";
+	reviewFindings?: number;
 	updatedAt?: string;
 	gateWarning?: string;
 	readiness?: ReadinessOutcome;
@@ -1181,6 +1183,8 @@ async function save(
 		recentlyAccessedFiles,
 		compressionRisk,
 		activeRules,
+		reviewOutcome: reviewTransition.outcome,
+		reviewFindings: reviewTransition.findings,
 		recommendNewSession,
 		updatedAt: state.updatedAt,
 		gateWarning: combinedWarning,

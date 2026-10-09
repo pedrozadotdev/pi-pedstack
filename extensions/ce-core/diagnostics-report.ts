@@ -17,6 +17,7 @@ interface Row {
 	modelCalls?: number;
 	independentReviewers?: number;
 	repeatAttempt?: number;
+	reviewFindings?: number;
 	inputTokens?: number;
 	outputTokens?: number;
 	costUsd?: number;
@@ -39,7 +40,7 @@ const ROLES = new Set(["default", "review", "sota", "override", "unknown"]);
 const OUTCOMES = new Set(["success", "failure", "interrupted", "unknown"]);
 const EVENTS = new Set([
 	"stage_start", "stage_end", "stage_interrupted", "handoff_saved", "stage_transition", "workflow_complete",
-	"jev_decision", "role_selected", "review_attempt", "review_skipped", "tool_execution",
+	"jev_decision", "role_selected", "review_attempt", "review_skipped", "review_outcome", "tool_execution",
 	"verification_execution", "search_invocation", "automatic_search", "model_response",
 	"provider_request", "provider_response", "unknown",
 ]);
@@ -53,7 +54,7 @@ function safeRow(value: unknown): Row {
 	if (typeof input.role === "string" && ROLES.has(input.role)) row.role = input.role;
 	if (typeof input.outcome === "string" && OUTCOMES.has(input.outcome)) row.outcome = input.outcome;
 	if (typeof input.event === "string" && EVENTS.has(input.event)) row.event = input.event;
-	for (const key of ["durationMs", "processDurationMs", "providerResponseMs", "providerRequests", "modelCalls", "independentReviewers", "repeatAttempt", "inputTokens", "outputTokens", "costUsd", "exitCode", "searchCalls", "repeatSearches", "stageTransitions"] as const) {
+	for (const key of ["durationMs", "processDurationMs", "providerResponseMs", "providerRequests", "modelCalls", "independentReviewers", "repeatAttempt", "reviewFindings", "inputTokens", "outputTokens", "costUsd", "exitCode", "searchCalls", "repeatSearches", "stageTransitions"] as const) {
 		const number = input[key];
 		if (typeof number === "number" && Number.isFinite(number) && number >= 0) row[key] = number;
 	}

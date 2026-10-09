@@ -62,15 +62,21 @@ local diagnostics using:
 bash docs/benchmarks/issue-62/run-live.sh clean-pipeline openai/<model-id> /tmp/issue-62/clean-pipeline-01
 ```
 
-The runner prints the scenario's exact `/ped-start` or `/ped-debug` command,
-opens Pi with diagnostics enabled, and saves the raw JSONL, compact report,
-revision, model, runtime, config hash, and final fixture-tree hash. Its
-validator checks the recorded stage trace, actual transition count, terminal
-completion, review outcomes, checkpoint, SOTA selection, and verification
-outcomes required by that scenario. It writes an artifact-tree hash, a hash of
-the pinned operator-decision plan, and a hash of the observed workflow
-decisions to `validation.json`. Enter the printed command, finish the scenario,
-then repeat with the identical fixture and decisions. Run one
+The runner initializes each copied fixture as a Git repository, commits it as
+`main` using a fixed local identity and timestamp, and records the initial
+commit SHA. The manifest pins that SHA, so fixture drift or a different Git
+baseline fails validation. It prints the exact first command and any follow-up
+commands; for `debug-verify`, `/ped-start` creates the required workflow and
+the follow-up `/ped-debug` runs after a clean review while the 05-learn
+transition is pending. Pi starts with diagnostics enabled and saves the raw
+JSONL, compact report, revision, model, runtime, config hash, and final
+fixture-tree hash. The validator checks exact stage starts and transitions,
+terminal completion, ordered review outcomes from diagnostics emitted by
+accepted review handoffs, checkpoint, SOTA selection, and verification outcomes
+required by the scenario. It writes an artifact-tree hash, a hash of the pinned
+operator-decision plan, and a hash of the observed workflow decisions to
+`validation.json`. Follow the printed commands and gate timing, then repeat
+with the identical fixture and decisions. Run one
 unrecorded warmup and 20 recorded runs for each scenario on the instrumented
 baseline revision and each candidate. Keep the output folders private because
 they contain local workflow measurements and task metadata.

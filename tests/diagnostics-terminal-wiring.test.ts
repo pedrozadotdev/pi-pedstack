@@ -73,10 +73,20 @@ describe("terminal diagnostics event wiring", () => {
 			result: { details: { stage: "06-docsync", verdict: "accept", action: "none", skipped: true } },
 		};
 		await onToolEnd?.(skippedDocsyncGate, {});
+		const findingsHandoff: Extract<ExtensionEvent, { type: "tool_execution_end" }> = {
+			type: "tool_execution_end",
+			toolCallId: "review-handoff-1",
+			toolName: "context_handoff", isError: false,
+			result: { details: { operation: "save", currentStage: "04-review", nextStage: "03-work", reviewOutcome: "findings", reviewFindings: 2 } },
+		};
+		await onToolEnd?.(findingsHandoff, {});
 		await shutdownDiagnostics();
 
 		const rows = (await readFile(file, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
 		expect(rows.filter((row) => row.event === "workflow_complete")).toHaveLength(1);
+		expect(rows.filter((row) => row.event === "review_outcome")).toEqual([
+			expect.objectContaining({ stage: "04-review", reviewFindings: 2 }),
+		]);
 		expect(rows.filter((row) => row.event === "stage_end").map((row) => row.outcome)).toEqual(["success", "interrupted"]);
 		expect(rows.at(-1)).toMatchObject({ event: "stage_end", stage: "06-docsync", outcome: "interrupted" });
 	});

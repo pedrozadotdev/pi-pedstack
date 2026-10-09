@@ -49,6 +49,7 @@ export interface DiagnosticRecord {
 	modelCalls?: number;
 	independentReviewers?: number;
 	repeatAttempt?: number;
+	reviewFindings?: number;
 	inputTokens?: number;
 	outputTokens?: number;
 	costUsd?: number;
@@ -80,7 +81,7 @@ const OUTCOMES = new Set<DiagnosticOutcome>([
 const EVENTS = new Set([
 	"stage_start", "stage_end", "stage_interrupted", "handoff_saved", "workflow_complete",
 	"stage_transition",
-	"jev_decision", "role_selected", "review_attempt", "review_skipped", "tool_execution",
+	"jev_decision", "role_selected", "review_attempt", "review_skipped", "review_outcome", "tool_execution",
 	"verification_execution", "search_invocation", "automatic_search", "model_response",
 	"provider_request", "provider_response",
 ]);
@@ -91,7 +92,7 @@ const STAGES = new Set([
 const ROLES = new Set(["default", "review", "sota", "override", "unknown"]);
 const NUMERIC_FIELDS = [
 	"durationMs", "processDurationMs", "providerResponseMs", "providerRequests", "modelCalls", "independentReviewers",
-	"repeatAttempt", "inputTokens", "outputTokens", "exitCode", "costUsd",
+	"repeatAttempt", "reviewFindings", "inputTokens", "outputTokens", "exitCode", "costUsd",
 	"searchCalls", "repeatSearches", "stageTransitions",
 ] as const;
 

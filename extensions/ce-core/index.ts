@@ -1725,9 +1725,21 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 			}
 		}
 		if (event.toolName === "context_handoff" && !event.isError) {
-			const result = event.result as { details?: { operation?: unknown; currentStage?: unknown; nextStage?: unknown; blocker?: unknown } } | undefined;
+			const result = event.result as { details?: { operation?: unknown; currentStage?: unknown; nextStage?: unknown; blocker?: unknown; reviewOutcome?: unknown; reviewFindings?: unknown } } | undefined;
 			const details = result?.details;
 			if (details?.operation === "save" && typeof details.currentStage === "string" && !details.blocker) {
+				if (
+					details.currentStage === "04-review" &&
+					(details.reviewOutcome === "clean" || details.reviewOutcome === "findings") &&
+					typeof details.reviewFindings === "number" &&
+					Number.isSafeInteger(details.reviewFindings) &&
+					details.reviewFindings >= 0
+				) {
+					recordDiagnostic({
+						feature: "review", event: "review_outcome", stage: "04-review",
+						outcome: "success", reviewFindings: details.reviewFindings,
+					});
+				}
 				if (typeof details.nextStage === "string" && details.nextStage && details.currentStage !== details.nextStage) {
 					recordDiagnosticHandoff(details.currentStage, details.nextStage);
 				}

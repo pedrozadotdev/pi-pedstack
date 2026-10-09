@@ -217,6 +217,28 @@ describe("context_handoff save gate integration (Unit 7)", () => {
 		expect(result.blocker).toBeUndefined();
 	});
 
+	test("returns the validated findings outcome from the persisted review artifact", async () => {
+		await write("docs/reviews/topic.md", "# Review\n\n- **Finding**: Handle the upper-bound case.\n\n## Review Outcome\nStatus: findings\nFindings: 1\n");
+		const tool = createContextHandoffTool({ gateMode: "off" });
+		const result = await tool.execute({
+			operation: "save", repoRoot: root, currentStage: "04-review", nextStage: "03-work",
+			artifacts: { review: "docs/reviews/topic.md" },
+		} as never);
+		expect(result).toMatchObject({ reviewOutcome: "findings", reviewFindings: 1 });
+		expect(result.blocker).toBeUndefined();
+	});
+
+	test("returns clean only for the persisted zero-finding review outcome", async () => {
+		await write("docs/reviews/topic.md", "# Review\n\n## Review Outcome\nStatus: clean\nFindings: 0\n");
+		const tool = createContextHandoffTool({ gateMode: "off" });
+		const result = await tool.execute({
+			operation: "save", repoRoot: root, currentStage: "04-review", nextStage: "05-learn",
+			artifacts: { review: "docs/reviews/topic.md" },
+		} as never);
+		expect(result).toMatchObject({ reviewOutcome: "clean", reviewFindings: 0 });
+		expect(result.blocker).toBeUndefined();
+	});
+
 	test("off mode preserves the original behavior", async () => {
 		await write("docs/plans/hollow.md", "# Hollow\n\nTODO");
 		const result = await save("off", { nextStage: "03-work" });
