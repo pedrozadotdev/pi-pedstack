@@ -6,6 +6,11 @@ import path from "node:path";
 import { hasAppliedSotaRole, matchesInitialFixtureCommit, matchesReviewOutcomes } from "../docs/benchmarks/issue-62/verify-live-run";
 
 describe("issue #62 review outcome validation", () => {
+	test("live runner loads only the pinned extension checkout", async () => {
+		const runner = await readFile("docs/benchmarks/issue-62/run-live.sh", "utf8");
+		expect(runner).toContain("pi --approve --no-extensions --extension");
+	});
+
 	test("requires successful SOTA activation rather than a routing recommendation", () => {
 		const selected = { feature: "routing", event: "role_selected", stage: "02-plan", role: "sota", outcome: "success" };
 		const failed = { feature: "routing", event: "role_apply_failed", stage: "02-plan", role: "sota", outcome: "failure" };

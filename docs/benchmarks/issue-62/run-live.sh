@@ -66,7 +66,7 @@ if [[ "$followup_commands" != "[]" ]]; then
 	printf '\nRun each follow-up command only at the gate named in its prompt.\n'
 fi
 printf 'Diagnostics will be saved locally at %s/diagnostics.jsonl\n' "$output_dir"
-(cd "$workspace" && PEDSTACK_DIAGNOSTICS_FILE="$output_dir/diagnostics.jsonl" pi --approve --extension "$repo_root/extensions/ce-core/index.ts" --model "$model" --thinking medium)
+(cd "$workspace" && PEDSTACK_DIAGNOSTICS_FILE="$output_dir/diagnostics.jsonl" pi --approve --no-extensions --extension "$repo_root/extensions/ce-core/index.ts" --model "$model" --thinking medium)
 
 bun "$repo_root/extensions/ce-core/diagnostics-report.ts" "$output_dir/diagnostics.jsonl" > "$output_dir/report.json"
 artifact_hash="$(tree_sha256 "$workspace")"
