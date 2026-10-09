@@ -22,6 +22,7 @@ interface Row {
 	stage?: string;
 	role?: string;
 	outcome?: string;
+	routingApplyFailure?: string;
 	stageTransitions?: number;
 	reviewFindings?: number;
 }
@@ -36,6 +37,14 @@ export function matchesReviewOutcomes(rows: Row[], expected: Array<"clean" | "fi
 		.filter((row) => row.event === "review_outcome" && row.stage === "04-review" && typeof row.reviewFindings === "number")
 		.map((row) => row.reviewFindings === 0 ? "clean" : "findings");
 	return JSON.stringify(actual) === JSON.stringify(expected);
+}
+
+export function matchesInitialFixtureCommit(roots: string[], recorded: string | undefined, expected: string | undefined): boolean {
+	return roots.length === 1 && roots[0] === recorded && (!expected || roots[0] === expected);
+}
+
+export function hasAppliedSotaRole(rows: Row[]): boolean {
+	return rows.some((row) => row.feature === "routing" && row.event === "role_applied" && row.stage === "02-plan" && row.role === "sota" && row.outcome === "success");
 }
 
 async function existsInTree(root: string): Promise<boolean> {
@@ -84,12 +93,15 @@ async function main(): Promise<void> {
 	const rows = (await readFile(path.join(runDir, "diagnostics.jsonl"), "utf8")).split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as Row);
 	const workspace = path.join(runDir, "workspace");
 	const artifactsSha256 = await treeHash(workspace);
-	const initialFixtureCommitSha = execFileSync("git", ["-C", workspace, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-	const decisions = rows.filter((row) => ["stage_start", "stage_transition", "review_attempt", "role_selected"].includes(row.event ?? "")).map((row) => ({
+	const finalHeadSha = execFileSync("git", ["-C", workspace, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+	const fixtureRoots = execFileSync("git", ["-C", workspace, "rev-list", "--max-parents=0", "HEAD"], { encoding: "utf8" }).trim().split(/\s+/).filter(Boolean);
+	const initialFixtureCommitSha = fixtureRoots[0] ?? "";
+	const decisions = rows.filter((row) => ["stage_start", "stage_transition", "review_attempt", "role_selected", "role_applied", "role_apply_failed"].includes(row.event ?? "")).map((row) => ({
 		event: row.event,
 		stage: row.stage,
 		role: row.role,
 		outcome: row.outcome,
+		routingApplyFailure: row.routingApplyFailure,
 		stageTransitions: row.stageTransitions,
 	}));
 	const observedDecisionSha256 = createHash("sha256").update(JSON.stringify(decisions)).digest("hex");
@@ -99,14 +111,13 @@ async function main(): Promise<void> {
 		terminalCompletion: scenario.terminalCompletion !== true || rows.some((row) => row.event === "workflow_complete"),
 		reviewOutcomes: matchesReviewOutcomes(rows, scenario.expectedReviewOutcomes ?? []),
 		checkpoint: scenario.requiresCheckpoint !== true || await existsInTree(path.join(workspace, ".context", "compound-engineering", "checkpoints")),
-		sotaRole: scenario.requiresSotaRole !== true || rows.some((row) => row.feature === "routing" && row.stage === "02-plan" && row.role === "sota"),
+		sotaRole: scenario.requiresSotaRole !== true || hasAppliedSotaRole(rows),
 		verificationOutcomes: (scenario.verificationOutcomes ?? []).every((outcome) => rows.some((row) => row.feature === "verification" && row.outcome === outcome)),
 		artifactHash: artifactsSha256 === metadata.artifactsSha256,
-		initialFixtureCommit: initialFixtureCommitSha === metadata.initialFixtureCommitSha &&
-			(!scenario.expectedFixtureCommitSha || initialFixtureCommitSha === scenario.expectedFixtureCommitSha),
+		initialFixtureCommit: matchesInitialFixtureCommit(fixtureRoots, metadata.initialFixtureCommitSha, scenario.expectedFixtureCommitSha),
 	};
 	const reviewOutcomesObserved = rows.filter((row) => row.event === "review_outcome" && row.stage === "04-review").map((row) => row.reviewFindings === 0 ? "clean" : "findings");
-	const result = { scenario: scenario.id, checks, artifactsSha256, initialFixtureCommitSha, operatorDecisionPlanSha256: metadata.operatorDecisionPlanSha256, observedDecisionSha256, decisions, reviewOutcomesObserved, passed: Object.values(checks).every(Boolean) };
+	const result = { scenario: scenario.id, checks, artifactsSha256, initialFixtureCommitSha, finalHeadSha, operatorDecisionPlanSha256: metadata.operatorDecisionPlanSha256, observedDecisionSha256, decisions, reviewOutcomesObserved, passed: Object.values(checks).every(Boolean) };
 	await writeFile(path.join(runDir, "validation.json"), `${JSON.stringify(result, null, 2)}\n`);
 	console.log(JSON.stringify(result, null, 2));
 	if (!result.passed) process.exitCode = 1;

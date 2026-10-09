@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFakeJevRuntime } from "../extensions/ce-core/jev/runtime";
@@ -26,12 +27,14 @@ import {
 } from "../extensions/ce-core/utils/routing-store";
 import { resetWorkflowRoutingState } from "../extensions/ce-core/utils/workflow-reset";
 import { stageGatePath } from "../extensions/ce-core/stage-gate/store";
+import { __resetDiagnosticsForTests, shutdownDiagnostics } from "../extensions/ce-core/diagnostics";
 import {
 	getActiveStage,
 	setActiveStage,
 } from "../extensions/ce-core/utils/active-stage";
 
 const tempRoots: string[] = [];
+const previousDiagnosticsFile = process.env.PEDSTACK_DIAGNOSTICS_FILE;
 
 function makeRepo(): string {
 	const root = mkdtempSync(path.join(tmpdir(), "pi-pedstack-routing-"));
@@ -183,14 +186,41 @@ function makeHarness(repoRoot: string): Harness {
 	};
 }
 
-afterEach(() => {
+afterEach(async () => {
 	__setModelRoutingJevFactory(null);
 	__setWorkflowReset(null);
 	resetPedstackState();
+	delete process.env.PEDSTACK_DIAGNOSTICS_FILE;
+	if (previousDiagnosticsFile !== undefined) process.env.PEDSTACK_DIAGNOSTICS_FILE = previousDiagnosticsFile;
+	setActiveStage(null);
+	await shutdownDiagnostics();
+	await __resetDiagnosticsForTests();
 	for (const root of tempRoots.splice(0)) {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+async function runEscalatedReload(options: {
+	shadow: boolean;
+	setModel?: (model: { provider: string; id: string }) => Promise<boolean>;
+	findModel?: (provider: string, id: string) => unknown;
+}): Promise<{ harness: Harness; rows: Array<Record<string, unknown>> }> {
+	const repo = makeRepo();
+	const diagnosticsFile = path.join(repo, "routing.jsonl");
+	process.env.PEDSTACK_DIAGNOSTICS_FILE = diagnosticsFile;
+	await __resetDiagnosticsForTests();
+	writeConfig(repo, { models: MODELS, routing: { shadow: options.shadow } });
+	writeContextState(repo, { currentStage: "02-plan", nextStage: "03-work" });
+	writeStageGateEscalate(repo, "02-plan");
+	__setModelRoutingJevFactory(() => fakeJev(0.1));
+	const harness = makeHarness(repo);
+	if (options.setModel) harness.pi.setModel = options.setModel;
+	if (options.findModel) harness.ctx.modelRegistry.find = options.findModel;
+	await cmdPedReload(harness.pi).handler("", harness.ctx);
+	await shutdownDiagnostics();
+	const rows = (await readFile(diagnosticsFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+	return { harness, rows };
+}
 
 describe("switchStageConfig — stage-entry routing", () => {
 	test("shadow mode logs the decision but applies only the legacy model", async () => {
@@ -638,6 +668,37 @@ describe("workflow-root reset failure handling", () => {
 });
 
 describe("manual escalation via /ped-reload", () => {
+	test("diagnostics distinguish shadow recommendations from applied SOTA", async () => {
+		const { harness, rows } = await runEscalatedReload({ shadow: true });
+		expect(harness.setModelCalls).toEqual([]);
+		expect(rows).toContainEqual(expect.objectContaining({ event: "role_selected", role: "sota" }));
+		expect(rows.some((row) => row.event === "role_applied" && row.role === "sota")).toBe(false);
+	});
+
+	test("diagnostics record SOTA after an enforced reload successfully switches models", async () => {
+		const { harness, rows } = await runEscalatedReload({ shadow: false });
+		expect(harness.setModelCalls).toEqual([{ provider: "test", id: "strong" }]);
+		expect(rows).toContainEqual(expect.objectContaining({
+			event: "role_applied", stage: "02-plan", role: "sota", outcome: "success",
+		}));
+	});
+
+	test("diagnostics reject SOTA when the model is unavailable", async () => {
+		const { rows } = await runEscalatedReload({ shadow: false, findModel: () => undefined });
+		expect(rows).toContainEqual(expect.objectContaining({
+			event: "role_apply_failed", role: "sota", outcome: "failure", routingApplyFailure: "model_unavailable",
+		}));
+		expect(rows.some((row) => row.event === "role_applied" && row.role === "sota")).toBe(false);
+	});
+
+	test("diagnostics reject SOTA when the provider refuses model activation", async () => {
+		const { rows } = await runEscalatedReload({ shadow: false, setModel: async () => false });
+		expect(rows).toContainEqual(expect.objectContaining({
+			event: "role_apply_failed", role: "sota", outcome: "failure", routingApplyFailure: "api_key",
+		}));
+		expect(rows.some((row) => row.event === "role_applied" && row.role === "sota")).toBe(false);
+	});
+
 	test("enforced /ped-reload applies models.sota from a persisted gate escalation", async () => {
 		const repo = makeRepo();
 		writeConfig(repo, { models: MODELS, routing: { shadow: false } });

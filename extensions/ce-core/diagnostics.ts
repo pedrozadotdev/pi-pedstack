@@ -50,6 +50,7 @@ export interface DiagnosticRecord {
 	independentReviewers?: number;
 	repeatAttempt?: number;
 	reviewFindings?: number;
+	routingApplyFailure?: "missing_model" | "invalid_model" | "model_unavailable" | "api_key" | "switch_failed";
 	inputTokens?: number;
 	outputTokens?: number;
 	costUsd?: number;
@@ -81,7 +82,7 @@ const OUTCOMES = new Set<DiagnosticOutcome>([
 const EVENTS = new Set([
 	"stage_start", "stage_end", "stage_interrupted", "handoff_saved", "workflow_complete",
 	"stage_transition",
-	"jev_decision", "role_selected", "review_attempt", "review_skipped", "review_outcome", "tool_execution",
+	"jev_decision", "role_selected", "role_applied", "role_apply_failed", "review_attempt", "review_skipped", "review_outcome", "tool_execution",
 	"verification_execution", "search_invocation", "automatic_search", "model_response",
 	"provider_request", "provider_response",
 ]);
@@ -90,6 +91,7 @@ const STAGES = new Set([
 	"05-learn", "06-docsync", "unknown",
 ]);
 const ROLES = new Set(["default", "review", "sota", "override", "unknown"]);
+const ROUTING_APPLY_FAILURES = new Set(["missing_model", "invalid_model", "model_unavailable", "api_key", "switch_failed"]);
 const NUMERIC_FIELDS = [
 	"durationMs", "processDurationMs", "providerResponseMs", "providerRequests", "modelCalls", "independentReviewers",
 	"repeatAttempt", "reviewFindings", "inputTokens", "outputTokens", "exitCode", "costUsd",
@@ -119,7 +121,7 @@ export function createDiagnostics(options: {
 			timestamp: new Date(now()).toISOString(),
 			runId,
 			feature: FEATURES.has(record.feature) ? record.feature : "unknown",
-		event: EVENTS.has(record.event) ? record.event : "unknown",
+			event: EVENTS.has(record.event) ? record.event : "unknown",
 		};
 		if (record.stage !== undefined) safe.stage = STAGES.has(record.stage) ? record.stage : "unknown";
 		if (record.role !== undefined) safe.role = ROLES.has(record.role) ? record.role : "unknown";
@@ -130,6 +132,9 @@ export function createDiagnostics(options: {
 		}
 		if (typeof record.processInvoked === "boolean") safe.processInvoked = record.processInvoked;
 		if (typeof record.usageKnown === "boolean") safe.usageKnown = record.usageKnown;
+		if (record.routingApplyFailure && ROUTING_APPLY_FAILURES.has(record.routingApplyFailure)) {
+			safe.routingApplyFailure = record.routingApplyFailure;
+		}
 		if (record.episodeId) safe.episodeId = record.episodeId;
 		try {
 			await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });

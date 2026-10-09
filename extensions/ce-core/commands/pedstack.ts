@@ -444,8 +444,8 @@ async function switchModel(
 	ctx: ExtensionCommandContext,
 	stageKey: PipelineStageKey,
 	stepConfig: { model?: string },
-): Promise<void> {
-	if (!stepConfig.model) return;
+): Promise<"applied" | "unchanged" | "missing_model" | "invalid_model" | "model_unavailable" | "api_key"> {
+	if (!stepConfig.model) return "missing_model";
 
 	const parsed = parseModelRef(stepConfig.model, ctx.model?.provider);
 	if (!parsed) {
@@ -455,11 +455,11 @@ async function switchModel(
 				"warning",
 			);
 		}
-		return;
+		return "invalid_model";
 	}
 
 	if (ctx.model?.provider === parsed.provider && ctx.model?.id === parsed.id) {
-		return;
+		return "unchanged";
 	}
 
 	const model = ctx.modelRegistry.find(parsed.provider, parsed.id);
@@ -470,7 +470,7 @@ async function switchModel(
 				"warning",
 			);
 		}
-		return;
+		return "model_unavailable";
 	}
 
 	const switched = await pi.setModel(model);
@@ -485,6 +485,7 @@ async function switchModel(
 			"warning",
 		);
 	}
+	return switched ? "applied" : "api_key";
 }
 
 /** Switch thinking level if stepConfig specifies one and it differs from current. */
@@ -603,8 +604,27 @@ async function applyRoleModel(
 			return;
 		}
 
-		if (result.appliedModel) {
-			await switchModel(pi, ctx, stageKey, { model: result.appliedModel });
+		if (result.appliedModel && result.appliedRole) {
+			let activation: Awaited<ReturnType<typeof switchModel>> | "switch_failed";
+			try {
+				activation = await switchModel(pi, ctx, stageKey, { model: result.appliedModel });
+			} catch {
+				activation = "switch_failed";
+			}
+			if (activation === "applied" || activation === "unchanged") {
+				recordDiagnostic({ feature: "routing", event: "role_applied", stage: stageKey, role: result.appliedRole, outcome: "success" });
+			} else {
+				recordDiagnostic({
+					feature: "routing", event: "role_apply_failed", stage: stageKey,
+					role: result.decision.role, outcome: "failure",
+					routingApplyFailure: activation,
+				});
+			}
+		} else if (!result.shadow && result.decision.role === "sota") {
+			recordDiagnostic({
+				feature: "routing", event: "role_apply_failed", stage: stageKey,
+					role: result.decision.role, outcome: "failure", routingApplyFailure: "missing_model",
+			});
 		}
 		if (result.appliedThinkingLevel) {
 			switchThinkingLevel(pi, ctx, stageKey, {
