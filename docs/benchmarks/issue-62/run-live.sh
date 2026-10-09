@@ -66,10 +66,22 @@ if [[ "$followup_commands" != "[]" ]]; then
 	printf '\nRun each follow-up command only at the gate named in its prompt.\n'
 fi
 printf 'Diagnostics will be saved locally at %s/diagnostics.jsonl\n' "$output_dir"
-(cd "$workspace" && PEDSTACK_DIAGNOSTICS_FILE="$output_dir/diagnostics.jsonl" pi --approve --no-extensions --extension "$repo_root/extensions/ce-core/index.ts" --model "$model" --thinking medium)
+# Preserve unsuccessful runs too: benchmark samples must not silently disappear.
+if (cd "$workspace" && PEDSTACK_DIAGNOSTICS_FILE="$output_dir/diagnostics.jsonl" pi --approve --no-extensions --extension "$repo_root/extensions/ce-core/index.ts" --model "$model" --thinking medium); then
+  pi_exit_code=0
+else
+  pi_exit_code=$?
+fi
 
+# A failed/aborted Pi launch may never initialize diagnostics; keep the sample
+# with an empty JSONL file so validation and aggregation can record its failure.
+touch "$output_dir/diagnostics.jsonl"
 bun "$repo_root/extensions/ce-core/diagnostics-report.ts" "$output_dir/diagnostics.jsonl" > "$output_dir/report.json"
 artifact_hash="$(tree_sha256 "$workspace")"
-BENCH_METADATA="$output_dir/metadata.json" BENCH_ARTIFACT_HASH="$artifact_hash" bun -e 'import { readFileSync, writeFileSync } from "node:fs"; const file = process.env.BENCH_METADATA; const value = JSON.parse(readFileSync(file, "utf8")); value.finishedAt = new Date().toISOString(); value.artifactsSha256 = process.env.BENCH_ARTIFACT_HASH; writeFileSync(file, JSON.stringify(value, null, 2) + "\n");'
-bun "$benchmark_dir/verify-live-run.ts" "$output_dir"
-printf 'Saved metadata, raw diagnostics, and report under %s\n' "$output_dir"
+BENCH_METADATA="$output_dir/metadata.json" BENCH_ARTIFACT_HASH="$artifact_hash" BENCH_PI_EXIT="$pi_exit_code" bun -e 'import { readFileSync, writeFileSync } from "node:fs"; const file = process.env.BENCH_METADATA; const value = JSON.parse(readFileSync(file, "utf8")); value.finishedAt = new Date().toISOString(); value.piExitCode = Number(process.env.BENCH_PI_EXIT); value.artifactsSha256 = process.env.BENCH_ARTIFACT_HASH; writeFileSync(file, JSON.stringify(value, null, 2) + "\n");'
+if bun "$benchmark_dir/verify-live-run.ts" "$output_dir"; then
+  printf 'Validated benchmark sample under %s\n' "$output_dir"
+else
+  printf 'Benchmark sample failed validation; retained all evidence under %s\n' "$output_dir" >&2
+  exit 1
+fi

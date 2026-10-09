@@ -6,9 +6,14 @@ import path from "node:path";
 import { hasAppliedSotaRole, matchesInitialFixtureCommit, matchesReviewOutcomes } from "../docs/benchmarks/issue-62/verify-live-run";
 
 describe("issue #62 review outcome validation", () => {
-	test("live runner loads only the pinned extension checkout", async () => {
+	test("live runner loads only the pinned extension checkout and retains failed sessions", async () => {
 		const runner = await readFile("docs/benchmarks/issue-62/run-live.sh", "utf8");
 		expect(runner).toContain("pi --approve --no-extensions --extension");
+		expect(runner).toContain("pi_exit_code=$?");
+		expect(runner).toContain('touch "$output_dir/diagnostics.jsonl"');
+		expect(runner).toContain('BENCH_PI_EXIT="$pi_exit_code"');
+		const validator = await readFile("docs/benchmarks/issue-62/verify-live-run.ts", "utf8");
+		expect(validator).toContain("piExit: metadata.piExitCode === 0");
 	});
 
 	test("requires successful SOTA activation rather than a routing recommendation", () => {

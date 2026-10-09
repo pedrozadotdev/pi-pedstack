@@ -86,6 +86,7 @@ async function main(): Promise<void> {
 		scenario: string;
 		initialFixtureCommitSha?: string;
 		artifactsSha256?: string;
+		piExitCode?: number;
 		operatorDecisionPlanSha256?: string;
 	};
 	const scenario = manifest.scenarios.find((entry) => entry.id === metadata.scenario);
@@ -106,6 +107,7 @@ async function main(): Promise<void> {
 	}));
 	const observedDecisionSha256 = createHash("sha256").update(JSON.stringify(decisions)).digest("hex");
 	const checks: Record<string, boolean> = {
+		piExit: metadata.piExitCode === 0,
 		stageTrace: followsExpectedStages(rows, scenario.expectedStageStarts),
 		stageTransitions: rows.filter((row) => row.event === "stage_transition").reduce((sum, row) => sum + (row.stageTransitions ?? 0), 0) === scenario.expectedTransitions,
 		terminalCompletion: scenario.terminalCompletion !== true || rows.some((row) => row.event === "workflow_complete"),
