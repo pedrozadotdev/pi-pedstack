@@ -87,11 +87,18 @@ async function main(): Promise<void> {
 		initialFixtureCommitSha?: string;
 		artifactsSha256?: string;
 		piExitCode?: number;
+		reportExitCode?: number;
 		operatorDecisionPlanSha256?: string;
 	};
 	const scenario = manifest.scenarios.find((entry) => entry.id === metadata.scenario);
 	if (!scenario) throw new Error("scenario missing from manifest");
-	const rows = (await readFile(path.join(runDir, "diagnostics.jsonl"), "utf8")).split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as Row);
+	let rows: Row[] = [];
+	let diagnosticsReadable = true;
+	try {
+		rows = (await readFile(path.join(runDir, "diagnostics.jsonl"), "utf8")).split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as Row);
+	} catch {
+		diagnosticsReadable = false;
+	}
 	const workspace = path.join(runDir, "workspace");
 	const artifactsSha256 = await treeHash(workspace);
 	const finalHeadSha = execFileSync("git", ["-C", workspace, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -108,6 +115,8 @@ async function main(): Promise<void> {
 	const observedDecisionSha256 = createHash("sha256").update(JSON.stringify(decisions)).digest("hex");
 	const checks: Record<string, boolean> = {
 		piExit: metadata.piExitCode === 0,
+		reportExit: metadata.reportExitCode === 0,
+		diagnosticsReadable,
 		stageTrace: followsExpectedStages(rows, scenario.expectedStageStarts),
 		stageTransitions: rows.filter((row) => row.event === "stage_transition").reduce((sum, row) => sum + (row.stageTransitions ?? 0), 0) === scenario.expectedTransitions,
 		terminalCompletion: scenario.terminalCompletion !== true || rows.some((row) => row.event === "workflow_complete"),

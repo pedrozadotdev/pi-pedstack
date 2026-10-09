@@ -76,9 +76,15 @@ fi
 # A failed/aborted Pi launch may never initialize diagnostics; keep the sample
 # with an empty JSONL file so validation and aggregation can record its failure.
 touch "$output_dir/diagnostics.jsonl"
-bun "$repo_root/extensions/ce-core/diagnostics-report.ts" "$output_dir/diagnostics.jsonl" > "$output_dir/report.json"
+# Diagnostic files may be truncated if Pi crashes; record the failure rather
+# than discarding the attempt before the metadata and validation are written.
+if bun "$repo_root/extensions/ce-core/diagnostics-report.ts" "$output_dir/diagnostics.jsonl" > "$output_dir/report.json"; then
+  report_exit_code=0
+else
+  report_exit_code=$?
+fi
 artifact_hash="$(tree_sha256 "$workspace")"
-BENCH_METADATA="$output_dir/metadata.json" BENCH_ARTIFACT_HASH="$artifact_hash" BENCH_PI_EXIT="$pi_exit_code" bun -e 'import { readFileSync, writeFileSync } from "node:fs"; const file = process.env.BENCH_METADATA; const value = JSON.parse(readFileSync(file, "utf8")); value.finishedAt = new Date().toISOString(); value.piExitCode = Number(process.env.BENCH_PI_EXIT); value.artifactsSha256 = process.env.BENCH_ARTIFACT_HASH; writeFileSync(file, JSON.stringify(value, null, 2) + "\n");'
+BENCH_METADATA="$output_dir/metadata.json" BENCH_ARTIFACT_HASH="$artifact_hash" BENCH_PI_EXIT="$pi_exit_code" BENCH_REPORT_EXIT="$report_exit_code" bun -e 'import { readFileSync, writeFileSync } from "node:fs"; const file = process.env.BENCH_METADATA; const value = JSON.parse(readFileSync(file, "utf8")); value.finishedAt = new Date().toISOString(); value.piExitCode = Number(process.env.BENCH_PI_EXIT); value.reportExitCode = Number(process.env.BENCH_REPORT_EXIT); value.artifactsSha256 = process.env.BENCH_ARTIFACT_HASH; writeFileSync(file, JSON.stringify(value, null, 2) + "\n");'
 if bun "$benchmark_dir/verify-live-run.ts" "$output_dir"; then
   printf 'Validated benchmark sample under %s\n' "$output_dir"
 else

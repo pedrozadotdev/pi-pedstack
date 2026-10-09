@@ -12,8 +12,11 @@ describe("issue #62 review outcome validation", () => {
 		expect(runner).toContain("pi_exit_code=$?");
 		expect(runner).toContain('touch "$output_dir/diagnostics.jsonl"');
 		expect(runner).toContain('BENCH_PI_EXIT="$pi_exit_code"');
+		expect(runner).toContain('BENCH_REPORT_EXIT="$report_exit_code"');
 		const validator = await readFile("docs/benchmarks/issue-62/verify-live-run.ts", "utf8");
 		expect(validator).toContain("piExit: metadata.piExitCode === 0");
+		expect(validator).toContain("reportExit: metadata.reportExitCode === 0");
+		expect(validator).toContain("diagnosticsReadable,");
 	});
 
 	test("requires successful SOTA activation rather than a routing recommendation", () => {
