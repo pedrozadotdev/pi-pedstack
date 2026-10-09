@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "kind": "live-workflow-scenarios",
+  "runs": 20,
+  "warmups": 1,
+  "scenarios": [
+    {
+      "id": "clean-pipeline",
+      "prompt": "Add a small, isolated behavior to the fixture repository. Follow the full Pedstack pipeline through docs sync. Keep the change limited to the requested behavior.",
+      "stages": ["01-brainstorm", "02-plan", "03-work", "04-review", "05-learn", "06-docsync"],
+      "operatorDecisions": ["accept each required gated transition", "use the same decisions for baseline and candidate"],
+      "assertions": ["review outcome is clean with zero findings", "workflow reaches terminal docs sync", "terminal workflow is recorded complete"]
+    },
+    {
+      "id": "review-fix-loop",
+      "prompt": "Implement the fixture change with its seeded defect left in place for review. Fix every confirmed finding in the work stage, then repeat review until clean.",
+      "stages": ["01-brainstorm", "02-plan", "03-work", "04-review", "03-work", "04-review", "05-learn", "06-docsync"],
+      "operatorDecisions": ["accept each required gated transition", "use the same decisions for baseline and candidate"],
+      "assertions": ["first review has a confirmed finding", "finding routes back to 03-work", "second review is clean with zero findings", "transition count includes only entered stages"]
+    },
+    {
+      "id": "long-plan-resume-escalation",
+      "prompt": "Plan the fixture's multi-part change as a long plan. Save a checkpoint at the agreed boundary, resume from that checkpoint in a fresh session, and complete the plan stage with eligible explicit SOTA routing configured.",
+      "stages": ["01-brainstorm", "02-plan"],
+      "operatorDecisions": ["use identical explicit eligible-stage SOTA routing config", "resume from the same saved checkpoint input"],
+      "assertions": ["long plan remains bounded and complete", "resume preserves workflow routing state", "SOTA selection is recorded only when selected", "model and Jev usage/cost stay unknown when providers omit usage"]
+    },
+    {
+      "id": "debug-verify",
+      "prompt": "Enter 04-5-debug with a concrete prompt, reproduce the fixture failure, fix it, run verification, and save the handoff to the next required stage.",
+      "stages": ["04-5-debug", "03-work", "04-review"],
+      "operatorDecisions": ["use the same debug prompt and confirmation decisions for baseline and candidate"],
+      "assertions": ["debug entry requires a prompt", "failing and successful verification calls have timings and outcomes", "the completed review reports its findings honestly"]
+    }
+  ],
+  "capture": {
+    "requiredPerRun": ["diagnostics.jsonl", "diagnostics report", "revision", "scenario id", "model/provider", "routing and feature config hash", "operator decisions", "workflow artifacts hash"],
+    "neverRecord": ["prompts in diagnostics", "credentials", "repository paths in diagnostics", "inferred token or cost values"]
+  }
+}

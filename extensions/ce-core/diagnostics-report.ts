@@ -37,6 +37,12 @@ const STAGES = new Set([
 ]);
 const ROLES = new Set(["default", "review", "sota", "override", "unknown"]);
 const OUTCOMES = new Set(["success", "failure", "interrupted", "unknown"]);
+const EVENTS = new Set([
+	"stage_start", "stage_end", "stage_interrupted", "handoff_saved", "stage_transition", "workflow_complete",
+	"jev_decision", "role_selected", "review_attempt", "review_skipped", "tool_execution",
+	"verification_execution", "search_invocation", "automatic_search", "model_response",
+	"provider_request", "provider_response", "unknown",
+]);
 
 function safeRow(value: unknown): Row {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -46,6 +52,7 @@ function safeRow(value: unknown): Row {
 	if (typeof input.stage === "string" && STAGES.has(input.stage)) row.stage = input.stage;
 	if (typeof input.role === "string" && ROLES.has(input.role)) row.role = input.role;
 	if (typeof input.outcome === "string" && OUTCOMES.has(input.outcome)) row.outcome = input.outcome;
+	if (typeof input.event === "string" && EVENTS.has(input.event)) row.event = input.event;
 	for (const key of ["durationMs", "processDurationMs", "providerResponseMs", "providerRequests", "modelCalls", "independentReviewers", "repeatAttempt", "inputTokens", "outputTokens", "costUsd", "exitCode", "searchCalls", "repeatSearches", "stageTransitions"] as const) {
 		const number = input[key];
 		if (typeof number === "number" && Number.isFinite(number) && number >= 0) row[key] = number;
@@ -89,11 +96,13 @@ export function summarizeDiagnostics(rows: Row[]) {
 		const durations = entries.flatMap((row) => typeof row.durationMs === "number" ? [row.durationMs] : []);
 		const processDurations = entries.flatMap((row) => typeof row.processDurationMs === "number" ? [row.processDurationMs] : []);
 		const providerDurations = entries.flatMap((row) => typeof row.providerResponseMs === "number" ? [row.providerResponseMs] : []);
-		const knownUsage = entries.filter((row) => row.usageKnown === true);
-		const knownCosts = entries.flatMap((row) => typeof row.costUsd === "number" ? [row.costUsd] : []);
+		const usageResponses = entries.filter((row) => row.event === "model_response" || row.event === "jev_decision");
+		const knownUsage = usageResponses.filter((row) => row.usageKnown === true);
+		const knownCosts = usageResponses.flatMap((row) => typeof row.costUsd === "number" ? [row.costUsd] : []);
 		return {
 			group,
 			observations: entries.length,
+			events: Object.fromEntries([...new Set(entries.map((row) => row.event ?? "unknown"))].map((event) => [event, entries.filter((row) => (row.event ?? "unknown") === event).length])),
 			roles: Object.fromEntries([...new Set(entries.map((row) => row.role ?? "unknown"))].map((role) => [role, entries.filter((row) => (row.role ?? "unknown") === role).length])),
 			durationMs: { median: median(durations), p95: quantile(durations, 0.95), variance: variance(durations) },
 			processDurationMs: { median: median(processDurations), p95: quantile(processDurations, 0.95), variance: variance(processDurations) },
@@ -113,12 +122,12 @@ export function summarizeDiagnostics(rows: Row[]) {
 				knownObservations: knownUsage.length,
 				inputTokens: knownUsage.reduce((sum, row) => sum + (row.inputTokens ?? 0), 0),
 				outputTokens: knownUsage.reduce((sum, row) => sum + (row.outputTokens ?? 0), 0),
-				partial: knownUsage.length !== entries.length,
+				partial: knownUsage.length !== usageResponses.length,
 			},
 			costUsd: knownCosts.length === 0 ? "unknown" : {
 				knownObservations: knownCosts.length,
 				total: knownCosts.reduce((sum, value) => sum + value, 0),
-				partial: knownCosts.length !== entries.length,
+				partial: knownCosts.length !== usageResponses.length,
 			},
 			outcomes: Object.fromEntries([...new Set(entries.map((row) => row.outcome ?? "unknown"))].map((outcome) => [outcome, entries.filter((row) => (row.outcome ?? "unknown") === outcome).length])),
 		};

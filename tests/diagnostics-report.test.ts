@@ -18,11 +18,40 @@ describe("diagnostics reports", () => {
 
 	test("marks partial token usage when a run exposes it only on some events", () => {
 		const [row] = summarizeDiagnostics([
-			{ feature: "model", usageKnown: true, inputTokens: 8, outputTokens: 3 },
-			{ feature: "model", usageKnown: false },
+			{ feature: "model", event: "model_response", usageKnown: true, inputTokens: 8, outputTokens: 3 },
+			{ feature: "model", event: "model_response", usageKnown: false },
 		]);
 		expect(row?.usage).toEqual({ knownObservations: 1, inputTokens: 8, outputTokens: 3, partial: true });
 		expect(row?.costUsd).toBe("unknown");
+	});
+
+	test("uses model responses as the token and cost denominator", () => {
+		const [row] = summarizeDiagnostics([
+			{ feature: "model", event: "provider_request", modelCalls: 1 },
+			{ feature: "model", event: "provider_response", providerResponseMs: 20 },
+			{ feature: "model", event: "model_response", usageKnown: true, inputTokens: 10, outputTokens: 4, costUsd: 0.02 },
+			{ feature: "model", event: "model_response", usageKnown: true, inputTokens: 5, outputTokens: 2, costUsd: 0.01 },
+		]);
+		expect(row?.usage).toEqual({ knownObservations: 2, inputTokens: 15, outputTokens: 6, partial: false });
+		expect(row?.costUsd).toEqual({ knownObservations: 2, total: 0.03, partial: false });
+	});
+
+	test("reports fixed verification and manual/automatic search event counts", () => {
+		const report = summarizeDiagnostics([
+			{ feature: "verification", event: "verification_execution", durationMs: 12 },
+			{ feature: "solution_search", event: "search_invocation", searchCalls: 1 },
+			{ feature: "solution_search", event: "automatic_search", searchCalls: 1, repeatSearches: 1 },
+		]);
+		expect(report.find((row) => row.group === "unknown/verification")?.events).toEqual({ verification_execution: 1 });
+		expect(report.find((row) => row.group === "unknown/solution_search")?.events).toEqual({ search_invocation: 1, automatic_search: 1 });
+	});
+
+	test("marks missing cost partial across model responses", () => {
+		const [row] = summarizeDiagnostics([
+			{ feature: "model", event: "model_response", usageKnown: true, inputTokens: 10, outputTokens: 4, costUsd: 0.02 },
+			{ feature: "model", event: "model_response", usageKnown: true, inputTokens: 5, outputTokens: 2 },
+		]);
+		expect(row?.costUsd).toEqual({ knownObservations: 1, total: 0.02, partial: true });
 	});
 
 	test("counts process failures without exposing unrecognized grouping labels", () => {
@@ -47,8 +76,8 @@ describe("diagnostics reports", () => {
 	});
 
 	test("compares matching groups and keeps unavailable measurements unknown", () => {
-		const before = summarizeDiagnostics([{ feature: "jev", stage: "02-plan", durationMs: 10, usageKnown: false }]);
-		const after = summarizeDiagnostics([{ feature: "jev", stage: "02-plan", durationMs: 8, usageKnown: true, inputTokens: 40, outputTokens: 10 }]);
+		const before = summarizeDiagnostics([{ feature: "model", stage: "02-plan", event: "model_response", durationMs: 10, usageKnown: false }]);
+		const after = summarizeDiagnostics([{ feature: "model", stage: "02-plan", event: "model_response", durationMs: 8, usageKnown: true, inputTokens: 40, outputTokens: 10 }]);
 		const [row] = compareDiagnosticsReports(before, after);
 		expect(row?.durationMs).toEqual({ before: 10, after: 8, deltaMs: -2, deltaPercent: -20 });
 		expect(row?.beforeUsage).toBe("unknown");

@@ -103,7 +103,7 @@ import type { JevRuntime } from "./jev/types";
 import { resolveStartupFeatures } from "./utils/startup-features";
 import { readPiPedstackConfig } from "./utils/config-types";
 import { stageAllowsSotaEscalation } from "./utils/stage-policy";
-import { diagnosticJevOptions, recordDiagnostic, recordSolutionSearch, endDiagnosticStage, shutdownDiagnostics, getDiagnosticRole } from "./diagnostics";
+import { diagnosticJevOptions, isDiagnosticVerificationCall, recordDiagnostic, recordSolutionSearch, recordDiagnosticHandoff, completeDiagnosticWorkflow, shutdownDiagnostics, getDiagnosticRole } from "./diagnostics";
 
 const artifactHelperParams = Type.Object({
 	repoRoot: Type.String({
@@ -573,7 +573,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	let persistedStageResolved = false;
 	let persistedStage: string | null = null;
 	let guardNotified = false;
-	const activeDiagnosticTools = new Map<string, { startedAt: number; feature: "tool" | "review" | "workflow" | "stage_gate" | "solution_search" }>();
+	const activeDiagnosticTools = new Map<string, { startedAt: number; feature: "tool" | "review" | "workflow" | "stage_gate" | "solution_search" | "verification"; event: string }>();
 	const activeDiagnosticProviders: number[] = [];
 	const diagnosticNow = () => performance.now();
 	const diagnosticFeatureForTool = (name: string): "tool" | "review" | "workflow" | "stage_gate" | "solution_search" => {
@@ -1623,7 +1623,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		setCurrentDriftSessionKey("");
 		resetAllSessionState();
 		clearContextSnapshot();
-		await shutdownDiagnostics();
+		await shutdownDiagnostics(true);
 		return undefined;
 	});
 
@@ -1687,9 +1687,11 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_execution_start", async (event) => {
+		const verification = isDiagnosticVerificationCall(event.toolName, event.args);
 		activeDiagnosticTools.set(event.toolCallId, {
 			startedAt: diagnosticNow(),
-			feature: diagnosticFeatureForTool(event.toolName),
+			feature: verification ? "verification" : diagnosticFeatureForTool(event.toolName),
+			event: verification ? "verification_execution" : "tool_execution",
 		});
 		if (event.toolName === "solution_search") {
 			const args = event.args as { query?: unknown } | null;
@@ -1703,7 +1705,7 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		activeDiagnosticTools.delete(event.toolCallId);
 		if (started) {
 			recordDiagnostic({
-				feature: started.feature, event: "tool_execution", stage: getActiveStage() ?? "unknown",
+				feature: started.feature, event: started.event, stage: getActiveStage() ?? "unknown",
 				outcome: event.isError ? "failure" : "success",
 				durationMs: diagnosticNow() - started.startedAt,
 			});
@@ -1711,14 +1713,12 @@ export default function ceCoreExtension(pi: ExtensionAPI) {
 		if (event.toolName === "context_handoff" && !event.isError) {
 			const result = event.result as { details?: { operation?: unknown; currentStage?: unknown; nextStage?: unknown; blocker?: unknown } } | undefined;
 			const details = result?.details;
-			if (
-				details?.operation === "save" &&
-				typeof details.currentStage === "string" &&
-				typeof details.nextStage === "string" &&
-				details.currentStage !== details.nextStage &&
-				!details.blocker
-			) {
-				await endDiagnosticStage("success");
+			if (details?.operation === "save" && typeof details.currentStage === "string" && !details.blocker) {
+				if (typeof details.nextStage === "string" && details.nextStage && details.currentStage !== details.nextStage) {
+					recordDiagnosticHandoff(details.currentStage, details.nextStage);
+				} else if (details.currentStage === "06-docsync" && (details.nextStage === undefined || details.nextStage === "")) {
+					await completeDiagnosticWorkflow(details.currentStage);
+				}
 			}
 		}
 		return undefined;
