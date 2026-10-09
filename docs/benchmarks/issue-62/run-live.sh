@@ -60,12 +60,23 @@ BENCH_SCENARIO_JSON="$scenario_json" BENCH_SCENARIO="$scenario" BENCH_MODEL="$mo
 
 printf 'Scenario: %s\nModel: %s\nRevision: %s\n' "$scenario" "$model" "$revision"
 printf 'Fixture: %s\n' "$fixture_path"
-printf 'Enter this exact first command in the Pi session:\n\n%s\n\n' "$entry_command"
-if [[ "$followup_commands" != "[]" ]]; then
-	BENCH_FOLLOWUPS="$followup_commands" bun -e 'for (const [index, command] of JSON.parse(process.env.BENCH_FOLLOWUPS).entries()) process.stdout.write(`Follow-up ${index + 1}: ${command}\n`);'
-	printf '\nRun each follow-up command only at the gate named in its prompt.\n'
+# Pi uses a full-screen terminal interface: stdout printed before startup is
+# hidden once it enters the alternate screen. Persist the commands for a
+# second terminal and pause so the operator can copy the first command.
+printf '%s\n' "$entry_command" > "$output_dir/entry-command.txt"
+{
+  printf 'First command (paste into Pi after startup):\n%s\n' "$entry_command"
+  if [[ "$followup_commands" != "[]" ]]; then
+    BENCH_FOLLOWUPS="$followup_commands" bun -e 'for (const [index, command] of JSON.parse(process.env.BENCH_FOLLOWUPS).entries()) process.stdout.write(`Follow-up ${index + 1} (only at the specified workflow gate):\n${command}\n`);'
+  fi
+} > "$output_dir/commands.txt"
+printf '\nCommands saved to: %s/commands.txt\n' "$output_dir"
+cat "$output_dir/commands.txt"
+printf '\nDiagnostics: %s/diagnostics.jsonl\n' "$output_dir"
+if [[ -t 0 ]]; then
+  printf '\nCopy the first command shown above, then press Enter to open Pi. Paste it into Pi after startup.\n'
+  read -r -p 'Press Enter to start Pi... ' _
 fi
-printf 'Diagnostics will be saved locally at %s/diagnostics.jsonl\n' "$output_dir"
 # Preserve unsuccessful runs too: benchmark samples must not silently disappear.
 if (cd "$workspace" && PEDSTACK_DIAGNOSTICS_FILE="$output_dir/diagnostics.jsonl" pi --approve --no-extensions --extension "$repo_root/extensions/ce-core/index.ts" --model "$model" --thinking medium); then
   pi_exit_code=0

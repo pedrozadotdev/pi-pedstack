@@ -62,6 +62,14 @@ local diagnostics using:
 bash docs/benchmarks/issue-62/run-live.sh clean-pipeline openai/<model-id> /tmp/issue-62/clean-pipeline-01
 ```
 
+Pi uses an alternate-screen terminal UI that hides the command printed by the
+runner. Before launching Pi, `run-live.sh` writes `entry-command.txt` and
+`commands.txt` to the run output directory and pauses for you to copy
+`/ped-start`. Press Enter, then paste the command into Pi. If Pi is already
+running, read the saved file in a second terminal:
+`cat /tmp/issue-62/warmups/clean-pipeline/commands.txt` (adjust the directory).
+Runs are interactive; the runner does not automatically enter slash commands.
+
 The runner initializes each copied fixture as a Git repository, commits it as
 `main` using a fixed local identity and timestamp, and records the initial
 commit SHA. The manifest pins that SHA, so fixture drift or a different Git

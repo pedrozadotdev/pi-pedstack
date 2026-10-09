@@ -9,6 +9,9 @@ describe("issue #62 review outcome validation", () => {
 	test("live runner loads only the pinned extension checkout and retains failed sessions", async () => {
 		const runner = await readFile("docs/benchmarks/issue-62/run-live.sh", "utf8");
 		expect(runner).toContain("pi --approve --no-extensions --extension");
+		expect(runner).toContain('> "$output_dir/entry-command.txt"');
+		expect(runner).toContain('> "$output_dir/commands.txt"');
+		expect(runner).toContain("read -r -p 'Press Enter to start Pi... ' _");
 		expect(runner).toContain("pi_exit_code=$?");
 		expect(runner).toContain('touch "$output_dir/diagnostics.jsonl"');
 		expect(runner).toContain('BENCH_PI_EXIT="$pi_exit_code"');
